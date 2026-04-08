@@ -270,6 +270,14 @@ public class ClientEventHandler {
     public static org.joml.Matrix4f lastViewMatrix = new org.joml.Matrix4f();
     public static org.joml.Matrix4f lastProjectionMatrix = new org.joml.Matrix4f();
 
+    public static void openStarterGearScreen() {
+        Minecraft.getInstance().setScreen(new StarterGearScreen());
+    }
+
+    public static void openFloorSelectionScreen(int maxFloor, long worldSeed) {
+        Minecraft.getInstance().setScreen(new FloorSelectionScreen(maxFloor, worldSeed));
+    }
+
     @SubscribeEvent
     public static void onRenderLevelStage(net.minecraftforge.client.event.RenderLevelStageEvent event) {
         DamageIndicatorRenderer.renderWorld(event);

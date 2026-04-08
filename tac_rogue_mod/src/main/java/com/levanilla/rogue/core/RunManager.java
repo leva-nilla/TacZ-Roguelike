@@ -63,6 +63,7 @@ public class RunManager {
     // ===== クライアント側: 自プレイヤー同期データ =====
 
     private static int clientFloor = 0;
+    private static int clientMaxReachedFloor = 0;
     private static boolean clientRunActive = false;
     private static boolean clientFloorCleared = false;
     private static int clientStashLines = 2;
@@ -77,6 +78,7 @@ public class RunManager {
     // ===== クライアント側アクセサ (HUD/GUI 用) =====
 
     public static int getCurrentFloor() { return clientFloor; }
+    public static int getMaxReachedFloor() { return clientMaxReachedFloor; }
     public static boolean isRunActive() { return clientRunActive; }
     public static boolean isFloorCleared() { return clientFloorCleared; }
     public static String getCurrentThemeName() { return clientThemeName; }
@@ -87,10 +89,11 @@ public class RunManager {
     }
 
     /** クライアント同期データ受信 */
-    public static void setClientData(int floor, String theme, boolean active) {
+    public static void setClientData(int floor, String theme, boolean active, int maxF) {
         clientFloor = floor;
         clientThemeName = theme;
         clientRunActive = active;
+        clientMaxReachedFloor = maxF;
     }
 
     public static void setClientFloorCleared(boolean v) { clientFloorCleared = v; }
@@ -187,6 +190,36 @@ public class RunManager {
         }
     }
 
+    /** 任意のフロアに飛ぶ（ステータス保持の周回/金策用） */
+    public static void gotoFloor(ServerPlayer player, int targetFloor) {
+        PlayerRunData data = getData(player);
+        data.setCurrentFloor(targetFloor);
+        data.setRunActive(true);
+        data.setFloorCleared(false);
+        data.setFloorStartTick(player.server.getTickCount());
+        data.setRunSeed(System.nanoTime()); // 新しいフロアシード
+        updateThemeName(data);
+
+        ServerLevel rogueLevel = player.server.getLevel(CommonEventHandler.ROGUE_DIM);
+        if (rogueLevel != null) {
+            ServerPlayer existingPlayer = findPlayerOnFloor(player.server, data.getCurrentFloor(), player.getUUID());
+            BlockPos spawnPos;
+            if (existingPlayer != null) {
+                spawnPos = data.getDungeonOrigin().above(2);
+            } else {
+                com.levanilla.rogue.core.service.FloorService.clearDungeonEntities(rogueLevel, data.getDungeonOrigin());
+                spawnPos = com.levanilla.rogue.world.MapGenerator.generateRoom(
+                    rogueLevel, data.getDungeonOrigin(), null, data.getCurrentFloor(), data.getRunSeed());
+            }
+            safeTeleport(player, rogueLevel, spawnPos);
+            syncPlayer(player);
+
+            long seed = player.server.getWorldData().worldGenOptions().seed();
+            ThemeManager.ThemeInstance theme = ThemeManager.getThemeForFloor(data.getCurrentFloor(), seed);
+            player.sendSystemMessage(Component.literal("§e[FARMING] §fRevisiting Floor " + targetFloor + " (" + theme.displayName + ")"));
+        }
+    }
+
     /** ロビーへ帰還する */
     public static void returnToLobby(ServerPlayer player) {
         ServerLevel lobbyLevel = player.server.getLevel(CommonEventHandler.LOBBY_DIM);
@@ -261,7 +294,7 @@ public class RunManager {
 
         PlayerRunData data = getData(player);
         String syncData = data.getCurrentFloor() + ":" + data.getThemeName() + ":"
-            + data.isRunActive() + ":" + data.isFloorCleared();
+            + data.isRunActive() + ":" + data.isFloorCleared() + ":" + data.getMaxReachedFloor();
         com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
             net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
             new com.levanilla.rogue.networking.SyncDataMessage(syncData)
@@ -374,10 +407,21 @@ public class RunManager {
             if (data.startsWith("perk_init:")) { com.levanilla.rogue.client.PerkManager.openInitialPerkScreen(); return; }
             if (data.startsWith("perk_boss:")) { com.levanilla.rogue.client.PerkManager.openBossPerkScreen(); return; }
             if (data.startsWith("perk_normal:")) { com.levanilla.rogue.client.PerkManager.openPerkScreen(); return; }
+            
+            if (data.startsWith("open_floor_selection:")) {
+                String[] split = data.substring(21).split(":");
+                int maxF = Integer.parseInt(split[0]);
+                long seed = split.length > 1 ? Long.parseLong(split[1]) : 0L;
+                net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(net.minecraftforge.api.distmarker.Dist.CLIENT, () -> () -> {
+                    com.levanilla.rogue.client.ClientEventHandler.openFloorSelectionScreen(maxF, seed);
+                });
+                return;
+            }
 
-            String[] parts = data.split(":", 4);
+            String[] parts = data.split(":", 5);
             if (parts.length >= 3) {
-                setClientData(Integer.parseInt(parts[0]), parts[1], Boolean.parseBoolean(parts[2]));
+                int maxF = parts.length >= 5 ? Integer.parseInt(parts[4]) : 0;
+                setClientData(Integer.parseInt(parts[0]), parts[1], Boolean.parseBoolean(parts[2]), maxF);
                 if (parts.length >= 4) {
                     clientFloorCleared = Boolean.parseBoolean(parts[3]);
                 }

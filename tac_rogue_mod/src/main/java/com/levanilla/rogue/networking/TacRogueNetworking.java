@@ -153,7 +153,7 @@ public class TacRogueNetworking {
     }
 
     public static void openFloorClear(ServerPlayer player) {
-        CHANNEL.sendTo(new OpenFloorClearScreenMessage(), player.connection.connection, NetworkDirection.PLAY_TO_CLIENT);
+        CHANNEL.sendTo(new OpenFloorClearScreenMessage(false), player.connection.connection, NetworkDirection.PLAY_TO_CLIENT);
     }
 
     public static void openShop(ServerPlayer player) {

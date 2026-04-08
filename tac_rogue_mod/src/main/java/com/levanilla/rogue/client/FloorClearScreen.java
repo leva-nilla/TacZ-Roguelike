@@ -22,10 +22,16 @@ public class FloorClearScreen extends Screen {
     private boolean perkSelected = false;
     private final List<PerkDefinition> choices = new ArrayList<>();
     private PerkDefinition selectedPerk = null;
+    private final boolean isFarming;
 
-    public FloorClearScreen() {
+    public FloorClearScreen(boolean isFarming) {
         super(Component.translatable("gui.tac_rogue.floor_clear.title"));
-        generatePerkChoices();
+        this.isFarming = isFarming;
+        if (isFarming) {
+            this.perkSelected = true;
+        } else {
+            generatePerkChoices();
+        }
     }
 
     private void generatePerkChoices() {
@@ -179,13 +185,19 @@ public class FloorClearScreen extends Screen {
                 }
             }
         } else {
-            // パーク選択済み
-            graphics.drawCenteredString(this.font,
-                Component.literal("§a✓ " + selectedPerk.getDisplayName() + " を取得！"),
-                cx, cy - 45, selectedPerk.getRarityColor());
-            graphics.drawCenteredString(this.font,
-                Component.literal("§7" + selectedPerk.getDescription()),
-                cx, cy - 30, 0xFFCCCCCC);
+            // パーク選択済み または 周回プレイ
+            if (isFarming) {
+                graphics.drawCenteredString(this.font,
+                    Component.literal("§a✓ フロア制圧完了。報酬確保済み。"),
+                    cx, cy - 45, 0xFF00FF00);
+            } else {
+                graphics.drawCenteredString(this.font,
+                    Component.literal("§a✓ " + selectedPerk.getDisplayName() + " を取得！"),
+                    cx, cy - 45, selectedPerk.getRarityColor());
+                graphics.drawCenteredString(this.font,
+                    Component.literal("§7" + selectedPerk.getDescription()),
+                    cx, cy - 30, 0xFFCCCCCC);
+            }
             graphics.drawCenteredString(this.font,
                 Component.literal("§7次の行動を選択してください"),
                 cx, cy + 5, 0xFF888888);
@@ -196,6 +208,11 @@ public class FloorClearScreen extends Screen {
 
     @Override
     public boolean isPauseScreen() {
+        return false;
+    }
+
+    @Override
+    public boolean shouldCloseOnEsc() {
         return false;
     }
 }

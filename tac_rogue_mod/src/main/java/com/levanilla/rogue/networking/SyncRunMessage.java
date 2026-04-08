@@ -26,12 +26,12 @@ public class SyncRunMessage {
         return new SyncRunMessage(buffer.readInt(), buffer.readUtf(), buffer.readBoolean());
     }
 
-    public static void handle(SyncRunMessage msg, Supplier<NetworkEvent.Context> contextSupplier) {
-        NetworkEvent.Context context = contextSupplier.get();
-        context.enqueueWork(() -> {
-            // Client-side logic
-            RunManager.setClientData(msg.floor, msg.theme, msg.active);
+    public static void handle(SyncRunMessage msg, Supplier<net.minecraftforge.network.NetworkEvent.Context> ctx) {
+        ctx.get().enqueueWork(() -> {
+            net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(net.minecraftforge.api.distmarker.Dist.CLIENT, () -> () -> {
+                RunManager.setClientData(msg.floor, msg.theme, msg.active, RunManager.getMaxReachedFloor());
+            });
         });
-        context.setPacketHandled(true);
+        ctx.get().setPacketHandled(true);
     }
 }

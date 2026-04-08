@@ -297,12 +297,12 @@ public class SpawnAndWorldHandler {
                 .inflate(GameConstants.FLOOR_CLEAR_RADIUS);
             List<Mob> alive = rogueLevel.getEntitiesOfClass(Mob.class, area, Mob::isAlive);
             if (alive.isEmpty()) {
-                player.sendSystemMessage(net.minecraft.network.chat.Component.translatable("message.tac_rogue.clear"));
-                TacRogueNetworking.CHANNEL.send(
-                    net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
-                    new com.levanilla.rogue.networking.OpenFloorClearScreenMessage());
+                // フロア制圧完了。抽出用の情報将校をスポーンさせる
+                com.levanilla.rogue.world.NpcManager.spawnExtractionOfficer(rogueLevel, player.blockPosition());
+                
+                player.sendSystemMessage(net.minecraft.network.chat.Component.translatable("message.tac_rogue.extraction_arrived"));
+                
                 data.setFloorCleared(true);
-                data.setRunActive(false);
                 RunManager.syncPlayer(player);
 
                 // === クエスト進捗: フロアクリア系 ===

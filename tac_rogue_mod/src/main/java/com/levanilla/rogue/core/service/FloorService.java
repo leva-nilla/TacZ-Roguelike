@@ -49,6 +49,16 @@ public final class FloorService {
         retryCurrentFloor(player);
     }
 
+    /** 過去のフロアに飛んで再試行する（金策用） */
+    public static void handleGotoFloor(ServerPlayer player, int targetFloor) {
+        PlayerRunData data = RunManager.getData(player);
+        if (targetFloor > 0 && targetFloor <= data.getMaxReachedFloor()) {
+            RunManager.gotoFloor(player, targetFloor);
+        } else {
+            player.sendSystemMessage(Component.literal("§c[ERROR] Invalid floor selection: " + targetFloor));
+        }
+    }
+
     // ===== 内部ロジック =====
 
     private static void startNewRun(ServerPlayer player) {

@@ -74,14 +74,10 @@ public class ScalingEngine {
         // 速度スケーリング
         setScaledAttribute(entity, Attributes.MOVEMENT_SPEED, prefix.spdMult);
 
-        // 体力を最大値にリセット
         AttributeInstance maxHealth = entity.getAttribute(Attributes.MAX_HEALTH);
         if (maxHealth != null) {
             entity.setHealth((float) maxHealth.getValue());
         }
-
-        // 10 階以上で発光
-        if (floor > GameConstants.GLOW_FLOOR_THRESHOLD) entity.setGlowingTag(true);
     }
 
     /**

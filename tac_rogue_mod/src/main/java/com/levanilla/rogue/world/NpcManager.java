@@ -88,6 +88,11 @@ public class NpcManager {
             "§d[MEDIC] §fDoc Rivera");
     }
 
+    /** ダンジョンに脱出用NPC（情報将校）を配置 */
+    public static void spawnExtractionOfficer(ServerLevel level, BlockPos pos) {
+        spawnNpc(level, pos, NpcRole.INTEL_OFFICER, net.minecraft.network.chat.Component.translatable("npc.tac_rogue.extraction_officer").getString());
+    }
+
     /** NPC（Villagerベース）を生成 */
     private static void spawnNpc(ServerLevel level, BlockPos pos, NpcRole role, String name) {
         Villager villager = EntityType.VILLAGER.create(level);
@@ -175,8 +180,21 @@ public class NpcManager {
                 return true;
             }
             case "npc_role:intel" -> {
-                // フロア情報を表示
-                showIntelBriefing(player);
+                if (player.level().dimension() == com.levanilla.rogue.core.CommonEventHandler.ROGUE_DIM) {
+                    // ダンジョン内: フロア脱出処理
+                    com.levanilla.rogue.core.PlayerRunData data = RunManager.getData(player);
+                    if (data.isRunActive() && data.isFloorCleared()) {
+                        boolean isFarming = data.getCurrentFloor() < data.getMaxReachedFloor();
+                        com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
+                            net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+                            new com.levanilla.rogue.networking.OpenFloorClearScreenMessage(isFarming));
+                        data.setRunActive(false);
+                        RunManager.syncPlayer(player);
+                    }
+                } else {
+                    // ロビー内: フロア情報を表示
+                    showIntelBriefing(player);
+                }
                 return true;
             }
             case "npc_role:medic" -> {
@@ -233,5 +251,12 @@ public class NpcManager {
         player.sendSystemMessage(Component.literal("§f  Enemy HP Scale: §c" + String.format("%.1fx", DifficultyManager.getHpScale(floor))));
         player.sendSystemMessage(Component.literal("§f  Gold Mult: §a" + String.format("%.1fx", DifficultyManager.getGoldMultiplier())));
         player.sendSystemMessage(Component.literal("§b══════════════════════════════════"));
+
+        // フロア選択UIを開くパケットを送信
+        long seed = player.server.getWorldData().worldGenOptions().seed();
+        com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
+            net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+            new com.levanilla.rogue.networking.SyncDataMessage("open_floor_selection:" + data.getMaxReachedFloor() + ":" + seed)
+        );
     }
 }

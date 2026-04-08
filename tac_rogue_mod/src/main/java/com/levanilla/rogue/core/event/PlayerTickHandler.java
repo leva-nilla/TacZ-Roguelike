@@ -364,18 +364,14 @@ public class PlayerTickHandler {
         // FRACTURED: 移動速度 -10% per perk
         velocityEffect -= fracturedCount * 10.0f;
         
-        // TITANIC / RADIANT
-        int titanicCount = 0, radiantCount = 0;
+        // TITANIC
+        int titanicCount = 0;
         for (String tag : player.getTags()) {
             if (tag.startsWith("perk:") && tag.contains(":TITANIC:")) titanicCount++;
-            if (tag.startsWith("perk:") && tag.contains(":RADIANT:")) radiantCount++;
         }
         if (titanicCount > 0) {
             velocityEffect -= titanicCount * 30.0f;
             if (player.isSprinting()) player.setSprinting(false);
-        }
-        if (radiantCount > 0) {
-            player.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.NIGHT_VISION, 300, 0, false, false));
         }
 
         // PRIMAL: スタミナ回復速度 -30% → staminaEffect を減少

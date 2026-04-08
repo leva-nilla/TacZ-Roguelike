@@ -10,6 +10,8 @@ public class PlayerRunData {
 
     /** 現在の階層 (1-based, 0=ラン未開始) */
     private int currentFloor = 0;
+    /** 最高到達フロア (過去クリアしたフロアの最高値) */
+    private int maxReachedFloor = 0;
     /** ランが進行中か */
     private boolean runActive = false;
     /** 現フロアがクリア済みか */
@@ -33,6 +35,9 @@ public class PlayerRunData {
 
     public int getCurrentFloor() { return currentFloor; }
     public void setCurrentFloor(int f) { currentFloor = f; }
+
+    public int getMaxReachedFloor() { return maxReachedFloor; }
+    public void setMaxReachedFloor(int f) { maxReachedFloor = f; }
 
     public boolean isRunActive() { return runActive; }
     public void setRunActive(boolean v) { runActive = v; }
@@ -61,6 +66,7 @@ public class PlayerRunData {
     public void startRun() {
         runActive = true;
         currentFloor = 1;
+        if (currentFloor > maxReachedFloor) maxReachedFloor = currentFloor;
         floorCleared = false;
         runSeed = System.nanoTime();
         floorStartTick = 0; // 呼び出し元でサーバーtickを設定
@@ -69,6 +75,7 @@ public class PlayerRunData {
     /** 次の階層へ進む */
     public void advanceFloor() {
         currentFloor++;
+        if (currentFloor > maxReachedFloor) maxReachedFloor = currentFloor;
         floorCleared = false;
         runActive = true;
         floorStartTick = 0; // 呼び出し元でサーバーtickを設定
@@ -79,6 +86,7 @@ public class PlayerRunData {
     public net.minecraft.nbt.CompoundTag saveToNbt() {
         net.minecraft.nbt.CompoundTag tag = new net.minecraft.nbt.CompoundTag();
         tag.putInt("CurrentFloor", currentFloor);
+        tag.putInt("MaxReachedFloor", maxReachedFloor);
         tag.putBoolean("RunActive", runActive);
         tag.putBoolean("FloorCleared", floorCleared);
         tag.putLong("RunSeed", runSeed);
@@ -95,6 +103,7 @@ public class PlayerRunData {
 
     public void loadFromNbt(net.minecraft.nbt.CompoundTag tag) {
         if (tag.contains("CurrentFloor")) currentFloor = tag.getInt("CurrentFloor");
+        if (tag.contains("MaxReachedFloor")) maxReachedFloor = tag.getInt("MaxReachedFloor");
         if (tag.contains("RunActive")) runActive = tag.getBoolean("RunActive");
         if (tag.contains("FloorCleared")) floorCleared = tag.getBoolean("FloorCleared");
         if (tag.contains("RunSeed")) runSeed = tag.getLong("RunSeed");
@@ -115,6 +124,7 @@ public class PlayerRunData {
     /** ラン状態をリセット */
     public void reset() {
         currentFloor = 0;
+        // maxReachedFloor はリセットしない(全ロス時以外)
         runActive = false;
         floorCleared = false;
         runSeed = 0;

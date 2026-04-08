@@ -23,6 +23,7 @@ public class RogueActionMessage {
         SELECT_GEAR_POWER,
         SELECT_GEAR_CLASSIC,
         BUY_ITEM,
+        GOTO_FLOOR,
         SYNC_DATA,
         UPGRADE_STASH,
         SYNC_STASH,
@@ -125,6 +126,12 @@ public class RogueActionMessage {
                 case START_NEXT_FLOOR -> FloorService.handleStartNextFloor(player);
                 case RETRY_FLOOR      -> FloorService.handleRetryFloor(player);
                 case RETURN_TO_LOBBY  -> RunManager.returnToLobby(player);
+                case GOTO_FLOOR -> {
+                    try {
+                        int f = Integer.parseInt(msg.data);
+                        FloorService.handleGotoFloor(player, f);
+                    } catch (NumberFormatException ignored) {}
+                }
 
                 // --- 同期 ---
                 case SYNC_DATA -> RunManager.sync();
