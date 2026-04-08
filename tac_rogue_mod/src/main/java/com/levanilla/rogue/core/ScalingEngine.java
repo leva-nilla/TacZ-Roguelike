@@ -113,6 +113,16 @@ public class ScalingEngine {
             }
         }
 
+        // ウィザーはさらに遅くする
+        if (entity instanceof net.minecraft.world.entity.boss.wither.WitherBoss wither) {
+            if (wither.getAttribute(Attributes.MOVEMENT_SPEED) != null) {
+                wither.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0.10);
+            }
+            if (wither.getAttribute(Attributes.FLYING_SPEED) != null) {
+                wither.getAttribute(Attributes.FLYING_SPEED).setBaseValue(0.08); // バニラ(0.0)に対して若干の余裕を
+            }
+        }
+
         // 体力リセット
         AttributeInstance maxHealth = entity.getAttribute(Attributes.MAX_HEALTH);
         if (maxHealth != null) {
