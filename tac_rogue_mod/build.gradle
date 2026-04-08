@@ -1,0 +1,120 @@
+plugins {
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+    id 'org.spongepowered.mixin' version '0.7.+'
+}
+
+group = 'com.levanilla'
+version = project.mod_version
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+minecraft {
+    mappings channel: 'official', version: '1.20.1'
+    copyIdeResources = true
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            property 'forge.enabledGameTestNamespaces', 'tac_rogue'
+            mods {
+                tac_rogue {
+                    source sourceSets.main
+                }
+            }
+        }
+        server {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            property 'forge.enabledGameTestNamespaces', 'tac_rogue'
+            mods {
+                tac_rogue {
+                    source sourceSets.main
+                }
+            }
+        }
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+mixin {
+    add sourceSets.main, "tac_rogue.refmap.json"
+    config "tac_rogue.mixins.json"
+    
+    disableAnnotationProcessorCheck()
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'MinecraftForge'
+        url = 'https://maven.minecraftforge.net/'
+    }
+    maven {
+        name = 'ParchmentMC'
+        url = 'https://maven.parchmentmc.org'
+    }
+    maven {
+        name = 'Modrinth'
+        url = 'https://api.modrinth.com/maven'
+        content {
+            includeGroup "maven.modrinth"
+        }
+    }
+}
+
+dependencies {
+    minecraft 'net.minecraftforge:forge:1.20.1-47.4.18'
+
+    implementation fg.deobf("maven.modrinth:timeless-and-classics-zero:1.1.7-hotfix2")
+    implementation fg.deobf("maven.modrinth:leawind-third-person:2.2.0")
+    runtimeOnly fg.deobf("maven.modrinth:architectury-api:9.2.14+forge")
+
+    compileOnly(annotationProcessor("io.github.llamalad7:mixinextras-common:0.5.0-beta.2"))
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+    implementation 'org.spongepowered:mixin:0.8.5'
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    var replaceProperties = [
+            minecraft_version: '1.20.1',
+            minecraft_version_range: '[1.20.1, 1.21)',
+            forge_version: '47',
+            forge_version_range: '[47.4.18,)',
+            loader_version_range: '[47,)',
+            mod_id: 'tac_rogue',
+            mod_name: 'TACZ Roguelike',
+            mod_license: 'MIT',
+            mod_version: project.mod_version,
+            mod_authors: 'levanilla',
+            mod_description: 'Infinite scaling roguelike shooter for TacZ.'
+    ]
+
+    inputs.properties replaceProperties
+
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties + [project: project]
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    manifest {
+        attributes([
+                "Specification-Title"     : "tac_rogue",
+                "Specification-Vendor"    : "levanilla",
+                "Specification-Version"   : "1",
+                "Implementation-Title"    : project.name,
+                "Implementation-Version"  : project.jar.archiveVersion,
+                "Implementation-Vendor"   : "levanilla",
+                "Implementation-Timestamp": new Date().format("yyyy-MM-dd'T'HH:mm:ssZ"),
+                "MixinConfigs": "tac_rogue.mixins.json"
+        ])
+    }
+}

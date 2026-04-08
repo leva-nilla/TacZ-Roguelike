@@ -1,0 +1,47 @@
+﻿modLoader = "javafml"
+loaderVersion = "[47,)"
+license = "GNU GPL 3.0"
+#issueTrackerURL="https://change.me.to.your.issue.tracker.example.invalid/" #optional
+[[mods]] #mandatory
+# The modid of the mod
+modId = "lrtactical" #mandatory
+# The version number of the mod
+version = "0.3.0" #mandatory
+# A display name for the mod
+displayName = "LesRaisins Tactical Equipments" #mandatory
+# A URL to query for updates for this mod. See the JSON update specification https://docs.minecraftforge.net/en/latest/misc/updatechecker/
+#updateJSONURL="https://change.me.example.invalid/updates.json" #optional
+# A URL for the "homepage" for this mod, displayed in the mod UI
+#displayURL="https://change.me.to.your.mods.homepage.example.invalid/" #optional
+# A file name (in the root of the mod JAR) containing a logo for display
+#logoFile="lrtactical.png" #optional
+# A text field displayed in the mod UI
+#credits="Thanks for this example mod goes to Java" #optional
+# A text field displayed in the mod UI
+authors = "LesRaisins Studio" #optional
+description = ''''''
+# A dependency - use the . to indicate dependency for a specific modid. Dependencies are optional.
+[[dependencies."lrtactical"]] #optional
+# the modid of the dependency
+modId = "forge" #mandatory
+# Does this dependency have to exist - if not, ordering below must be specified
+mandatory = true #mandatory
+# The version range of the dependency
+versionRange = "[47,)" #mandatory
+# An ordering relationship for the dependency - BEFORE or AFTER required if the dependency is not mandatory
+# BEFORE - This mod is loaded BEFORE the dependency
+# AFTER - This mod is loaded AFTER the dependency
+ordering = "NONE"
+side = "BOTH"
+[[dependencies."lrtactical"]]
+modId = "minecraft"
+mandatory = true
+versionRange = "[1.20.1,1.21)"
+ordering = "NONE"
+side = "BOTH"
+[[dependencies."lrtactical"]]
+modId = "tacz"
+mandatory = true
+versionRange = "[1.1.5,)"
+ordering = "AFTER"
+side = "BOTH"

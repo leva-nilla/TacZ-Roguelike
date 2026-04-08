@@ -1,0 +1,15 @@
+# Builds & Releases
+*.mrpack
+*.zip
+releases/
+
+# IDE & Temporary
+.vscode/
+*.class
+.idea/
+*.iml
+
+# Gradle (tac_rogue_mod)
+tac_rogue_mod/.gradle/
+tac_rogue_mod/build/
+tac_rogue_mod/bin/

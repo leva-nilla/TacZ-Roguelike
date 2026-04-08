@@ -1,0 +1,212 @@
+﻿To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.8/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+
+> Configure project :
+MixinGradle is skipping eclipse integration, extension not found
+Neither the 'eclipse' nor the 'idea' plugins were found, but IDE resource copy has been enabled.
+
+> Task :downloadMcpConfig
+> Task :extractSrg UP-TO-DATE
+> Task :createMcpToSrg UP-TO-DATE
+
+> Task :compileJava
+./gradlew : ノート:SpongePowered MIXIN Annotation Processor Vers
+ion=0.8.5 (MixinGradle Version=0.7.38)
+発生場所 行:1 文字:1
++ ./gradlew assemble --no-daemon --console=plain 2>&1 | Out-F
+ile -FileP ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ノート:SpongePower.
+..V    ersion=0.7.38):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ノート:Supported obfuscation types: ObfuscationServiceMCP suppor
+ts [notch] ObfuscationServiceFG3 supports [searge]
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\mixin\MixinRenderCrosshai
+rEvent.java:12: 警告:Mixin target com.tacz.guns.client.event.Re
+nderCrosshairEvent is public and should be specified in value
+@Mixin(targets = "com.tacz.guns.client.event.RenderCrosshairE
+vent", remap = false)
+^
+ノート:Loading searge mappings from C:\Users\user\Documents\TacZ
+_Roguelike_Workspace\tac_rogue_mod\build\createMcpToSrg\outpu
+t.tsrg
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\mixin\MixinTickAnimationE
+vent.java:8: 警告:Mixin target com.tacz.guns.client.event.TickA
+nimationEvent is public and should be specified in value
+@org.spongepowered.asm.mixin.Mixin(targets = "com.tacz.guns.c
+lient.event.TickAnimationEvent", remap = false)
+^
+ノート:Writing refmap to C:\Users\user\Documents\TacZ_Roguelike_
+Workspace\tac_rogue_mod\build\tmp\compileJava\compileJava-ref
+map.json
+ノート:Writing refmap to C:\Users\user\Documents\TacZ_Roguelike_
+Workspace\tac_rogue_mod\build\tmp\compileJava\compileJava-ref
+map.json
+ノート:Writing searge composite mappings to C:\Users\user\Docume
+nts\TacZ_Roguelike_Workspace\tac_rogue_mod\build\tmp\compileJ
+ava\compileJava-mappings.tsrg
+ノート:Writing refmap to C:\Users\user\Documents\TacZ_Roguelike_
+Workspace\tac_rogue_mod\build\tmp\compileJava\compileJava-ref
+map.json
+ノート:Writing refmap to C:\Users\user\Documents\TacZ_Roguelike_
+Workspace\tac_rogue_mod\build\tmp\compileJava\compileJava-ref
+map.json
+ノート:Writing searge composite mappings to C:\Users\user\Docume
+nts\TacZ_Roguelike_Workspace\tac_rogue_mod\build\tmp\compileJ
+ava\compileJava-mappings.tsrg
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\client\ClientEventHandler
+.java:155: 警告:[removal] ResourceLocationのResourceLocation(Str
+ing,String)は推奨されておらず、削除用にマークされています
+                            new net.minecraft.resources.Resou
+rceLocation("tacz", "textures/crosshair/normal/dot_1.png");
+                            ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\core\CommonEventHandler.j
+ava:20: 警告:[removal] ResourceLocationのResourceLocation(String
+,String)は推奨されておらず、削除用にマークされています
+        Registries.DIMENSION, new ResourceLocation("tac_rogue
+", "lobby_dimension"));
+                              ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\core\CommonEventHandler.j
+ava:23: 警告:[removal] ResourceLocationのResourceLocation(String
+,String)は推奨されておらず、削除用にマークされています
+        Registries.DIMENSION, new ResourceLocation("tac_rogue
+", "rogue_dimension"));
+                              ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\core\event\SpawnAndWorldH
+andler.java:82: 警告:[removal] ProjectileImpactEventのsetCancele
+d(boolean)は推奨されておらず、削除用にマークされています
+                    event.setCanceled(true);
+                         ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\core\RunManager.java:97: 
+警告:[dep-ann] 推奨されない項目は@Deprecatedで注釈が付けられていません
+    public static void setRunActive(boolean v) {
+                       ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\core\RunManager.java:103:
+ 警告:[dep-ann] 推奨されない項目は@Deprecatedで注釈が付けられていません
+    public static void setFloorCleared(boolean v) {
+                       ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\core\RunManager.java:108:
+ 警告:[dep-ann] 推奨されない項目は@Deprecatedで注釈が付けられていません
+    public static long getRunSeed() {
+                       ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\core\RunManager.java:141:
+ 警告:[dep-ann] 推奨されない項目は@Deprecatedで注釈が付けられていません
+    public static void startRun() {
+                       ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\core\RunManager.java:264:
+ 警告:[dep-ann] 推奨されない項目は@Deprecatedで注釈が付けられていません
+    public static void sync() {
+                       ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\core\PriceManager.java:65
+: 警告:[removal] ResourceLocationのResourceLocation(String)は推奨され
+ておらず、削除用にマークされています
+                Object gunIndex = index.get(new ResourceLocat
+ion(gunId.contains(":") ? gunId : "tacz:" + gunId));
+                                            ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\core\service\GearService.
+java:92: 警告:[removal] ResourceLocationのResourceLocation(Strin
+g,String)は推奨されておらず、削除用にマークされています
+                new ResourceLocation("tacz", "modern_kinetic_
+gun"));
+                ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\core\service\GearService.
+java:135: 警告:[removal] ResourceLocationのResourceLocation(Stri
+ng,String)は推奨されておらず、削除用にマークされています
+                new ResourceLocation("tacz", "ammo"));
+                ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\core\service\GearService.
+java:163: 警告:[removal] ResourceLocationのResourceLocation(Stri
+ng,String)は推奨されておらず、削除用にマークされています
+                new ResourceLocation("lrtactical", "melee"));
+                ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\core\service\ShopService.
+java:178: 警告:[removal] ResourceLocationのResourceLocation(Stri
+ng,String)は推奨されておらず、削除用にマークされています
+            new ResourceLocation("lrtactical", "melee"));
+            ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\core\service\ShopService.
+java:188: 警告:[removal] ResourceLocationのResourceLocation(Stri
+ng,String)は推奨されておらず、削除用にマークされています
+            new ResourceLocation("tacz", "modern_kinetic_gun"
+));
+            ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\core\service\ShopService.
+java:201: 警告:[removal] ResourceLocationのResourceLocation(Stri
+ng,String)は推奨されておらず、削除用にマークされています
+            new ResourceLocation("tacz", "attachment"));
+            ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\core\service\ShopService.
+java:214: 警告:[removal] ResourceLocationのResourceLocation(Stri
+ng,String)は推奨されておらず、削除用にマークされています
+            new ResourceLocation("tacz", "ammo"));
+            ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\core\service\ShopService.
+java:228: 警告:[removal] ResourceLocationのResourceLocation(Stri
+ng,String)は推奨されておらず、削除用にマークされています
+            new ResourceLocation("tacz", "modern_kinetic_gun"
+));
+            ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\mixin\MixinTitleScreen.ja
+va:23: 警告:[removal] ResourceLocationのResourceLocation(String,
+String)は推奨されておらず、削除用にマークされています
+        new ResourceLocation("tac_rogue", "textures/gui/title
+_logo.png");
+        ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\networking\TacRogueNetwor
+king.java:18: 警告:[removal] ResourceLocationのResourceLocation(
+String,String)は推奨されておらず、削除用にマークされています
+            new ResourceLocation("tac_rogue", "main"),
+            ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mo
+d\src\main\java\com\levanilla\rogue\TacRogue.java:15: 警告:[rem
+oval] FMLJavaModLoadingContextのget()は推奨されておらず、削除用にマークされています
+        IEventBus modEventBus = FMLJavaModLoadingContext.get(
+).getModEventBus();
+                                                        ^
+ノート:一部の入力ファイルは推奨されないAPIを使用またはオーバーライドしています。
+ノート:詳細は、-Xlint:deprecationオプションを指定して再コンパイルしてください。
+警告23個
+
+> Task :addMixinsToJar
+> Task :processResources UP-TO-DATE
+> Task :classes
+> Task :jar
+> Task :configureReobfTaskForReobfJar
+> Task :reobfJar
+> Task :configureReobfTaskForReobfJarJar
+> Task :addMixinsToJarJar
+> Task :jarJar SKIPPED
+> Task :reobfJarJar SKIPPED
+> Task :assemble
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 9.0.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/8.8/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 17s
+11 actionable tasks: 8 executed, 3 up-to-date

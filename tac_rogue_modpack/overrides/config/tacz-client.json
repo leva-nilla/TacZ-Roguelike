@@ -1,0 +1,9 @@
+{
+  "general": {
+    "showCrosshairInThirdPerson": true
+  },
+  "render": {
+    "renderCrosshairInThirdPerson": true,
+    "thirdPersonCrosshair": true
+  }
+}

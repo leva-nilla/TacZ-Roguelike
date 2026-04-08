@@ -1,0 +1,10 @@
+﻿Compiled from "GunReloadData.java"
+public class com.tacz.guns.resource.pojo.data.gun.GunReloadData {
+  private com.tacz.guns.resource.pojo.data.gun.FeedType type;
+  private com.tacz.guns.resource.pojo.data.gun.GunReloadTime feed;
+  private com.tacz.guns.resource.pojo.data.gun.GunReloadTime cooldown;
+  public com.tacz.guns.resource.pojo.data.gun.GunReloadData();
+  public com.tacz.guns.resource.pojo.data.gun.FeedType getType();
+  public com.tacz.guns.resource.pojo.data.gun.GunReloadTime getFeed();
+  public com.tacz.guns.resource.pojo.data.gun.GunReloadTime getCooldown();
+}

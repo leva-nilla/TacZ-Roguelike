@@ -1,0 +1,12 @@
+﻿{
+  "type": "tac_rogue:lobby_dimension_type",
+  "generator": {
+    "type": "minecraft:flat",
+    "settings": {
+      "layers": [
+        { "block": "minecraft:air", "height": 1 }
+      ],
+      "biome": "minecraft:the_void"
+    }
+  }
+}

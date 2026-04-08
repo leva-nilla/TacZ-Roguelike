@@ -1,0 +1,8 @@
+#shared (Shared Config)
+[extension]
+    #Enable zoom for OptiFine-compatible function (default: true)
+    zoom = false
+    #Enable Ding (Play the ding sound on client setup) (default: true)
+    ding = false
+    #Enable Smooth Scrolling (default: true)
+    smoothScrolling = true

@@ -1,0 +1,212 @@
+﻿To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.8/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+
+> Configure project :
+The org.gradle.util.VersionNumber type has been deprecated. This is scheduled to be removed in Gradle 9.0. Consult the upgrading guide for further information: https://docs.gradle.org/8.8/userguide/upgrading_version_8.html#org_gradle_util_reports_deprecations
+The org.gradle.util.VersionNumber type has been deprecated. This is scheduled to be removed in Gradle 9.0. Consult the upgrading guide for further information: https://docs.gradle.org/8.8/userguide/upgrading_version_7.html#org_gradle_util_reports_deprecations
+MixinGradle is skipping eclipse integration, extension not found
+Neither the 'eclipse' nor the 'idea' plugins were found, but IDE resource copy has been enabled.
+
+> Task :clean
+> Task :downloadMcpConfig
+> Task :extractSrg
+> Task :createMcpToSrg
+
+> Task :compileJava
+The ResolvedConfiguration.getFirstLevelModuleDependencies(Spec) method has been deprecated. This is scheduled to be removed in Gradle 9.0. Use getFirstLevelModuleDependencies() instead. Consult the upgrading guide for further information: https://docs.gradle.org/8.8/userguide/upgrading_version_8.html#deprecate_filtered_configuration_file_and_filecollection_methods
+./gradlew : �m�[�g:SpongePowered MIXIN Annotation Processor Versi
+on=0.8.5 (MixinGradle Version=0.7.38)
+発生場所 行:1 文字:59
++ ... ing]::UTF8; ./gradlew clean assemble --no-daemon --console=
+plain --wa ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (�m�[�g:SpongePo...V 
+   ersion=0.7.38):String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+�m�[�g:Supported obfuscation types: ObfuscationServiceMCP support
+s [notch] ObfuscationServiceFG3 supports [searge]
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\mixin\MixinRenderCrosshairEvent.j
+ava:12: �x��:Mixin target com.tacz.guns.client.event.RenderCrossh
+airEvent is public and should be specified in value
+@Mixin(targets = "com.tacz.guns.client.event.RenderCrosshairEvent
+", remap = false)
+^
+�m�[�g:Loading searge mappings from C:\Users\user\Documents\TacZ_
+Roguelike_Workspace\tac_rogue_mod\build\createMcpToSrg\output.tsr
+g
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\mixin\MixinTickAnimationEvent.jav
+a:8: �x��:Mixin target com.tacz.guns.client.event.TickAnimationEv
+ent is public and should be specified in value
+@org.spongepowered.asm.mixin.Mixin(targets = "com.tacz.guns.clien
+t.event.TickAnimationEvent", remap = false)
+^
+�m�[�g:Writing refmap to C:\Users\user\Documents\TacZ_Roguelike_W
+orkspace\tac_rogue_mod\build\tmp\compileJava\compileJava-refmap.j
+son
+�m�[�g:Writing refmap to C:\Users\user\Documents\TacZ_Roguelike_W
+orkspace\tac_rogue_mod\build\tmp\compileJava\compileJava-refmap.j
+son
+�m�[�g:Writing searge composite mappings to C:\Users\user\Documen
+ts\TacZ_Roguelike_Workspace\tac_rogue_mod\build\tmp\compileJava\c
+ompileJava-mappings.tsrg
+�m�[�g:Writing refmap to C:\Users\user\Documents\TacZ_Roguelike_W
+orkspace\tac_rogue_mod\build\tmp\compileJava\compileJava-refmap.j
+son
+�m�[�g:Writing refmap to C:\Users\user\Documents\TacZ_Roguelike_W
+orkspace\tac_rogue_mod\build\tmp\compileJava\compileJava-refmap.j
+son
+�m�[�g:Writing searge composite mappings to C:\Users\user\Documen
+ts\TacZ_Roguelike_Workspace\tac_rogue_mod\build\tmp\compileJava\c
+ompileJava-mappings.tsrg
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\client\ClientEventHandler.java:15
+5: �x��:[removal] ResourceLocation��ResourceLocation(String,Strin
+g)�͐�������Ă��炸�A�폜�p�Ƀ}�[�N����Ă��܂�
+                            new net.minecraft.resources.ResourceL
+ocation("tacz", "textures/crosshair/normal/dot_1.png");
+                            ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\core\CommonEventHandler.java:20: 
+�x��:[removal] ResourceLocation��ResourceLocation(String,String)�
+͐�������Ă��炸�A�폜�p�Ƀ}�[�N����Ă��܂�
+        Registries.DIMENSION, new ResourceLocation("tac_rogue", "
+lobby_dimension"));
+                              ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\core\CommonEventHandler.java:23: 
+�x��:[removal] ResourceLocation��ResourceLocation(String,String)�
+͐�������Ă��炸�A�폜�p�Ƀ}�[�N����Ă��܂�
+        Registries.DIMENSION, new ResourceLocation("tac_rogue", "
+rogue_dimension"));
+                              ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\core\event\SpawnAndWorldHandler.j
+ava:82: �x��:[removal] ProjectileImpactEvent��setCanceled(boolean
+)�͐�������Ă��炸�A�폜�p�Ƀ}�[�N����Ă��܂�
+                    event.setCanceled(true);
+                         ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\core\RunManager.java:97: �x��:[de
+p-ann] ��������Ȃ����ڂ�@Deprecated�Œ��߂��t�����Ă��܂���
+    public static void setRunActive(boolean v) {
+                       ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\core\RunManager.java:103: �x��:[d
+ep-ann] ��������Ȃ����ڂ�@Deprecated�Œ��߂��t�����Ă��܂���
+    public static void setFloorCleared(boolean v) {
+                       ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\core\RunManager.java:108: �x��:[d
+ep-ann] ��������Ȃ����ڂ�@Deprecated�Œ��߂��t�����Ă��܂���
+    public static long getRunSeed() {
+                       ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\core\RunManager.java:141: �x��:[d
+ep-ann] ��������Ȃ����ڂ�@Deprecated�Œ��߂��t�����Ă��܂���
+    public static void startRun() {
+                       ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\core\RunManager.java:264: �x��:[d
+ep-ann] ��������Ȃ����ڂ�@Deprecated�Œ��߂��t�����Ă��܂���
+    public static void sync() {
+                       ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\core\PriceManager.java:65: �x��:[
+removal] ResourceLocation��ResourceLocation(String)�͐�������Ă��炸�
+A�폜�p�Ƀ}�[�N����Ă��܂�
+                Object gunIndex = index.get(new ResourceLocation(
+gunId.contains(":") ? gunId : "tacz:" + gunId));
+                                            ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\core\service\GearService.java:92:
+ �x��:[removal] ResourceLocation��ResourceLocation(String,String)
+�͐�������Ă��炸�A�폜�p�Ƀ}�[�N����Ă��܂�
+                new ResourceLocation("tacz", "modern_kinetic_gun"
+));
+                ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\core\service\GearService.java:135
+: �x��:[removal] ResourceLocation��ResourceLocation(String,String
+)�͐�������Ă��炸�A�폜�p�Ƀ}�[�N����Ă��܂�
+                new ResourceLocation("tacz", "ammo"));
+                ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\core\service\GearService.java:163
+: �x��:[removal] ResourceLocation��ResourceLocation(String,String
+)�͐�������Ă��炸�A�폜�p�Ƀ}�[�N����Ă��܂�
+                new ResourceLocation("lrtactical", "melee"));
+                ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\core\service\ShopService.java:178
+: �x��:[removal] ResourceLocation��ResourceLocation(String,String
+)�͐�������Ă��炸�A�폜�p�Ƀ}�[�N����Ă��܂�
+            new ResourceLocation("lrtactical", "melee"));
+            ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\core\service\ShopService.java:188
+: �x��:[removal] ResourceLocation��ResourceLocation(String,String
+)�͐�������Ă��炸�A�폜�p�Ƀ}�[�N����Ă��܂�
+            new ResourceLocation("tacz", "modern_kinetic_gun"));
+            ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\core\service\ShopService.java:201
+: �x��:[removal] ResourceLocation��ResourceLocation(String,String
+)�͐�������Ă��炸�A�폜�p�Ƀ}�[�N����Ă��܂�
+            new ResourceLocation("tacz", "attachment"));
+            ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\core\service\ShopService.java:214
+: �x��:[removal] ResourceLocation��ResourceLocation(String,String
+)�͐�������Ă��炸�A�폜�p�Ƀ}�[�N����Ă��܂�
+            new ResourceLocation("tacz", "ammo"));
+            ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\core\service\ShopService.java:228
+: �x��:[removal] ResourceLocation��ResourceLocation(String,String
+)�͐�������Ă��炸�A�폜�p�Ƀ}�[�N����Ă��܂�
+            new ResourceLocation("tacz", "modern_kinetic_gun"));
+            ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\mixin\MixinTitleScreen.java:23: �
+x��:[removal] ResourceLocation��ResourceLocation(String,String)�͐
+�������Ă��炸�A�폜�p�Ƀ}�[�N����Ă��܂�
+        new ResourceLocation("tac_rogue", "textures/gui/title_log
+o.png");
+        ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\networking\TacRogueNetworking.jav
+a:18: �x��:[removal] ResourceLocation��ResourceLocation(String,St
+ring)�͐�������Ă��炸�A�폜�p�Ƀ}�[�N����Ă��܂�
+            new ResourceLocation("tac_rogue", "main"),
+            ^
+C:\Users\user\Documents\TacZ_Roguelike_Workspace\tac_rogue_mod\sr
+c\main\java\com\levanilla\rogue\TacRogue.java:15: �x��:[removal] 
+FMLJavaModLoadingContext��get()�͐�������Ă��炸�A�폜�p�Ƀ}�[�N����Ă��܂
+�
+        IEventBus modEventBus = FMLJavaModLoadingContext.get().ge
+tModEventBus();
+                                                        ^
+�m�[�g:�ꕔ�̓��̓t�@�C���͐�������Ȃ�API��g�p�܂��̓I�[�o�[���C�h���Ă��܂
+��B
+�m�[�g:�ڍׂ́A-Xlint:deprecation�I�v�V������w�肵�čăR���p�C�����Ă����
+����B
+�x��23��
+
+> Task :addMixinsToJar
+> Task :processResources
+> Task :classes
+> Task :jar
+> Task :configureReobfTaskForReobfJar
+> Task :reobfJar
+> Task :configureReobfTaskForReobfJarJar
+> Task :addMixinsToJarJar
+> Task :jarJar SKIPPED
+> Task :reobfJarJar SKIPPED
+> Task :assemble
+
+BUILD SUCCESSFUL in 22s
+12 actionable tasks: 12 executed

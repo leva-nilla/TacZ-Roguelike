@@ -1,0 +1,46 @@
+﻿modLoader = "javafml" #mandatory
+loaderVersion = "[47,)" #mandatory This is typically bumped every Minecraft version by Forge. See our download page for lists of versions.
+license = "GPLv3"
+
+[[mods]] #mandatory
+modId = "taczlabs" #mandatory
+version = "1.1.6" #mandatory
+displayName = "TaCZ:Labs" #mandatory
+side = "CLIENT"
+logoFile="icon.png" #optional
+authors = "Txt_Text" #optional
+description = '''Added few ideas for TaCZ! :)'''
+# A dependency - use the . to indicate dependency for a specific modid. Dependencies are optional.
+[[dependencies."taczlabs"]] #optional
+# the modid of the dependency
+modId = "forge" #mandatory
+# Does this dependency have to exist - if not, ordering below must be specified
+mandatory = true #mandatory
+# The version range of the dependency
+versionRange = "[47,)" #mandatory
+# An ordering relationship for the dependency - BEFORE or AFTER required if the dependency is not mandatory
+# BEFORE - This mod is loaded BEFORE the dependency
+# AFTER - This mod is loaded AFTER the dependency
+ordering = "NONE"
+side = "BOTH"
+[[dependencies."taczlabs"]]
+modId = "minecraft"
+mandatory = true
+# This version range declares a minimum of the current minecraft version up to but not including the next major version
+versionRange = "[1.20.1,1.21)"
+ordering = "NONE"
+side = "BOTH"
+# Dependencies
+[[dependencies."taczlabs"]]
+modId = "tacz"
+mandatory = true
+versionRange = "[1.0.0,)"
+ordering = "NONE"
+side = "BOTH"
+[[dependencies."taczlabs"]]
+modId = "cloth_config"
+mandatory = false
+versionRange = "[11.1.136,)"
+ordering = "NONE"
+side = "CLIENT"
+

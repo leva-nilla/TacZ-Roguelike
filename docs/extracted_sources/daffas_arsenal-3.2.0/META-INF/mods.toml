@@ -1,0 +1,43 @@
+﻿#mandatory means DO NOT delete, most changes should be made to the gradle.properties
+modLoader = "javafml" #mandatory
+loaderVersion = "[47,)" #mandatory
+# The license for your addon.
+# Review your options at https://choosealicense.com/. All rights reserved is the default copyright stance, and is thus the default here.
+license = "CC-BY-NC-4.0"
+logoFile = "icon.png"
+
+[[mods]] #mandatory
+modId = "daffas_arsenal" #mandatory
+version = "3.2.0" #mandatory
+displayName = "Daffa's Arsenal" #mandatory
+authors = "DaffaTheOne" #optional
+description = '''Gunpack made by DaffaTheOne''' #mandatory
+
+[[dependencies."daffas_arsenal"]] #mandatory
+modId = "forge" #mandatory
+mandatory = true #mandatory
+versionRange = "[47,)" #mandatory
+ordering = "NONE" #mandatory
+side = "BOTH" #mandatory
+
+[[dependencies."daffas_arsenal"]] #mandatory
+modId = "minecraft" #mandatory
+mandatory = true #mandatory
+versionRange = "[1.20.1,1.21)" #mandatory
+ordering = "NONE" #mandatory
+side = "BOTH" #mandatory
+
+[[dependencies."daffas_arsenal"]] #mandatory
+modId = "tacz" #mandatory | TACZ Depedency
+mandatory = true #mandatory
+versionRange = "[1.1.5,)" #mandatory, minimum compatible version, can be updated to a higher version but isn't strictly neccessary, just don't make it higher than the currently out version
+ordering = "NONE" #mandatory
+side = "BOTH" #mandatory
+
+#Uncomment all of these (except this line) if you are using Endless Ammo library
+#[[dependencies."daffas_arsenal"]] #mandatory
+#modId = "ea" #mandatory | TACZ Depedency
+#mandatory = true #mandatory
+#versionRange = "[0,)" #mandatory
+#ordering = "NONE" #mandatory
+#side = "BOTH" #mandatory

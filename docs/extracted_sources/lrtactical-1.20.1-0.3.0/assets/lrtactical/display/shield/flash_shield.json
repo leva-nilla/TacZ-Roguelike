@@ -1,0 +1,31 @@
+﻿{
+  "model": "lrtactical:shield/flash_shield_geo",
+  "animation": "lrtactical:shield/flash_shield",
+  "state_machine": "lrtactical:flash_shield_state_machine",
+  "texture": "lrtactical:shield/flash_shield_uv",
+  "slot_texture": "lrtactical:shield/slot/flash_shield",
+  "transforms": {
+    "thirdperson_righthand": {
+      "translation": [6.5, 3, 9.75]
+    },
+    "thirdperson_lefthand": {
+      "translation": [-6.5, 3, 9.75]
+    },
+    "ground": {
+      "translation": [2, 4.75, 3],
+      "scale": [0.25, 0.25, 0.25]
+    },
+    "gui": {
+      "rotation": [15, 180, 5],
+      "translation": [-2.25, 3.5, 0],
+      "scale": [0.4, 0.4, 0.4]
+    },
+    "head": {
+      "translation": [6, -3.75, 0]
+    },
+    "fixed": {
+      "translation": [2.75, 3.5, 5.25],
+      "scale": [0.5, 0.5, 0.5]
+    }
+  }
+}

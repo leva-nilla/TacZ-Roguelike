@@ -1,0 +1,17 @@
+﻿Compiled from "LivingEntityReload.java"
+public class com.tacz.guns.entity.shooter.LivingEntityReload {
+  private final net.minecraft.world.entity.LivingEntity shooter;
+  private final com.tacz.guns.entity.shooter.ShooterDataHolder data;
+  private final com.tacz.guns.entity.shooter.LivingEntityDrawGun draw;
+  private final com.tacz.guns.entity.shooter.LivingEntityShoot shoot;
+  public com.tacz.guns.entity.shooter.LivingEntityReload(net.minecraft.world.entity.LivingEntity, com.tacz.guns.entity.shooter.ShooterDataHolder, com.tacz.guns.entity.shooter.LivingEntityDrawGun, com.tacz.guns.entity.shooter.LivingEntityShoot);
+  public void reload();
+  public com.tacz.guns.api.entity.ReloadState tickReloadState();
+  public static boolean inventoryHasAmmo(net.minecraft.world.entity.LivingEntity, int, int, net.minecraft.world.item.ItemStack, com.tacz.guns.api.item.IGun);
+  public static int getAndExtractNeedAmmoCount(net.minecraft.world.entity.LivingEntity, net.minecraft.world.item.ItemStack, com.tacz.guns.api.item.IGun, int);
+  private static int getAndExtractDummyAmmoCount(int, int, net.minecraft.world.item.ItemStack, com.tacz.guns.api.item.IGun);
+  private static int getAndExtractInventoryAmmoCount(net.minecraftforge.items.IItemHandler, int, int, net.minecraft.world.item.ItemStack);
+  private static java.lang.Integer lambda$getAndExtractNeedAmmoCount$2(int, int, net.minecraft.world.item.ItemStack, net.minecraftforge.items.IItemHandler);
+  private static java.lang.Boolean lambda$inventoryHasAmmo$1(net.minecraft.world.item.ItemStack, net.minecraftforge.items.IItemHandler);
+  private void lambda$reload$0(com.tacz.guns.api.item.IGun, net.minecraft.world.item.ItemStack, com.tacz.guns.resource.index.CommonGunIndex);
+}

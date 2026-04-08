@@ -1,0 +1,27 @@
+﻿{
+  "type": "taczaddon:gun_smithing",
+  "template": {
+    "item": "minecraft:echo_shard"
+  },
+  "base": {
+    "item": "tacz:modern_kinetic_gun"
+  },
+  "addition": {
+    "item": "minecraft:nautilus_shell"
+  },
+  "list": [
+    "tacz:extended_mag_1",
+    "tacz:extended_mag_2",
+    "tacz:extended_mag_3",
+    "tacz:light_extended_mag_1",
+    "tacz:light_extended_mag_2",
+    "tacz:light_extended_mag_3",
+    "tacz:sniper_extended_mag_1",
+    "tacz:sniper_extended_mag_2",
+    "tacz:sniper_extended_mag_3",
+    "tacz:ammo_mod_fmj",
+    "tacz:ammo_mod_he",
+    "tacz:ammo_mod_hp",
+    "tacz:ammo_mod_i"
+  ]
+}
