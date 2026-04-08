@@ -6,6 +6,7 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
+import net.minecraft.world.item.ItemStack;
 
 @Mixin(Slot.class)
 public abstract class MixinSlot {
@@ -16,6 +17,20 @@ public abstract class MixinSlot {
             slot.getItem().hasTag() && slot.getItem().getOrCreateTag().getBoolean("rogue_item_locked")) {
             cir.setReturnValue(false); // ロックされたアイテムの取り出しを絶対に防ぐ
         }
+    }
+
+    @Inject(method = "getMaxStackSize()I", at = @At("HEAD"), cancellable = true)
+    private void onGetMaxStackSize(CallbackInfoReturnable<Integer> cir) {
+        // バニラのコンテナやスロットのデフォルトの最大スタック数(64)を突破する
+        cir.setReturnValue(999);
+    }
+
+    @Inject(method = "getMaxStackSize(Lnet/minecraft/world/item/ItemStack;)I", at = @At("HEAD"), cancellable = true)
+    private void onGetMaxStackSizeWithStack(ItemStack stack, CallbackInfoReturnable<Integer> cir) {
+        // アイテム自体が持つ最大スタック数（TacZ AmmoItem 等が拡張している数値）をそのまま通す
+        int stackLimit = stack.getMaxStackSize();
+        // 念のためバニラアイテム(64)とカスタムアイテム(数百)の両方に対応できるようMath.maxを使う
+        cir.setReturnValue(Math.max(999, stackLimit));
     }
 
     @Inject(method = "mayPlace", at = @At("HEAD"), cancellable = true)

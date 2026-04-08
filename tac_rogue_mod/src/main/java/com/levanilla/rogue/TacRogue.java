@@ -35,33 +35,7 @@ public class TacRogue {
 
     private void onCommonSetup(FMLCommonSetupEvent event) {
         event.enqueueWork(() -> {
-            // AmmoDatabase の設定に合わせて弾薬のインベントリスタックサイズを動的にオーバーライドする
-            for (Item item : ForgeRegistries.ITEMS) {
-                ResourceLocation id = ForgeRegistries.ITEMS.getKey(item);
-                if (id != null && "tacz".equals(id.getNamespace())) {
-                    int expectedSize = com.levanilla.rogue.core.registry.AmmoDatabase.getAmmoStackSize(id.toString());
-                    if (item.getMaxStackSize() != expectedSize) {
-                        try {
-                            Field targetField = null;
-                            for (Field f : Item.class.getDeclaredFields()) {
-                                if (f.getType() == int.class) {
-                                    f.setAccessible(true);
-                                    int val = f.getInt(item);
-                                    if (val == item.getMaxStackSize()) {
-                                        targetField = f;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (targetField != null) {
-                                targetField.setInt(item, expectedSize);
-                            }
-                        } catch (Exception e) {
-                            System.err.println("TacRogue: Failed to override stack size for " + id);
-                        }
-                    }
-                }
-            }
+            // Setup Tasks
         });
     }
 }

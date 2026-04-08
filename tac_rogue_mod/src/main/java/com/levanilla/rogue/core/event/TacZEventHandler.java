@@ -185,6 +185,8 @@ public class TacZEventHandler {
         net.minecraft.world.entity.Entity hurtEntity = event.getHurtEntity();
         if (hurtEntity instanceof net.minecraft.world.entity.boss.wither.WitherBoss wither) {
             if (wither.getHealth() <= wither.getMaxHealth() / 2.0F) {
+                // 無敵時間を無効化
+                wither.invulnerableTime = 0;
                 // 全バフ適用済みのダメージでgenericダメージとして貫通させる
                 wither.hurt(wither.damageSources().generic(), damage);
                 // 吸血処理等も発動させるならこの段階で行うべきだが、ここではシンプルにキャンセルする。
