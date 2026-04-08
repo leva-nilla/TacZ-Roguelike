@@ -1,7 +1,15 @@
-# Builds & Releases
+# Builds, Releases & Modpacks
 *.mrpack
 *.zip
+*.jar
 releases/
+tac_rogue_modpack/overrides/mods/
+
+# Third-party Assets & Libraries (Copyrighted Material)
+mods/
+docs/extracted_sources/
+libs/
+tacz_src/
 
 # IDE & Temporary
 .vscode/
@@ -13,3 +21,15 @@ releases/
 tac_rogue_mod/.gradle/
 tac_rogue_mod/build/
 tac_rogue_mod/bin/
+
+
+# Temporary Scripts & Logs
+tac_rogue_mod/*.txt
+tac_rogue_mod/*.log
+tac_rogue_mod/*.java
+tac_rogue_mod/_tacz_extracted/
+scripts/test.py
+scripts/get_*.py
+git_files_audit.txt
+scripts/*.py
+scripts/*.ps1

@@ -1,8 +1,0 @@
-﻿{
-  "whitelist": [
-    "^elitex:.*$"
-  ],
-  "blacklist": [
-    "tacz:test"
-  ]
-}

@@ -1,8 +1,0 @@
-﻿Compiled from "GunReloadTime.java"
-public class com.tacz.guns.resource.pojo.data.gun.GunReloadTime {
-  private float emptyTime;
-  private float tacticalTime;
-  public com.tacz.guns.resource.pojo.data.gun.GunReloadTime();
-  public float getEmptyTime();
-  public float getTacticalTime();
-}

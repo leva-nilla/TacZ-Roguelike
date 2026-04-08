@@ -1,8 +1,0 @@
-﻿{
-  "slot": "elitex:ammo/slot/dmr_rifles_ammo",
-  "shell": {
-    "model": "elitex:shell/dmr_rifles_shell",
-    "texture": "elitex:shell/dmr_rifles_shell"
-  },
-  "tracer_color": "#FF8888"
-}

@@ -1,7 +1,0 @@
-﻿{
-  "name": "lrl.gun.p320_doctor.name",
-  "display": "lrl:p320_doctor_display",
-  "data": "lrl:p320_doctor_data",
-  "tooltip": "lrl.gun.p320_doctor.desc",
-  "type": "pistol"
-}
