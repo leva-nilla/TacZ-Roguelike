@@ -1,9 +1,9 @@
 {
     "formatVersion": 1,
     "game": "minecraft",
-    "versionId": "0.9.0",
-    "name": "TacZ Roguelike Modpack v0.9.0",
-    "summary": "v0.9.0 - TacZ Roguelike Modpack",
+    "versionId": "0.1.0-beta",
+    "name": "TacZ Roguelike",
+    "summary": "Fast-paced tactical rougelike shooter built on TacZ.",
     "files": [
         {
             "path": "mods/ModernUI-Forge-1.20.1-3.12.0.1-universal.jar",

@@ -56,7 +56,7 @@ public class MixinTitleScreen {
 
         // ═══════════════ 左下情報テキスト（Forge表示の上） ═══════════════
         int infoY = h - 68;
-        graphics.drawString(font, "\u00A78\u00BB TACTICAL ZONE ROGUELIKE", 6, infoY, 0x55FFFFFF, false);
-        graphics.drawString(font, "\u00A78  BUILD v0.9.0 // STANDBY", 6, infoY + 10, 0x44FFFFFF, false);
+        graphics.drawString(font, "\u00A7c\u00A7lTACZ ROGUELIKE SYSTEM // INITIALIZED", 6, infoY, 0xFFFFFF, false);
+        graphics.drawString(font, "\u00A78BUILD v0.1.0-beta // STANDBY", 6, infoY + 10, 0x44FFFFFF, false);
     }
 }
