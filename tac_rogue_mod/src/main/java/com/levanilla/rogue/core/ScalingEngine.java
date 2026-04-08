@@ -101,10 +101,16 @@ public class ScalingEngine {
         setScaledAttribute(entity, Attributes.MAX_HEALTH, bossHpMult);
         // 攻撃力: 基礎値 × 3
         setScaledAttribute(entity, Attributes.ATTACK_DAMAGE, bossDmgMult);
-        // 速度: やや遅め (地上/空中)
+        // 速度: やや遅め (地上/空中) - ウィザー等の超速初期値対策として上限キャップを導入
         setScaledAttribute(entity, Attributes.MOVEMENT_SPEED, GameConstants.BOSS_SPEED_MULT);
+        if (entity.getAttribute(Attributes.MOVEMENT_SPEED) != null && entity.getAttribute(Attributes.MOVEMENT_SPEED).getBaseValue() > 0.18) {
+            entity.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(0.18);
+        }
         if (entity.getAttributes().hasAttribute(Attributes.FLYING_SPEED)) {
             setScaledAttribute(entity, Attributes.FLYING_SPEED, GameConstants.BOSS_SPEED_MULT);
+            if (entity.getAttribute(Attributes.FLYING_SPEED) != null && entity.getAttribute(Attributes.FLYING_SPEED).getBaseValue() > 0.18) {
+                entity.getAttribute(Attributes.FLYING_SPEED).setBaseValue(0.18);
+            }
         }
 
         // 体力リセット
