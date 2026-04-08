@@ -288,7 +288,7 @@ public final class GameConstants {
     /** ボス攻撃力 1フロアあたり増加 */
     public static final double BOSS_DMG_PER_FLOOR = 0.2;
     /** ボス速度倍率 */
-    public static final double BOSS_SPEED_MULT = 0.9;
+    public static final double BOSS_SPEED_MULT = 0.5;
     /** ボス防御力ベース */
     public static final double BOSS_ARMOR_BASE = 10.0;
     /** ボス防御力 1フロアあたり増加 */
