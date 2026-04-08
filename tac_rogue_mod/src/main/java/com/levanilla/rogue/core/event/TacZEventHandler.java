@@ -113,19 +113,6 @@ public class TacZEventHandler {
 
         float damage = event.getBaseAmount();
 
-        // === ウィザーの弾丸無効化バリア (Projectile Immunity) を貫通させる処理 ===
-        net.minecraft.world.entity.Entity hurtEntity = event.getHurtEntity();
-        if (hurtEntity instanceof net.minecraft.world.entity.boss.wither.WitherBoss wither) {
-            if (wither.getHealth() <= wither.getMaxHealth() / 2.0F) {
-                // ウィザーがバリア展開中の場合、TacZイベント自体をキャンセルし、バリアを貫通するgenericダメージを直接叩き込む
-                wither.hurt(wither.damageSources().generic(), damage);
-                // ヒット統計
-                shotsHit.compute(attacker.getUUID(), (k, v) -> (v == null ? 0 : v) + 1);
-                event.setCanceled(true);
-                return;
-            }
-        }
-
         // === ヒット統計 ===
         shotsHit.compute(attacker.getUUID(), (k, v) -> (v == null ? 0 : v) + 1);
 
@@ -153,9 +140,10 @@ public class TacZEventHandler {
 
         // === パーク: FORTUNE (クリティカルヒット) ===
         float critChance = sumPerkEffect(attacker, "perk:FORTUNE") / 100.0f;
+        float overCritBonus = Math.max(0, critChance - 1.0f);
         boolean perkCrit = critChance > 0 && attacker.getRandom().nextFloat() < critChance;
         if (perkCrit) {
-            damage *= GameConstants.CRITICAL_DAMAGE_MULT;
+            damage *= (GameConstants.CRITICAL_DAMAGE_MULT + overCritBonus);
         }
 
         // === パーク: GUN_PROFICIENCY (射撃熟練度) ===
@@ -191,6 +179,26 @@ public class TacZEventHandler {
             damage *= GameConstants.CRAWL_DAMAGE_MULT;
         } else if (isSneaking) {
             damage *= GameConstants.SNEAK_DAMAGE_MULT;
+        }
+
+        // === ウィザーの弾丸無効化バリア (Projectile Immunity) を貫通させる処理 ===
+        net.minecraft.world.entity.Entity hurtEntity = event.getHurtEntity();
+        if (hurtEntity instanceof net.minecraft.world.entity.boss.wither.WitherBoss wither) {
+            if (wither.getHealth() <= wither.getMaxHealth() / 2.0F) {
+                // 全バフ適用済みのダメージでgenericダメージとして貫通させる
+                wither.hurt(wither.damageSources().generic(), damage);
+                // 吸血処理等も発動させるならこの段階で行うべきだが、ここではシンプルにキャンセルする。
+                // (VAMPIRE等のイベントは通常通り通すなら、setCanceled(true)する代わりにVanillaのイベントキャンセルフラグを操作するか、
+                // ここで独自にVAMPIREを計算する。今回は処理の重複を避けるためにイベント自体をキャンセル)
+                
+                float vampBonus = sumPerkEffect(attacker, "perk:VAMPIRE") / 10f;
+                if (vampBonus > 0 && damage > 0 && attacker.getHealth() < attacker.getMaxHealth()) {
+                    attacker.heal(Math.min(vampBonus, damage));
+                }
+                
+                event.setCanceled(true);
+                return;
+            }
         }
 
         // ダメージを反映

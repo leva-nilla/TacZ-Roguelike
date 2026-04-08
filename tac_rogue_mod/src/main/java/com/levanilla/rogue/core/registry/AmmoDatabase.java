@@ -112,27 +112,27 @@ public final class AmmoDatabase {
 
     private static final Map<String, Integer> AMMO_STACK_MAP = new HashMap<>();
     static {
-        AMMO_STACK_MAP.put("tacz:9mm", 60);
-        AMMO_STACK_MAP.put("tacz:45acp", 50);
-        AMMO_STACK_MAP.put("tacz:50ae", 28);
-        AMMO_STACK_MAP.put("tacz:556x45", 60);
-        AMMO_STACK_MAP.put("tacz:762x39", 60);
-        AMMO_STACK_MAP.put("tacz:762x54", 30);
-        AMMO_STACK_MAP.put("tacz:545x39", 60);
-        AMMO_STACK_MAP.put("tacz:338", 20);
-        AMMO_STACK_MAP.put("tacz:12g", 12);
-        AMMO_STACK_MAP.put("tacz:50bmg", 20);
-        AMMO_STACK_MAP.put("tacz:46x30", 50);
-        AMMO_STACK_MAP.put("tacz:57x28", 50);
-        AMMO_STACK_MAP.put("tacz:308", 30);
-        AMMO_STACK_MAP.put("tacz:30_06", 20);
-        AMMO_STACK_MAP.put("tacz:357mag", 24);
-        AMMO_STACK_MAP.put("tacz:45_70", 12);
-        AMMO_STACK_MAP.put("tacz:58x42", 60);
-        AMMO_STACK_MAP.put("tacz:68x51fury", 40);
-        AMMO_STACK_MAP.put("tacz:762x25", 50);
-        AMMO_STACK_MAP.put("tacz:rpg_rocket", 4);
-        AMMO_STACK_MAP.put("tacz:40mm", 4);
+        AMMO_STACK_MAP.put("tacz:9mm", 120);
+        AMMO_STACK_MAP.put("tacz:45acp", 100);
+        AMMO_STACK_MAP.put("tacz:50ae", 56);
+        AMMO_STACK_MAP.put("tacz:556x45", 120);
+        AMMO_STACK_MAP.put("tacz:762x39", 120);
+        AMMO_STACK_MAP.put("tacz:762x54", 60);
+        AMMO_STACK_MAP.put("tacz:545x39", 120);
+        AMMO_STACK_MAP.put("tacz:338", 40);
+        AMMO_STACK_MAP.put("tacz:12g", 24);
+        AMMO_STACK_MAP.put("tacz:50bmg", 40);
+        AMMO_STACK_MAP.put("tacz:46x30", 100);
+        AMMO_STACK_MAP.put("tacz:57x28", 100);
+        AMMO_STACK_MAP.put("tacz:308", 60);
+        AMMO_STACK_MAP.put("tacz:30_06", 40);
+        AMMO_STACK_MAP.put("tacz:357mag", 48);
+        AMMO_STACK_MAP.put("tacz:45_70", 24);
+        AMMO_STACK_MAP.put("tacz:58x42", 120);
+        AMMO_STACK_MAP.put("tacz:68x51fury", 80);
+        AMMO_STACK_MAP.put("tacz:762x25", 100);
+        AMMO_STACK_MAP.put("tacz:rpg_rocket", 8);
+        AMMO_STACK_MAP.put("tacz:40mm", 8);
     }
 
     // ========== アクセサ ==========
@@ -149,6 +149,6 @@ public final class AmmoDatabase {
 
     /** 弾薬IDに対するスタックサイズを返す */
     public static int getAmmoStackSize(String ammoId) {
-        return AMMO_STACK_MAP.getOrDefault(ammoId, 32);
+        return AMMO_STACK_MAP.getOrDefault(ammoId, 64);
     }
 }

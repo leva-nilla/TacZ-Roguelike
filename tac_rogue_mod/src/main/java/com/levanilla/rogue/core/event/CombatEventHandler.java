@@ -159,8 +159,9 @@ public class CombatEventHandler {
                 damage *= (1.0f + damageBonus);
 
                 float critChance = sumPerkEffect(attacker, "perk:FORTUNE") / 100.0f;
+                float overCritBonus = Math.max(0, critChance - 1.0f);
                 boolean perkCrit = critChance > 0 && attacker.getRandom().nextFloat() < critChance;
-                if (perkCrit) damage *= GameConstants.CRITICAL_DAMAGE_MULT;
+                if (perkCrit) damage *= (GameConstants.CRITICAL_DAMAGE_MULT + overCritBonus);
 
                 // パーク: EXPLOSIVE (爆発ダメージ強化)
                 float explosiveBonus = sumPerkEffect(attacker, "perk:EXPLOSIVE") / 100.0f;
@@ -326,7 +327,7 @@ public class CombatEventHandler {
 
                 // ドロップ判定（銃弾キル・非銃弾キル共通 — TacZ イベントにドロップ機能がないため）
                 float dropChance = GameConstants.DROP_BASE_CHANCE * DifficultyManager.getDropMultiplier();
-                dropChance += sumPerkEffect(killer, "perk:SCAVENGER") / 100.0f;
+                dropChance *= (1.0f + sumPerkEffect(killer, "perk:SCAVENGER") / 100.0f);
 
                 if (level.random.nextFloat() < dropChance) {
                     net.minecraft.world.item.ItemStack dropItem = selectRoguelikeDrop(level.random, RunManager.getData(killer).getCurrentFloor());

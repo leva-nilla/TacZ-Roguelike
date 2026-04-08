@@ -15,7 +15,7 @@ public class PerkDefinition {
         STAMINA("Stamina", "perk.tac_rogue.cat.stamina", 0xFF00DDFF),
         DAMAGE("Damage", "perk.tac_rogue.cat.damage", 0xFFFF4444),
         GUN_PROFICIENCY("Gun Proficiency", "perk.tac_rogue.cat.gun_proficiency", 0xFFFFAA00),
-        RELOAD_SPEED("Reload Speed", "perk.tac_rogue.cat.reload_speed", 0xFFFFCC00),
+        RELOAD_SPEED("Autoloader", "perk.tac_rogue.cat.reload_speed", 0xFFFFCC00),
         AMMO_EFFICIENCY("Ammo Saver", "perk.tac_rogue.cat.ammo_efficiency", 0xFFDDDD00),
         SCAVENGER("Scavenger", "perk.tac_rogue.cat.scavenger", 0xFF88FF88),
         GOLD_RUSH("Gold Rush", "perk.tac_rogue.cat.gold_rush", 0xFFFFD700),

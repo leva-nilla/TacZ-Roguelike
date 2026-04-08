@@ -82,7 +82,7 @@
   "perk.tac_rogue.cat.stealth_extend": "Stealth \u2014 Enemy detection range reduced by %s%%.",
   "perk.tac_rogue.cat.quick_fix": "Quick Fix \u2014 Reloading restores %s HP.",
   "perk.tac_rogue.cat.titanic": "Titanic \u2014 Massive stat boost (%s%%) but cannot sprint.",
-  "perk.tac_rogue.cat.radiant": "Radiance \u2014 Grants permanent Night Vision.",
+  "perk.tac_rogue.mod.radiant": "Radiance \u2014 Grants permanent Night Vision.",
   "perk.tac_rogue.cat.sharpshooter": "Sharpshooter \u2014 +%s%% damage to distant enemies (10m+).",
   "perk.tac_rogue.cat.executioner": "Executioner \u2014 +%s%% damage against enemies below 30%% HP.",
   "perk.tac_rogue.cat.head_hunter": "Head Hunter \u2014 Headshot damage multiplier +%s%%.",
@@ -108,10 +108,10 @@
   "message.tac_rogue.perk_lost": "\u00A7c[DEATH PENALTY] Lost %s perk(s).",
   "message.tac_rogue.items_lost": "\u00A74[DEATH PENALTY] All carried items have been lost.",
 
-  "message.tac_rogue.quest_complete": "\u00A7a[QUEST COMPLETE] %s — Reward: %sG",
+  "message.tac_rogue.quest_complete": "\u00A7a[QUEST COMPLETE] %s  EReward: %sG",
   "message.tac_rogue.chapter_unlock": "\u00A76[CHAPTER %s] New chapter unlocked!",
   "message.tac_rogue.ng_plus": "\u00A7d[NG+ %s] All chapters cleared! Entering New Game Plus!",
-  "message.tac_rogue.quest_terminal_header": "\u00A76══ Quest Terminal — Chapter %s/%s ══",
+  "message.tac_rogue.quest_terminal_header": "\u00A76══ Quest Terminal  EChapter %s/%s ══",
   "message.tac_rogue.intel_header": "\u00A7b[INTEL] Operation Briefing",
   "message.tac_rogue.medic_heal": "\u00A7d[MEDIC] HP and Stamina fully restored.",
 

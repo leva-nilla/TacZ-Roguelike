@@ -550,13 +550,13 @@ public class PlayerTickHandler {
                 int[] extMagAmounts = optIndex.get().getGunData().getExtendedMagAmmoAmount();
                 if (extMagAmounts != null && extMagAmounts.length > 0 && tag.contains("Attachments")) {
                     net.minecraft.nbt.CompoundTag attachments = tag.getCompound("Attachments");
-                    for (String key : attachments.getAllKeys()) {
-                        if (key.startsWith("extended_mag")) {
-                            int extLevel = getExtendedMagLevel(attachments.getString(key));
-                            int idx = Math.min(extLevel, extMagAmounts.length) - 1;
-                            if (idx >= 0) {
-                                return extMagAmounts[idx];
-                            }
+                    if (attachments.contains("extended_mag")) {
+                        net.minecraft.nbt.CompoundTag magTag = attachments.getCompound("extended_mag");
+                        String extMagId = magTag.getString("id");
+                        int extLevel = getExtendedMagLevel(extMagId);
+                        int idx = Math.min(extLevel, extMagAmounts.length) - 1;
+                        if (idx >= 0) {
+                            return extMagAmounts[idx];
                         }
                     }
                 }

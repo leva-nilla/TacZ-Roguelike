@@ -378,7 +378,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         graphics.drawString(this.font, "\u00A7cDMG+: \u00A7f" + String.format("%.0f%%", dmgBonus), lx, gy, 0xFFFF4444, false);
         graphics.drawString(this.font, "\u00A7eCRIT: \u00A7f" + String.format("%.0f%%", hsBonus), rx, gy, 0xFFFFFF00, false);
         gy += 11;
-        graphics.drawString(this.font, "\u00A7bRLD+: \u00A7f" + String.format("%.0f%%", reloadBonus), lx, gy, 0xFF00FFFF, false);
+        graphics.drawString(this.font, "\u00A7bAUTO+: \u00A7f" + String.format("%.0f%%", reloadBonus), lx, gy, 0xFF00FFFF, false);
         graphics.drawString(this.font, "\u00A75RES:  \u00A7f" + String.format("%.0f%%", resistBonus), rx, gy, 0xFFAA88FF, false);
         gy += 11;
         graphics.drawString(this.font, "\u00A74VAMP: \u00A7f" + String.format("%.1f", vampBonus / 10f), lx, gy, 0xFFCC0000, false);
@@ -533,7 +533,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
             case ARMOR -> "\u00A7c-" + effect + "% Armor";
             case VELOCITY -> "\u00A7c-" + effect + "% Movement Speed";
             case DAMAGE -> "\u00A7c-" + effect + "% Accuracy (recoil+)";
-            case RELOAD_SPEED -> "\u00A7c+" + effect + "% Reload Time";
+            case RELOAD_SPEED -> "\u00A7c+" + effect + "% Autoload Rate";
             case STAMINA -> "\u00A7c-" + effect + "% Stamina Regen";
             case RESISTANCE -> "\u00A7c-" + effect + "% Explosion Resist";
             default -> "\u00A7c\u2022 " + perk.category.displayName + " penalty";
