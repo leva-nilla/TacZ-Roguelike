@@ -101,8 +101,11 @@ public class ScalingEngine {
         setScaledAttribute(entity, Attributes.MAX_HEALTH, bossHpMult);
         // 攻撃力: 基礎値 × 3
         setScaledAttribute(entity, Attributes.ATTACK_DAMAGE, bossDmgMult);
-        // 速度: やや遅め
+        // 速度: やや遅め (地上/空中)
         setScaledAttribute(entity, Attributes.MOVEMENT_SPEED, GameConstants.BOSS_SPEED_MULT);
+        if (entity.getAttributes().hasAttribute(Attributes.FLYING_SPEED)) {
+            setScaledAttribute(entity, Attributes.FLYING_SPEED, GameConstants.BOSS_SPEED_MULT);
+        }
 
         // 体力リセット
         AttributeInstance maxHealth = entity.getAttribute(Attributes.MAX_HEALTH);
