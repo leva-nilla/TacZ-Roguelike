@@ -91,6 +91,9 @@ public class StaminaManager {
         float max = getMaxStamina(player);
         float clamped = Math.max(0.0f, Math.min(max, value));
         PLAYER_STAMINA.put(player.getUUID(), clamped);
+        if (clamped > 0.0f) {
+            resetAdsExhaustion(player);
+        }
         updateExhaustedState(player, clamped, max);
     }
 
@@ -155,6 +158,10 @@ public class StaminaManager {
         boolean exhausted = isExhausted(player);
         boolean aiming = isAimingGun(player);
 
+        if (current > 0.0f) {
+            resetAdsExhaustion(player);
+        }
+
         if (exhausted) {
             if (player.isSprinting()) player.setSprinting(false);
             if (aiming) {
@@ -169,7 +176,7 @@ public class StaminaManager {
                     int overTicks = ADS_EXHAUST_TICKS.merge(id, 1, Integer::sum);
                     if (overTicks >= GameConstants.STAMINA_ADS_EXHAUST_GRACE_TICKS) {
                         applyAdsExhaustPenalty(player);
-                        damageAdsExhaustedPlayer(player);
+                        damageAdsExhaustedPlayer(player, current);
                     }
                 }
             } else {
@@ -308,9 +315,9 @@ public class StaminaManager {
         clearAdsExhaustPenalty(player);
     }
 
-    private static void damageAdsExhaustedPlayer(Player player) {
+    private static void damageAdsExhaustedPlayer(Player player, float currentStamina) {
         if (player.level().isClientSide || player.isCreative() || player.isSpectator()) return;
-        if (getStamina(player) > 0.0f) {
+        if (currentStamina > 0.0f || getStamina(player) > 0.0f) {
             resetAdsExhaustion(player);
             return;
         }
