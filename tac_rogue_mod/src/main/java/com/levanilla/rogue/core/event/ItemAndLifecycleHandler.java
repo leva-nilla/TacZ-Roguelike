@@ -76,6 +76,11 @@ public class ItemAndLifecycleHandler {
         PlayerRunData data = RunManager.getData(player);
         if (com.levanilla.rogue.core.service.FloorInstanceManager.hasChestClaimed(chest, player.getUUID())
             || data.hasClaimedSupplyChest(claimKey)) {
+            // Same generated chest, same floor session: allow reopening while any previously rolled loot remains.
+            // A regenerated chest is empty at this point, so it stays blocked by the saved claim key.
+            if (hasAnyContent(chest)) {
+                return;
+            }
             player.displayClientMessage(net.minecraft.network.chat.Component.literal("§7This supply cache has already been claimed."), true);
             event.setCanceled(true);
             event.setCancellationResult(InteractionResult.SUCCESS);
@@ -86,6 +91,13 @@ public class ItemAndLifecycleHandler {
         com.levanilla.rogue.core.service.FloorInstanceManager.markChestClaimed(chest, player.getUUID());
         data.markSupplyChestClaimed(claimKey);
         QuestManager.advanceQuest(player, QuestManager.QuestType.CHEST_RECOVERY, 1);
+    }
+
+    private static boolean hasAnyContent(net.minecraft.world.level.block.entity.ChestBlockEntity chest) {
+        for (int i = 0; i < chest.getContainerSize(); i++) {
+            if (!chest.getItem(i).isEmpty()) return true;
+        }
+        return false;
     }
 
     private static void refillPersonalSupplyChest(net.minecraft.world.level.block.entity.ChestBlockEntity chest,
