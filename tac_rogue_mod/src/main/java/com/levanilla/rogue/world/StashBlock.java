@@ -37,24 +37,27 @@ public class StashBlock extends Block {
     @Override
     public InteractionResult use(BlockState state, Level level, BlockPos pos, Player player, InteractionHand hand, BlockHitResult hit) {
         if (!level.isClientSide() && player instanceof ServerPlayer serverPlayer) {
-            com.levanilla.rogue.core.StashSavedData data = com.levanilla.rogue.core.StashSavedData.get(serverPlayer.serverLevel());
-            com.levanilla.rogue.core.StashSavedData.PlayerStash stash = data.getStash(serverPlayer.getUUID());
-
-            // unlockedLines に応じたサイズで ChestMenu を開く
-            int rows = Math.max(2, Math.min(6, stash.unlockedLines));
-            serverPlayer.openMenu(new net.minecraft.world.SimpleMenuProvider(
-                (id, inv, p) -> {
-                    switch (rows) {
-                        case 2: return new net.minecraft.world.inventory.ChestMenu(net.minecraft.world.inventory.MenuType.GENERIC_9x2, id, inv, stash, 2);
-                        case 3: return new net.minecraft.world.inventory.ChestMenu(net.minecraft.world.inventory.MenuType.GENERIC_9x3, id, inv, stash, 3);
-                        case 4: return new net.minecraft.world.inventory.ChestMenu(net.minecraft.world.inventory.MenuType.GENERIC_9x4, id, inv, stash, 4);
-                        case 5: return new net.minecraft.world.inventory.ChestMenu(net.minecraft.world.inventory.MenuType.GENERIC_9x5, id, inv, stash, 5);
-                        default: return new net.minecraft.world.inventory.ChestMenu(net.minecraft.world.inventory.MenuType.GENERIC_9x6, id, inv, stash, 6);
-                    }
-                },
-                net.minecraft.network.chat.Component.literal("\u00A7b[STASH TERMINAL]")
-            ));
+            openFor(serverPlayer);
         }
         return InteractionResult.SUCCESS;
+    }
+
+    public static void openFor(ServerPlayer serverPlayer) {
+        com.levanilla.rogue.core.StashSavedData data = com.levanilla.rogue.core.StashSavedData.get(serverPlayer.serverLevel());
+        com.levanilla.rogue.core.StashSavedData.PlayerStash stash = data.getStash(serverPlayer.getUUID());
+
+        int rows = Math.max(2, Math.min(6, stash.unlockedLines));
+        serverPlayer.openMenu(new net.minecraft.world.SimpleMenuProvider(
+            (id, inv, p) -> {
+                switch (rows) {
+                    case 2: return new net.minecraft.world.inventory.ChestMenu(net.minecraft.world.inventory.MenuType.GENERIC_9x2, id, inv, stash, 2);
+                    case 3: return new net.minecraft.world.inventory.ChestMenu(net.minecraft.world.inventory.MenuType.GENERIC_9x3, id, inv, stash, 3);
+                    case 4: return new net.minecraft.world.inventory.ChestMenu(net.minecraft.world.inventory.MenuType.GENERIC_9x4, id, inv, stash, 4);
+                    case 5: return new net.minecraft.world.inventory.ChestMenu(net.minecraft.world.inventory.MenuType.GENERIC_9x5, id, inv, stash, 5);
+                    default: return new net.minecraft.world.inventory.ChestMenu(net.minecraft.world.inventory.MenuType.GENERIC_9x6, id, inv, stash, 6);
+                }
+            },
+            net.minecraft.network.chat.Component.literal("\u00A7b[STASH TERMINAL]")
+        ));
     }
 }

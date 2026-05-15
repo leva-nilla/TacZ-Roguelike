@@ -29,9 +29,22 @@ public class PriceManager {
         return Math.max(0, (int)(currentGold * DifficultyManager.getDeathPenaltyRate()));
     }
 
-    /** スタッシュ拡張の費用 */
-    public static int getStashUpgradeCost(int currentLines) {
-        return GameConstants.STASH_UPGRADE_COST_BASE * currentLines;
+    /**
+     * 各種アップグレードの価格算出ロジック (v0.4.0)
+     */
+    public static int getUpgradePrice(String upgradeId, int currentLevel) {
+        int base = 2000;
+        if (upgradeId.equals("rogue:stash_upgrade")) base = GameConstants.STASH_UPGRADE_COST_BASE;
+        else if (upgradeId.equals("rogue:inv_upgrade")) base = GameConstants.INV_UPGRADE_COST_BASE; 
+        else if (upgradeId.equals("rogue:ammo_capacity_upgrade")) base = GameConstants.AMMO_CAP_UPGRADE_COST_BASE;
+        else if (upgradeId.equals("rogue:melee_upgrade")) base = GameConstants.MELEE_UPGRADE_COST_BASE;
+        else if (upgradeId.equals("rogue:flashlight_upgrade")) base = GameConstants.FLASHLIGHT_UPGRADE_COST_BASE;
+        else if (upgradeId.equals("rogue:random_perk")) {
+            return GameConstants.RANDOM_PERK_BASE_PRICE + (currentLevel * GameConstants.RANDOM_PERK_PRICE_STEP);
+        }
+        
+        // 2000をベースに、購入ごとに価格が倍々(レベル比例)になるスケーリング
+        return base * (currentLevel + 1);
     }
 
     /**
@@ -152,17 +165,19 @@ public class PriceManager {
         if (tag.contains("AttachmentId")) {
             String attId = tag.getString("AttachmentId");
             int buyPrice = getAttachmentBuyPrice(attId);
-            return (int)(buyPrice * GameConstants.GUN_SELL_RATE);
+            return (int)(buyPrice * GameConstants.GUN_SELL_RATE) * stack.getCount();
         }
 
         // ローグアイテム（消耗品）
         if (tag.getBoolean("rogue_item")) {
-            if (stack.is(net.minecraft.world.item.Items.RAW_IRON)) return 30;  // SCRAP METAL
-            if (stack.is(net.minecraft.world.item.Items.RAW_GOLD)) return 150; // GOLD CACHE
-            if (stack.is(net.minecraft.world.item.Items.COOKED_BEEF)) return 20; // FIELD RATION
-            if (stack.is(net.minecraft.world.item.Items.HONEY_BOTTLE)) return 80; // STAMINA BOOST
-            if (stack.is(net.minecraft.world.item.Items.GOLDEN_APPLE)) return 120; // EMERGENCY RATION
-            return 10;
+            int unitPrice;
+            if (stack.is(net.minecraft.world.item.Items.RAW_IRON)) unitPrice = 30;  // SCRAP METAL
+            else if (stack.is(net.minecraft.world.item.Items.RAW_GOLD)) unitPrice = 150; // GOLD CACHE
+            else if (stack.is(net.minecraft.world.item.Items.COOKED_BEEF)) unitPrice = 20; // FIELD RATION
+            else if (stack.is(net.minecraft.world.item.Items.HONEY_BOTTLE)) unitPrice = 80; // STAMINA BOOST
+            else if (stack.is(net.minecraft.world.item.Items.GOLDEN_APPLE)) unitPrice = 120; // EMERGENCY RATION
+            else unitPrice = 10;
+            return unitPrice * stack.getCount();
         }
 
         return 0; // 売却不可

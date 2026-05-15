@@ -18,14 +18,15 @@ public class PerkGenerator {
      * @param floor 現在の階層
      * @param isBoss ボスフロアかどうか
      * @param existingPerks 既に取得済みのパークタグ（重複防止）
+     * @param overclockedCount 現在プレイヤーが所持しているOVERCLOCKEDパークの数
      */
-    public static List<PerkDefinition> generateChoices(int floor, boolean isBoss, Set<String> existingPerks) {
+    public static List<PerkDefinition> generateChoices(int floor, boolean isBoss, Set<String> existingPerks, int overclockedCount) {
         List<PerkDefinition> choices = new ArrayList<>();
         int attempts = 0;
 
         while (choices.size() < 3 && attempts < 100) {
             attempts++;
-            PerkDefinition perk = generateSingle(floor, isBoss);
+            PerkDefinition perk = generateSingle(floor, isBoss, overclockedCount);
             // 重複チェック（同一カテゴリ+修飾子の組み合わせは除外）
             String key = perk.category.name() + ":" + perk.modifier.name();
             boolean duplicate = existingPerks.contains(perk.toTag()) ||
@@ -66,9 +67,9 @@ public class PerkGenerator {
     }
 
     /** 単一のパークを生成 */
-    private static PerkDefinition generateSingle(int floor, boolean isBoss) {
+    private static PerkDefinition generateSingle(int floor, boolean isBoss, int overclockedCount) {
         PerkDefinition.Category[] cats = PerkDefinition.Category.values();
-        PerkDefinition.Category category = cats[RANDOM.nextInt(cats.length)];
+        PerkDefinition.Category category = chooseCategoryForFloor(floor, isBoss, cats);
 
         // 修飾子の決定
         PerkDefinition.Modifier modifier;
@@ -76,29 +77,54 @@ public class PerkGenerator {
             // ボスフロア: Reinforced or Blessed 確定
             modifier = RANDOM.nextBoolean() ? PerkDefinition.Modifier.REINFORCED : PerkDefinition.Modifier.BLESSED;
         } else {
-            // 通常フロア: 重み付きランダム
+            // 通常フロア: 序盤は危険修飾子を抑え、Act進行で高リスクを解禁
             float roll = RANDOM.nextFloat();
-            if (roll < 0.40f) modifier = PerkDefinition.Modifier.NONE;
-            else if (roll < 0.55f) modifier = PerkDefinition.Modifier.REINFORCED;
-            else if (roll < 0.65f) modifier = PerkDefinition.Modifier.CURSED;
-            else if (roll < 0.73f) modifier = PerkDefinition.Modifier.VOLATILE;
-            else if (roll < 0.78f) modifier = PerkDefinition.Modifier.BLESSED;
-            else if (roll < 0.85f) modifier = PerkDefinition.Modifier.FRACTURED;
-            else if (roll < 0.92f) modifier = PerkDefinition.Modifier.PRIMAL;
-            else modifier = PerkDefinition.Modifier.OVERCLOCKED;
+            if (floor < 8) {
+                if (roll < 0.50f) modifier = PerkDefinition.Modifier.NONE;
+                else if (roll < 0.68f) modifier = PerkDefinition.Modifier.REINFORCED;
+                else if (roll < 0.78f) modifier = PerkDefinition.Modifier.BLESSED;
+                else if (roll < 0.86f) modifier = PerkDefinition.Modifier.FRACTURED;
+                else if (roll < 0.93f) modifier = PerkDefinition.Modifier.PRIMAL;
+                else modifier = PerkDefinition.Modifier.CURSED;
+            } else if (floor < 16) {
+                if (roll < 0.42f) modifier = PerkDefinition.Modifier.NONE;
+                else if (roll < 0.58f) modifier = PerkDefinition.Modifier.REINFORCED;
+                else if (roll < 0.66f) modifier = PerkDefinition.Modifier.BLESSED;
+                else if (roll < 0.74f) modifier = PerkDefinition.Modifier.FRACTURED;
+                else if (roll < 0.82f) modifier = PerkDefinition.Modifier.PRIMAL;
+                else if (roll < 0.88f) modifier = PerkDefinition.Modifier.RADIANT;
+                else if (roll < 0.94f) modifier = PerkDefinition.Modifier.CURSED;
+                else modifier = (overclockedCount >= 2) ? PerkDefinition.Modifier.PRIMAL : PerkDefinition.Modifier.OVERCLOCKED;
+            } else {
+                if (roll < 0.35f) modifier = PerkDefinition.Modifier.NONE;
+                else if (roll < 0.50f) modifier = PerkDefinition.Modifier.REINFORCED;
+                else if (roll < 0.58f) modifier = PerkDefinition.Modifier.BLESSED;
+                else if (roll < 0.66f) modifier = PerkDefinition.Modifier.FRACTURED;
+                else if (roll < 0.74f) modifier = PerkDefinition.Modifier.PRIMAL;
+                else if (roll < 0.82f) modifier = PerkDefinition.Modifier.RADIANT;
+                else if (roll < 0.88f) modifier = PerkDefinition.Modifier.CURSED;
+                else if (roll < 0.93f) modifier = (overclockedCount >= 2) ? PerkDefinition.Modifier.PRIMAL : PerkDefinition.Modifier.OVERCLOCKED;
+                else if (roll < 0.97f) modifier = PerkDefinition.Modifier.CORRUPTED;
+                else modifier = PerkDefinition.Modifier.TITANIC;
+            }
         }
 
         // レベルの決定
-        int minLevel, maxLevel;
-        if (isBoss) {
-            minLevel = 3; maxLevel = 5;
-        } else {
-            minLevel = 1;
-            maxLevel = Math.min(3 + floor / 5, 10);
-        }
-        int level = minLevel + RANDOM.nextInt(maxLevel - minLevel + 1);
+        int maxLevelParam = Math.max(1, Math.min(10, 1 + (floor * 9 / 80)));
+        int maxLevel = isBoss ? Math.min(10, maxLevelParam + 2) : maxLevelParam;
+        int level = 1 + RANDOM.nextInt(maxLevel);
 
         return new PerkDefinition(category, modifier, level);
+    }
+
+    private static PerkDefinition.Category chooseCategoryForFloor(int floor, boolean isBoss, PerkDefinition.Category[] cats) {
+        if (isBoss || RANDOM.nextFloat() < 0.60f) {
+            List<PerkDefinition.Category> preferred = RogueActManager.getPreferredPerkCategories(floor);
+            if (!preferred.isEmpty()) {
+                return preferred.get(RANDOM.nextInt(preferred.size()));
+            }
+        }
+        return cats[RANDOM.nextInt(cats.length)];
     }
 
     /** 隠し部屋で発見するパーク（自動獲得、Lv.1-2） */

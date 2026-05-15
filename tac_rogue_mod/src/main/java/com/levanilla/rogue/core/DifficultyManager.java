@@ -2,6 +2,7 @@ package com.levanilla.rogue.core;
 
 /**
  * 難易度システム。スケーリング・ゴールド・ドロップ率に影響する。
+ * SavedData によりワールド単位で永続化される。
  */
 public class DifficultyManager {
 
@@ -13,7 +14,7 @@ public class DifficultyManager {
         HARD("HARD", "difficulty.tac_rogue.hard.desc",
              1.5f, 1.2f, 0.8f, 0.8f, 0.15f, 0xFFFF5555),
         EXTREME("EXTREME", "difficulty.tac_rogue.extreme.desc",
-                2.0f, 2.0f, 0.5f, 0.5f, 0.30f, 0xFFFF0000);
+                2.0f, 1.5f, 0.7f, 0.7f, 0.20f, 0xFFFF0000);  // v0.5: DMG 2.0→1.5, Gold 0.5→0.7, Drop 0.5→0.7, DeathPen 0.30→0.20
 
         public final String displayName;
         public final String description;
@@ -46,6 +47,42 @@ public class DifficultyManager {
         }
     }
 
+    /**
+     * 難易度を設定し、SavedData に永続化する。
+     * サーバー側からの難易度変更は必ずこのメソッドを使用すること。
+     */
+    public static void setDifficultyAndSave(net.minecraft.server.level.ServerLevel level, Difficulty d) {
+        currentDifficulty = d;
+        DifficultySavedData savedData = DifficultySavedData.get(level);
+        savedData.setDifficulty(d);
+    }
+
+    public static void setDifficultyAndSave(net.minecraft.server.level.ServerLevel level, int ordinal) {
+        if (ordinal >= 0 && ordinal < Difficulty.values().length) {
+            setDifficultyAndSave(level, Difficulty.values()[ordinal]);
+        }
+    }
+
+    /**
+     * SavedData からワールドに保存された難易度を復元する。
+     * サーバー起動時に1度だけ呼び出すこと。
+     *
+     * 新規ワールドの場合: SavedData はまだ存在しない（デフォルト NORMAL）。
+     * MixinCreateWorldScreen で既にクライアント側で難易度が選択されている場合、
+     * メモリ上の値を SavedData に保存する（シングルプレイでは JVM が共有されるため）。
+     */
+    public static void loadFromSavedData(net.minecraft.server.level.ServerLevel level) {
+        DifficultySavedData savedData = DifficultySavedData.get(level);
+        Difficulty saved = savedData.getDifficulty();
+        if (currentDifficulty != Difficulty.NORMAL && saved == Difficulty.NORMAL) {
+            // 新規ワールド: CreateWorldScreen で選択済みの難易度をSavedDataに永続化
+            savedData.setDifficulty(currentDifficulty);
+        } else {
+            // 既存ワールド: SavedData から復元
+            currentDifficulty = saved;
+        }
+    }
+
     /** 敵 HP のスケール値（階層 + 難易度） */
     public static float getHpScale(int floor) {
         return currentDifficulty.hpScale;
@@ -71,3 +108,4 @@ public class DifficultyManager {
         return currentDifficulty.deathPenalty;
     }
 }
+

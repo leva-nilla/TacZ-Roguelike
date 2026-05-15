@@ -1,0 +1,5 @@
+<ruleset>
+	<rule stacksize="1200">
+		<condition>stacksize gt 1</condition>
+	</rule>
+</ruleset>

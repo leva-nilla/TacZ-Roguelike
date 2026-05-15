@@ -11,7 +11,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
  * サーバーとクライアント間のすべてのパケット通信（メッセージング）をここで定義し、登録します
  */
 public class TacRogueNetworking {
-    private static final String PROTOCOL_VERSION = "2"; // 通信プロトコルのバージョン（互換性の確認用）
+    private static final String PROTOCOL_VERSION = "4"; // 通信プロトコルのバージョン（互換性の確認用）
     
     // チャンネルの定義
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
@@ -127,6 +127,45 @@ public class TacRogueNetworking {
                 .decoder(OpenPerkChoiceMessage::decode)
                 .consumerMainThread(OpenPerkChoiceMessage::handle)
                 .add();
+
+        // デバッグメニューを開く (S -> C)
+        CHANNEL.messageBuilder(OpenDebugMenuMessage.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(OpenDebugMenuMessage::encode)
+                .decoder(OpenDebugMenuMessage::decode)
+                .consumerMainThread(OpenDebugMenuMessage::handle)
+                .add();
+
+        // デバッグGUI操作 (C -> S)
+        CHANNEL.messageBuilder(DebugActionMessage.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(DebugActionMessage::encode)
+                .decoder(DebugActionMessage::decode)
+                .consumerMainThread(DebugActionMessage::handle)
+                .add();
+
+        // プレイヤー向けポップアップ通知 (S -> C)
+        CHANNEL.messageBuilder(PopupNotificationMessage.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(PopupNotificationMessage::encode)
+                .decoder(PopupNotificationMessage::decode)
+                .consumerMainThread(PopupNotificationMessage::handle)
+                .add();
+
+        CHANNEL.messageBuilder(OpenNpcMenuMessage.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(OpenNpcMenuMessage::encode)
+                .decoder(OpenNpcMenuMessage::decode)
+                .consumerMainThread(OpenNpcMenuMessage::handle)
+                .add();
+
+        CHANNEL.messageBuilder(NpcMenuActionMessage.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(NpcMenuActionMessage::encode)
+                .decoder(NpcMenuActionMessage::decode)
+                .consumerMainThread(NpcMenuActionMessage::handle)
+                .add();
+
+        CHANNEL.messageBuilder(NpcInteractMessage.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(NpcInteractMessage::encode)
+                .decoder(NpcInteractMessage::decode)
+                .consumerMainThread(NpcInteractMessage::handle)
+                .add();
     }
 
     /**
@@ -149,14 +188,22 @@ public class TacRogueNetworking {
     }
 
     public static void openPerkScreen(ServerPlayer player) {
-        CHANNEL.sendTo(new OpenPerkScreenMessage(), player.connection.connection, NetworkDirection.PLAY_TO_CLIENT);
+        OpenPerkChoiceMessage.sendPerkChoices(player, OpenPerkChoiceMessage.PerkScreenType.NORMAL);
     }
 
     public static void openFloorClear(ServerPlayer player) {
-        CHANNEL.sendTo(new OpenFloorClearScreenMessage(false), player.connection.connection, NetworkDirection.PLAY_TO_CLIENT);
+        OpenPerkChoiceMessage.sendPerkChoices(player, OpenPerkChoiceMessage.PerkScreenType.NORMAL);
     }
 
     public static void openShop(ServerPlayer player) {
         CHANNEL.sendTo(new OpenShopMessage(), player.connection.connection, NetworkDirection.PLAY_TO_CLIENT);
+    }
+
+    public static void openDebugMenu(ServerPlayer player) {
+        CHANNEL.sendTo(new OpenDebugMenuMessage(), player.connection.connection, NetworkDirection.PLAY_TO_CLIENT);
+    }
+
+    public static void openNpcMenu(ServerPlayer player, String role, boolean dungeon, boolean floorCleared) {
+        CHANNEL.sendTo(new OpenNpcMenuMessage(role, dungeon, floorCleared), player.connection.connection, NetworkDirection.PLAY_TO_CLIENT);
     }
 }

@@ -15,7 +15,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 
 public class StashSavedData extends SavedData {
-    private final Map<UUID, PlayerStash> playerStashes = new HashMap<>();
+    private final Map<UUID, PlayerStash> playerStashes = new java.util.concurrent.ConcurrentHashMap<>();
 
     public static class PlayerStash extends SimpleContainer {
         public int unlockedLines = 2; // 初期は 2 行 (18 スロット)
@@ -57,6 +57,7 @@ public class StashSavedData extends SavedData {
         @Override public void setChanged() { dirtyCallback.run(); }
         @Override public boolean stillValid(Player player) { return true; }
         @Override public void clearContent() { items.clear(); dirtyCallback.run(); }
+        @Override public int getMaxStackSize() { return 999; }
 
         public CompoundTag save() {
             CompoundTag tag = new CompoundTag();
@@ -74,8 +75,9 @@ public class StashSavedData extends SavedData {
 
         public static PlayerStash load(UUID owner, CompoundTag tag) {
             PlayerStash stash = new PlayerStash(owner);
-            stash.unlockedLines = tag.getInt("Lines");
-            if (stash.unlockedLines < 1) stash.unlockedLines = 1;
+            stash.unlockedLines = tag.contains("Lines") ? tag.getInt("Lines") : 2;
+            if (stash.unlockedLines < 2) stash.unlockedLines = 2;
+            if (stash.unlockedLines > 6) stash.unlockedLines = 6;
             ListTag list = tag.getList("Items", Tag.TAG_COMPOUND);
             for (int i = 0; i < list.size(); i++) {
                 CompoundTag itemTag = list.getCompound(i);

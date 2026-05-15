@@ -29,7 +29,7 @@ public class FlashlightManager {
     /** ライトの輝度レベル */
     private static final int CENTER_LIGHT = 15;
     private static final int EDGE_LIGHT = 10;
-    /** ビームの長さ（ブロック） */
+    /** ビームの基本長（ブロック） */
     private static final int BEAM_LENGTH = 7;
     /** ビームの拡散幅（端でのオフセット） */
     private static final double SPREAD = 2.5;
@@ -96,9 +96,13 @@ public class FlashlightManager {
 
         List<BlockPos> newPositions = new ArrayList<>();
 
-        // ビームのサンプルポイント: 距離 2, 4, 6, 7 で中心+左右
-        int[] distances = {2, 4, 6, BEAM_LENGTH};
-        double[] spreads = {0.0, 0.8, 1.6, SPREAD};
+        int upgradeLevel = player.getPersistentData().getInt("TacRogueFlashlightLevel");
+        int beamLength = BEAM_LENGTH + upgradeLevel * 2;
+        double maxSpread = SPREAD + upgradeLevel * 0.35D;
+
+        // ビームのサンプルポイント: 中距離から最大射程まで中心+左右
+        int[] distances = {2, Math.max(3, beamLength / 2), Math.max(5, beamLength - 2), beamLength};
+        double[] spreads = {0.0, 0.8, Math.min(maxSpread, 1.6 + upgradeLevel * 0.25D), maxSpread};
 
         for (int di = 0; di < distances.length; di++) {
             int dist = distances[di];
@@ -128,7 +132,8 @@ public class FlashlightManager {
         BlockPos bp = BlockPos.containing(pos.x, pos.y, pos.z);
 
         // 範囲チェック（プレイヤーから離れすぎないように）
-        if (bp.distSqr(player.blockPosition()) > (BEAM_LENGTH + 3) * (BEAM_LENGTH + 3)) return;
+        int beamLength = BEAM_LENGTH + player.getPersistentData().getInt("TacRogueFlashlightLevel") * 2;
+        if (bp.distSqr(player.blockPosition()) > (beamLength + 3) * (beamLength + 3)) return;
 
         // 同じ位置に既にあるなら重複しない
         if (positions.contains(bp)) return;

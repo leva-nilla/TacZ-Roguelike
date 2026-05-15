@@ -84,7 +84,7 @@ public class ThemeManager {
         /* RUINS       */ {s(Blocks.VINE), s(Blocks.KELP_PLANT), s(Blocks.SNOW), s(Blocks.COBWEB), s(Blocks.GLOWSTONE)},  // FIRE→GLOWSTONE (燃焼ダメージ回避)
         /* LAB         */ {s(Blocks.IRON_BARS), s(Blocks.SLIME_BLOCK), s(Blocks.COBWEB), s(Blocks.REDSTONE_LAMP), s(Blocks.CHAIN)},
         /* UNDERGROUND */ {s(Blocks.POINTED_DRIPSTONE), s(Blocks.AMETHYST_CLUSTER), s(Blocks.GLOWSTONE), s(Blocks.ICE), s(Blocks.BROWN_MUSHROOM)},  // FIRE→GLOWSTONE
-        /* MILITARY    */ {s(Blocks.CAULDRON), s(Blocks.ANVIL), s(Blocks.BARREL), s(Blocks.CHEST), s(Blocks.LEVER)},
+        /* MILITARY    */ {s(Blocks.CAULDRON), s(Blocks.ANVIL), s(Blocks.BARREL), s(Blocks.IRON_BARS), s(Blocks.LEVER)},
         /* NETHER      */ {s(Blocks.SHROOMLIGHT), s(Blocks.CHAIN), s(Blocks.END_ROD), s(Blocks.WARPED_FUNGUS), s(Blocks.CRIMSON_FUNGUS)},  // SOUL_FIRE→SHROOMLIGHT
         /* OCEAN       */ {s(Blocks.SEA_PICKLE), s(Blocks.DEAD_BRAIN_CORAL), s(Blocks.KELP_PLANT), s(Blocks.BARREL), s(Blocks.IRON_BARS)},
         /* URBAN       */ {s(Blocks.FLOWER_POT), s(Blocks.BOOKSHELF), s(Blocks.IRON_BARS), s(Blocks.COBWEB), s(Blocks.CAULDRON)},

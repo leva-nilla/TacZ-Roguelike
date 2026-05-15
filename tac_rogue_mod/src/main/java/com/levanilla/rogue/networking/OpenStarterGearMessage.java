@@ -17,7 +17,10 @@ public class OpenStarterGearMessage {
     public static void handle(OpenStarterGearMessage msg, Supplier<NetworkEvent.Context> ctx) {
         ctx.get().enqueueWork(() -> {
             net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(net.minecraftforge.api.distmarker.Dist.CLIENT, () -> () -> {
-                net.minecraft.client.Minecraft.getInstance().setScreen(new com.levanilla.rogue.client.StarterGearScreen());
+                net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+                if (mc.screen == null) {
+                    mc.setScreen(new com.levanilla.rogue.client.StarterGearScreen());
+                }
             });
         });
         ctx.get().setPacketHandled(true);

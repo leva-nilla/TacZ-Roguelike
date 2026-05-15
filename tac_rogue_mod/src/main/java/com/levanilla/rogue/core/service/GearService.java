@@ -85,7 +85,9 @@ public final class GearService {
             }
         }
 
-        StaminaManager.setMaxStamina(player, stamina * 2.0f);
+        float baseStamina = stamina * 2.0f;
+        StaminaManager.setBaseMaxStamina(player, baseStamina);
+        StaminaManager.setMaxStamina(player, baseStamina);
     }
 
     /**
@@ -96,16 +98,10 @@ public final class GearService {
 
         // 1. 銃
         try {
-            net.minecraft.world.item.Item gunItem = ForgeRegistries.ITEMS.getValue(
-                new ResourceLocation("tacz", "modern_kinetic_gun"));
-            if (gunItem != null) {
-                ItemStack gun = new ItemStack(gunItem);
-                CompoundTag tag = new CompoundTag();
-                tag.putString("GunId", gunId);
-                tag.putInt("GunCurrentAmmoCount", magSize);
-                tag.putString("GunFireMode", "SEMI");
-                tag.putBoolean("HasBulletInBarrel", true);
-                gun.setTag(tag);
+            ItemStack gun = RogueItemFactory.createGunStack(gunId, WeaponRarity.Rarity.COMMON);
+            if (!gun.isEmpty()) {
+                int starterMag = WeaponRarity.getEffectiveMagazineSize(gun, magSize);
+                gun.getOrCreateTag().putInt("GunCurrentAmmoCount", starterMag);
                 player.getInventory().add(gun);
             }
         } catch (Exception e) {
@@ -122,6 +118,7 @@ public final class GearService {
         ItemStack steak = new ItemStack(Items.COOKED_BEEF, GameConstants.STARTER_STEAK_COUNT);
         CompoundTag steakTag = new CompoundTag();
         steakTag.putBoolean("rogue_always_eat", true);
+        steakTag.putBoolean("rogue_item", true);
         steakTag.putInt("CustomModelData", 39003);
         steak.setTag(steakTag);
         player.getInventory().add(steak);
@@ -166,6 +163,7 @@ public final class GearService {
                 ItemStack meleeStack = new ItemStack(meleeBase);
                 CompoundTag tag = new CompoundTag();
                 tag.putString("MeleeWeaponId", "lrtactical:dagger");
+                tag.putBoolean("Unbreakable", true);
                 meleeStack.setTag(tag);
                 player.getInventory().add(meleeStack);
                 return;
@@ -175,9 +173,9 @@ public final class GearService {
     }
 
     private static void sendPerkInitPacket(ServerPlayer player) {
-        TacRogueNetworking.CHANNEL.send(
-            net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
-            new SyncDataMessage("perk_init:"));
+        // SEC-1対策: サーバー側でパーク候補を生成し、セッションに登録してからクライアントに送信
+        com.levanilla.rogue.networking.OpenPerkChoiceMessage.sendPerkChoices(player,
+            com.levanilla.rogue.networking.OpenPerkChoiceMessage.PerkScreenType.INITIAL);
     }
 
     public static ItemStack createMedkitStack(int count) {

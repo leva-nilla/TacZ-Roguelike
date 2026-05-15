@@ -45,7 +45,21 @@ public class SpawnAndWorldHandler {
     public static void onEntityTeleport(net.minecraftforge.event.entity.EntityTeleportEvent event) {
         if (event.getEntity().level().dimension() != ROGUE_DIM) return;
         double tx = event.getTargetX(), tz = event.getTargetZ();
-        if (Math.abs(tx) > GameConstants.TELEPORT_BOUNDARY || Math.abs(tz) > GameConstants.TELEPORT_BOUNDARY) {
+        BlockPos origin = null;
+        if (event.getEntity() instanceof ServerPlayer player) {
+            PlayerRunData data = RunManager.getData(player);
+            origin = data.getDungeonOrigin();
+        } else if (event.getEntity().level() instanceof ServerLevel sl) {
+            PlayerRunData data = RunManager.findDataForDungeonPosition(
+                sl, event.getEntity().getX(), event.getEntity().getZ(), GameConstants.FLOOR_CLEAR_RADIUS + 80.0D);
+            if (data != null) origin = data.getDungeonOrigin();
+        }
+        if (origin != null) {
+            if (Math.abs(tx - origin.getX()) > GameConstants.TELEPORT_BOUNDARY
+                || Math.abs(tz - origin.getZ()) > GameConstants.TELEPORT_BOUNDARY) {
+                event.setCanceled(true);
+            }
+        } else if (Math.abs(tx) > GameConstants.TELEPORT_BOUNDARY || Math.abs(tz) > GameConstants.TELEPORT_BOUNDARY) {
             event.setCanceled(true);
         }
         if (event.getEntity() instanceof net.minecraft.world.entity.monster.Shulker) {
@@ -60,6 +74,27 @@ public class SpawnAndWorldHandler {
         var dim = event.getLevel().dimension();
         if (dim == ROGUE_DIM && event.getEntity() instanceof Mob mob) {
             mob.setPersistenceRequired();
+
+            // 強化版亡霊処理: チャンクロード時に過去のエンティティを一掃する
+            boolean isSpawnedOrNpc = mob.getTags().contains("tac_rogue_spawned") || mob.getTags().contains("tac_rogue_npc");
+            if (isSpawnedOrNpc && event.getLevel() instanceof ServerLevel sl) {
+                PlayerRunData data = RunManager.findDataForDungeonPosition(sl, mob.getX(), mob.getZ());
+                if (data != null && data.isRunActive()) {
+                    int mobFloor = mob.getPersistentData().getInt("TacRogueSpawnFloor");
+                    long mobSpawnTick = mob.getPersistentData().getLong("TacRogueSpawnTick");
+                    boolean isResidue = false;
+                    if (mobFloor > 0 && data.getCurrentFloor() != mobFloor) {
+                        isResidue = true;
+                    } else if (mobSpawnTick > 0 && data.getFloorStartTick() > 0 && mobSpawnTick < data.getFloorStartTick()) {
+                        isResidue = true;
+                    }
+                    if (isResidue) {
+                        event.setCanceled(true);
+                        // CanceledするとEntityJoinLevelが行われないので自然消去される
+                        return;
+                    }
+                }
+            }
 
             // Vexのカスタムモブ化
             if (mob instanceof net.minecraft.world.entity.monster.Vex vex) {
@@ -97,6 +132,7 @@ public class SpawnAndWorldHandler {
 
     @SubscribeEvent
     public static void onBlockBreak(net.minecraftforge.event.level.BlockEvent.BreakEvent event) {
+        if (event.getPlayer().level().dimension() != ROGUE_DIM && event.getPlayer().level().dimension() != LOBBY_DIM) return;
         if (!event.getPlayer().isCreative()) {
             event.setCanceled(true);
         }
@@ -117,22 +153,7 @@ public class SpawnAndWorldHandler {
         if (!event.getEntity().level().isClientSide) {
             Level level = event.getEntity().level();
 
-            // 雪玉のステルス誘導処理
-            if (event.getEntity() instanceof net.minecraft.world.entity.projectile.Snowball) {
-                net.minecraft.world.phys.HitResult hit = event.getRayTraceResult();
-                net.minecraft.world.phys.Vec3 hitPos = hit.getLocation();
-                
-                // 着弾地点から半径24ブロックの敵を誘導
-                AABB area = new AABB(hitPos.x - 24, hitPos.y - 12, hitPos.z - 24, hitPos.x + 24, hitPos.y + 12, hitPos.z + 24);
-                List<Mob> mobs = level.getEntitiesOfClass(Mob.class, area, m -> m.isAlive() && m.getTags().contains("tac_rogue_spawned"));
-                
-                for (Mob targetMob : mobs) {
-                    // すでにプレイヤーをターゲットしていないか、ターゲットからの距離が遠い場合のみ誘導
-                    if (targetMob.getTarget() == null || targetMob.getTarget().distanceToSqr(targetMob) > 400) {
-                        targetMob.getNavigation().moveTo(hitPos.x, hitPos.y, hitPos.z, 1.3);
-                    }
-                }
-            }
+            // MAINT-5: 雪玉デコイ処理は TacZEventHandler.onProjectileImpact() に統合済み
 
             if (event.getRayTraceResult().getType() == net.minecraft.world.phys.HitResult.Type.BLOCK) {
                 net.minecraft.world.phys.BlockHitResult hit = (net.minecraft.world.phys.BlockHitResult) event.getRayTraceResult();
@@ -173,22 +194,25 @@ public class SpawnAndWorldHandler {
             }
         }
 
-        // ダンジョン内Mob全般の壁抜け・場外脱出対策
-        if (mob.getTags().contains("tac_rogue_spawned")) {
-            net.minecraft.world.entity.player.Player nearest = level.getNearestPlayer(mob, 300.0);
+        // ダンジョン内Mob全般の壁抜け・場外脱出対策とフェイルセーフ亡霊処理
+        if (mob.getTags().contains("tac_rogue_spawned") || mob.getTags().contains("tac_rogue_npc")) {
+            ServerPlayer runOwner = level instanceof ServerLevel sl
+                ? RunManager.findPlayerForDungeonPosition(sl, mob.getX(), mob.getZ())
+                : null;
+            net.minecraft.world.entity.player.Player nearest = runOwner != null
+                ? runOwner
+                : level.getNearestPlayer(mob, 300.0);
             
             // 亡霊（前回のフロア、または過去のリトライ前に湧いた敵）の即時消去システム
             int mobFloor = mob.getPersistentData().getInt("TacRogueSpawnFloor");
             long mobSpawnTick = mob.getPersistentData().getLong("TacRogueSpawnTick");
-            if (nearest instanceof net.minecraft.server.level.ServerPlayer sp) {
-                com.levanilla.rogue.core.PlayerRunData data = com.levanilla.rogue.core.RunManager.getData(sp);
+            if (runOwner != null) {
+                PlayerRunData data = RunManager.getData(runOwner);
                 if (data.isRunActive()) {
                     boolean isResidue = false;
-                    // フロア番号が違うなら過去の遺物
                     if (mobFloor > 0 && data.getCurrentFloor() != mobFloor) {
                         isResidue = true;
                     }
-                    // リトライ等で同じフロアだとしても、プレイヤーの挑戦開始時刻よりも前に生み出されたなら過去の遺物
                     if (mobSpawnTick > 0 && data.getFloorStartTick() > 0 && mobSpawnTick < data.getFloorStartTick()) {
                         isResidue = true;
                     }
@@ -199,32 +223,43 @@ public class SpawnAndWorldHandler {
                 }
             }
 
-            // 地形生成直後のラグ等による誤爆（新しく湧いた直後に壁と判定される）を防ぐため、スポーン後3秒(60tick)は猶予
-            if (mob.tickCount > 60) {
-                // ボスや巨体が壁にめり込んだり押し出されたりするのを防ぐ
-                // Vex の壁すり抜け対策も兼ねる
+            // スポーン後5秒(100tick)は壁判定・場外判定をスキップ（地形生成ラグ対策）
+            if (mob.tickCount > 100) {
+                // Vex の壁すり抜け対策
                 if (mob instanceof net.minecraft.world.entity.monster.Vex vex) {
                     vex.noPhysics = false;
                 }
-                
+
+                // 壁埋まり判定: 4方向+上下すべてソリッドならば真に閉じ込められている
+                // （ハーフブロック・階段・ドア枠での誤判定を排除）
                 BlockPos mobPos = mob.blockPosition();
-                boolean inWall = level.getBlockState(mobPos).isSolid() && level.getBlockState(mobPos.above()).isSolid();
-                
-                // ダンジョン外 or 完全に壁の中にいる場合 → 最寄りプレイヤーの近くに引き戻す
-                if (inWall || isOutsideDungeon(mob, level)) {
-                    if (nearest instanceof net.minecraft.server.level.ServerPlayer sp) {
-                        double ox = (level.random.nextFloat() - 0.5) * 6.0;
-                        double oz = (level.random.nextFloat() - 0.5) * 6.0;
-                        BlockPos target = nearest.blockPosition().offset((int)ox, 0, (int)oz);
-                        // 足元が空気で頭上も空気の場所を探す
-                        if (!level.getBlockState(target).isSolid() && !level.getBlockState(target.above()).isSolid()) {
-                            mob.teleportTo(target.getX() + 0.5, target.getY(), target.getZ() + 0.5);
+                boolean trulyTrapped = isTrulyTrappedInWall(mob, level, mobPos);
+                boolean outside = isOutsideDungeon(mob, level);
+
+                if (trulyTrapped || outside) {
+                    // 連続TPを防ぐ: 5秒(100tick)クールダウン
+                    long lastRelocateTick = mob.getPersistentData().getLong("TacRogueLastRelocate");
+                    long currentGameTime = level.getGameTime();
+                    if (currentGameTime - lastRelocateTick < 100) return;
+
+                    if (outside && nearest == null) {
+                        // プレイヤーがいない場外モブは即削除
+                        mob.remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
+                        return;
+                    }
+
+                    if (nearest instanceof net.minecraft.server.level.ServerPlayer sp2) {
+                        // プレイヤーの **背後** 12-18ブロック先に着地可能な場所を探す
+                        BlockPos relocateTarget = findSafeRelocatePos(sp2, level);
+                        if (relocateTarget != null) {
+                            mob.teleportTo(relocateTarget.getX() + 0.5, relocateTarget.getY(), relocateTarget.getZ() + 0.5);
+                            mob.setDeltaMovement(0, 0, 0);
+                            mob.getPersistentData().putLong("TacRogueLastRelocate", currentGameTime);
                         } else {
-                            mob.teleportTo(nearest.getX(), nearest.getY(), nearest.getZ());
+                            // 安全な再配置先が見つからない場合は削除（プレイヤーの目の前にTPさせない）
+                            mob.remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
                         }
-                        mob.setDeltaMovement(0, 0, 0);
-                    } else if (isOutsideDungeon(mob, level)) {
-                        // プレイヤーがいないのに場外にいる場合はフェイルセーフとして完全に削除する
+                    } else {
                         mob.remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
                     }
                 }
@@ -238,8 +273,11 @@ public class SpawnAndWorldHandler {
         if (mob instanceof net.minecraft.world.entity.monster.warden.Warden warden) {
             net.minecraft.world.entity.player.Player nearest = level.getNearestPlayer(warden, 64.0);
             if (nearest != null) {
-                warden.increaseAngerAt(nearest, 10, true);
+                warden.increaseAngerAt(nearest, 80, true);
+                warden.setTarget(nearest);
             }
+            // 常にDIG_COOLDOWNを維持し、地中に潜るルーチン(DIGアクティビティ)への移行を阻止する
+            warden.getBrain().setMemoryWithExpiry(net.minecraft.world.entity.ai.memory.MemoryModuleType.DIG_COOLDOWN, net.minecraft.util.Unit.INSTANCE, 1200L);
         }
 
         // 蜘蛛の天井/壁埋まり修正
@@ -277,6 +315,8 @@ public class SpawnAndWorldHandler {
             }
         }
 
+        com.levanilla.rogue.core.service.FloorInstanceManager.tick(server);
+
         // フロアクリア判定 (既存ロジック)
         if (tick % GameConstants.FLOOR_CLEAR_CHECK_INTERVAL != 0) return;
 
@@ -287,6 +327,8 @@ public class SpawnAndWorldHandler {
         for (ServerPlayer player : playersCopy) {
             com.levanilla.rogue.core.PlayerRunData data = RunManager.getData(player);
             if (!data.isRunActive()) continue;
+            if (data.isFloorCleared()) continue;
+            if (com.levanilla.rogue.core.service.FloorInstanceManager.getInstanceForPlayer(player) != null) continue;
 
             // フロア開始から5秒(100tick)はクリア判定をスキップ（モブスポーン猶予）
             long currentTick = server.getTickCount();
@@ -295,12 +337,26 @@ public class SpawnAndWorldHandler {
             // プレイヤー固有の基準座標で判定
             AABB area = new AABB(data.getDungeonOrigin())
                 .inflate(GameConstants.FLOOR_CLEAR_RADIUS);
-            List<Mob> alive = rogueLevel.getEntitiesOfClass(Mob.class, area, Mob::isAlive);
-            if (alive.isEmpty()) {
+            List<Mob> alive = rogueLevel.getEntitiesOfClass(Mob.class, area, mob ->
+                mob.isAlive()
+                    && mob.getTags().contains("tac_rogue_spawned")
+                    && mob.getPersistentData().getInt("TacRogueSpawnFloor") == data.getCurrentFloor());
+            boolean bossFloor = com.levanilla.rogue.world.ThemeManager.isBossFloor(data.getCurrentFloor());
+            boolean bossAlive = alive.stream().anyMatch(mob -> mob.getTags().contains("rogue:boss"));
+            if (alive.isEmpty() || (bossFloor && !bossAlive)) {
                 // フロア制圧完了。抽出用の情報将校をスポーンさせる
-                com.levanilla.rogue.world.NpcManager.spawnExtractionOfficer(rogueLevel, player.blockPosition());
+                com.levanilla.rogue.world.NpcManager.spawnExtractionOfficer(
+                    rogueLevel,
+                    com.levanilla.rogue.world.NpcManager.findExtractionSpawnNear(rogueLevel, player),
+                    data.getCurrentFloor());
                 
-                player.sendSystemMessage(net.minecraft.network.chat.Component.translatable("message.tac_rogue.extraction_arrived"));
+                com.levanilla.rogue.networking.PopupNotificationMessage.send(
+                    player,
+                    com.levanilla.rogue.networking.PopupNotificationMessage.PopupType.SYSTEM,
+                    net.minecraft.network.chat.Component.translatable("popup.tac_rogue.extraction.title"),
+                    net.minecraft.network.chat.Component.translatable("message.tac_rogue.extraction_arrived"),
+                    150
+                );
                 
                 data.setFloorCleared(true);
                 RunManager.syncPlayer(player);
@@ -319,6 +375,11 @@ public class SpawnAndWorldHandler {
                 // SURVIVE: フロアを死亡せずにクリア (HPが最大値の50%以上)
                 if (player.getHealth() >= player.getMaxHealth() * 0.5f) {
                     com.levanilla.rogue.core.QuestManager.advanceQuest(player, com.levanilla.rogue.core.QuestManager.QuestType.SURVIVE, 1);
+                }
+
+                // LOW_HEALTH_CLEAR: 危険域のHPでフロアを制圧する
+                if (player.getHealth() <= player.getMaxHealth() * 0.35f) {
+                    com.levanilla.rogue.core.QuestManager.advanceQuest(player, com.levanilla.rogue.core.QuestManager.QuestType.LOW_HEALTH_CLEAR, 1);
                 }
 
                 // NO_DAMAGE: ダメージを受けずにクリア (5秒間のクールダウン未使用 = ダメージなし)
@@ -342,124 +403,87 @@ public class SpawnAndWorldHandler {
         }
     }
 
-    // ===== 専用スロット強制 =====
+    // BUG-2: スロット制約は InventoryRuleService.enforce() に統合済み
 
-    @SubscribeEvent
-    public static void onPlayerTick(net.minecraftforge.event.TickEvent.PlayerTickEvent event) {
-        if (event.phase != net.minecraftforge.event.TickEvent.Phase.END) return;
-        if (!(event.player instanceof ServerPlayer player)) return;
-        if (player.tickCount % GameConstants.INV_CHECK_INTERVAL != 0) return;
-        if (player.level().dimension() != ROGUE_DIM && player.level().dimension() != LOBBY_DIM) return;
-
-        enforceSlotRestrictions(player);
+    /**
+     * 真に壁に閉じ込められているかを判定する。
+     * 6方向(上下東西南北)のうち5方向以上がソリッドなら完全に埋まっていると判定。
+     * ハーフブロック・階段・ドア枠での誤検知を防止する。
+     */
+    private static boolean isTrulyTrappedInWall(Mob mob, net.minecraft.world.level.Level level, BlockPos mobPos) {
+        BlockPos head = mobPos.above();
+        // 足元と頭の両方がソリッドでなければ埋まっているとは言えない
+        if (!level.getBlockState(mobPos).isSolid() || !level.getBlockState(head).isSolid()) {
+            return false;
+        }
+        // 6方向チェック: 上下東西南北のうち5方向以上がソリッドなら真に閉じ込められている
+        int solidCount = 0;
+        if (level.getBlockState(mobPos.above(2)).isSolid()) solidCount++;
+        if (level.getBlockState(mobPos.below()).isSolid()) solidCount++;
+        if (level.getBlockState(mobPos.north()).isSolid()) solidCount++;
+        if (level.getBlockState(mobPos.south()).isSolid()) solidCount++;
+        if (level.getBlockState(mobPos.east()).isSolid()) solidCount++;
+        if (level.getBlockState(mobPos.west()).isSolid()) solidCount++;
+        return solidCount >= 5;
     }
 
-    private static void enforceSlotRestrictions(ServerPlayer player) {
-        net.minecraft.world.entity.player.Inventory inv = player.getInventory();
+    /**
+     * プレイヤーから離れた安全な再配置先を探す。
+     * プレイヤーの視線の反対側 12-18ブロック地点で、空気2ブロック+足場がある場所。
+     * 見つからなければ null を返す（呼び出し側でモブ削除）。
+     */
+    private static BlockPos findSafeRelocatePos(ServerPlayer player, net.minecraft.world.level.Level level) {
+        net.minecraft.world.phys.Vec3 look = player.getLookAngle().normalize();
+        // プレイヤーの視線の反対方向をベースにする
+        double baseAngle = Math.atan2(-look.z, -look.x);
 
-        // Slot 0-1: Gun only — evict non-guns to item slots
-        for (int s = GameConstants.SLOT_GUN_START; s <= GameConstants.SLOT_GUN_END; s++) {
-            net.minecraft.world.item.ItemStack stack = inv.getItem(s);
-            if (!stack.isEmpty() && !isGun(stack)) {
-                if (!moveToFirstEmpty(inv, stack, GameConstants.SLOT_ITEM_START, GameConstants.SLOT_ITEM_END)) {
-                    player.drop(stack.copy(), false);
+        for (int attempt = 0; attempt < 15; attempt++) {
+            // ±45度の範囲でランダムに散らす
+            double angle = baseAngle + (level.random.nextFloat() - 0.5) * Math.PI * 0.5;
+            double dist = 12.0 + level.random.nextFloat() * 6.0; // 12-18ブロック
+            int tx = (int)(player.getX() + Math.cos(angle) * dist);
+            int tz = (int)(player.getZ() + Math.sin(angle) * dist);
+            int ty = player.blockPosition().getY();
+
+            // Y方向に±5ブロック探索して着地可能地点を見つける
+            for (int dy = -3; dy <= 5; dy++) {
+                BlockPos candidate = new BlockPos(tx, ty + dy, tz);
+                boolean feetClear = !level.getBlockState(candidate).isSolid();
+                boolean headClear = !level.getBlockState(candidate.above()).isSolid();
+                boolean hasFloor = level.getBlockState(candidate.below()).isSolid();
+                if (feetClear && headClear && hasFloor) {
+                    return candidate;
                 }
-                inv.setItem(s, net.minecraft.world.item.ItemStack.EMPTY);
             }
         }
-
-        // Slot 2: Melee only — evict non-melee
-        net.minecraft.world.item.ItemStack meleeItem = inv.getItem(GameConstants.SLOT_MELEE);
-        if (!meleeItem.isEmpty() && !isMelee(meleeItem)) {
-            if (!moveToFirstEmpty(inv, meleeItem, GameConstants.SLOT_ITEM_START, GameConstants.SLOT_ITEM_END)) {
-                player.drop(meleeItem.copy(), false);
-            }
-            inv.setItem(GameConstants.SLOT_MELEE, net.minecraft.world.item.ItemStack.EMPTY);
-        }
-
-        // Slot 3-8: Items only — evict guns and melee
-        for (int s = GameConstants.SLOT_ITEM_START; s <= GameConstants.SLOT_ITEM_END; s++) {
-            net.minecraft.world.item.ItemStack stack = inv.getItem(s);
-            if (!stack.isEmpty()) {
-                if (isGun(stack)) {
-                    if (!moveToFirstEmpty(inv, stack, GameConstants.SLOT_GUN_START, GameConstants.SLOT_GUN_END)) {
-                        player.drop(stack.copy(), false);
-                    }
-                    inv.setItem(s, net.minecraft.world.item.ItemStack.EMPTY);
-                } else if (isMelee(stack)) {
-                    if (inv.getItem(GameConstants.SLOT_MELEE).isEmpty()) {
-                        inv.setItem(GameConstants.SLOT_MELEE, stack.copy());
-                    } else {
-                        player.drop(stack.copy(), false);
-                    }
-                    inv.setItem(s, net.minecraft.world.item.ItemStack.EMPTY);
-                }
-            }
-        }
-
-        // Slot 9-12: Ammo only — evict non-ammo
-        for (int s = GameConstants.SLOT_AMMO_GUN1_START; s <= GameConstants.SLOT_AMMO_GUN2_END; s++) {
-            net.minecraft.world.item.ItemStack stack = inv.getItem(s);
-            if (!stack.isEmpty() && !isAmmo(stack)) {
-                if (!moveToFirstEmpty(inv, stack, GameConstants.SLOT_ITEM_START, GameConstants.SLOT_ITEM_END)) {
-                    player.drop(stack.copy(), false);
-                }
-                inv.setItem(s, net.minecraft.world.item.ItemStack.EMPTY);
-            }
-        }
-
-        // Also evict guns/melee from slots 9-12
-        for (int s = GameConstants.SLOT_AMMO_GUN1_START; s <= GameConstants.SLOT_AMMO_GUN2_END; s++) {
-            net.minecraft.world.item.ItemStack stack = inv.getItem(s);
-            if (!stack.isEmpty() && (isGun(stack) || isMelee(stack))) {
-                player.drop(stack.copy(), false);
-                inv.setItem(s, net.minecraft.world.item.ItemStack.EMPTY);
-            }
-        }
-    }
-
-    // --- Slot helper methods ---
-
-    private static boolean isGun(net.minecraft.world.item.ItemStack stack) {
-        return stack.hasTag() && stack.getTag().contains("GunId");
-    }
-
-    private static boolean isMelee(net.minecraft.world.item.ItemStack stack) {
-        return stack.hasTag() && stack.getTag().contains("MeleeWeaponId");
-    }
-
-    private static boolean isAmmo(net.minecraft.world.item.ItemStack stack) {
-        return stack.hasTag() && stack.getTag().contains("AmmoId");
-    }
-
-    /** Move stack to the first empty slot within [start, end]. Returns true if successful. */
-    private static boolean moveToFirstEmpty(net.minecraft.world.entity.player.Inventory inv,
-            net.minecraft.world.item.ItemStack stack, int start, int end) {
-        for (int s = start; s <= end; s++) {
-            if (inv.getItem(s).isEmpty()) {
-                inv.setItem(s, stack.copy());
-                return true;
-            }
-        }
-        return false;
+        return null; // 安全な場所が見つからない
     }
 
     /** Mobがダンジョンの有効範囲外にいるかどうかを判定 */
     private static boolean isOutsideDungeon(Mob mob, net.minecraft.world.level.Level level) {
-        // プレイヤーまでの距離で判定するか、直近プレイヤーのダンジョン原点を使う
-        net.minecraft.world.entity.player.Player nearest = level.getNearestPlayer(mob, 200.0);
-        if (nearest instanceof net.minecraft.server.level.ServerPlayer sp) {
-            com.levanilla.rogue.core.PlayerRunData data = com.levanilla.rogue.core.RunManager.getData(sp);
-            net.minecraft.core.BlockPos origin = data.getDungeonOrigin();
+        if (level instanceof ServerLevel sl) {
+            PlayerRunData data = RunManager.findDataForDungeonPosition(
+                sl, mob.getX(), mob.getZ(), GameConstants.FLOOR_CLEAR_RADIUS + 80.0D);
+            BlockPos origin = data == null ? null : data.getDungeonOrigin();
             if (origin != null) {
                 double dx = Math.abs(mob.getX() - origin.getX());
                 double dz = Math.abs(mob.getZ() - origin.getZ());
-                // ダンジョン半径は最大78なので、85以上なら壁の外
-                // Y座標は origin (ダンジョン床) から少し下～天井少し上を許容
-                return dx > 85 || dz > 85 || mob.getY() < origin.getY() - 10 || mob.getY() > origin.getY() + 30;
+                // ダンジョン半径は最大78 → 100以上は明らかに壁の外 (余裕を持たせて誤検知を減らす)
+                return dx > 100 || dz > 100 || mob.getY() < origin.getY() - 10 || mob.getY() > origin.getY() + 30;
             }
         }
         return false;
+    }
+
+    // ===== サーバー起動時のデータ復元 =====
+
+    @SubscribeEvent
+    public static void onServerStarted(net.minecraftforge.event.server.ServerStartedEvent event) {
+        // SavedData からワールドに保存された難易度を復元
+        net.minecraft.server.level.ServerLevel lobbyLevel = event.getServer().getLevel(LOBBY_DIM);
+        if (lobbyLevel != null) {
+            com.levanilla.rogue.core.DifficultyManager.loadFromSavedData(lobbyLevel);
+        }
     }
 
     // ===== サーバー停止時のメモリクリア =====
@@ -469,5 +493,12 @@ public class SpawnAndWorldHandler {
         // シングルプレイワールド退店時など、別ワールドへのデータ汚染を防ぐためメモリをリセット
         // ※ NBT には保存済みなのでクリアしても問題ない
         com.levanilla.rogue.core.RunManager.clearMemory();
+        CombatEventHandler.clearMemory();
+        TacZEventHandler.clearMemory();
+        com.levanilla.rogue.core.service.BossRewardService.clearMemory();
+        com.levanilla.rogue.core.StaminaManager.clearMemory();
+        com.levanilla.rogue.networking.RogueActionMessage.clearMemory();
+        com.levanilla.rogue.core.QuestManager.clearMemory();
+        com.levanilla.rogue.world.NpcManager.clearMemory();
     }
 }

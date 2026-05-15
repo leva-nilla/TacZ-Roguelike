@@ -1,6 +1,8 @@
 package com.levanilla.rogue.core;
 
 import net.minecraft.core.BlockPos;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * プレイヤー個別のローグライクラン進行データ。
@@ -14,10 +16,14 @@ public class PlayerRunData {
     private int maxReachedFloor = 0;
     /** ランが進行中か */
     private boolean runActive = false;
+    /** 弾薬容量レベル */
+    private int ammoCapacityLevel = 0;
     /** 現フロアがクリア済みか */
     private boolean floorCleared = false;
     /** ランごとのシード値 */
     private long runSeed = 0;
+    /** 同じフロアを再生成するたびに変える生成ソルト */
+    private long floorSeedSalt = 0;
     /** テーマ表示名 */
     private String themeName = "RUINS - OVERGROWN";
     /** レガシーテーマ enum */
@@ -26,6 +32,10 @@ public class PlayerRunData {
     private BlockPos dungeonOrigin;
     /** フロア開始時のサーバーtick（クリア判定猶予用） */
     private long floorStartTick = 0;
+    /** 初回ボス報酬を受領済みのフロア */
+    private final Set<Integer> claimedBossRewardFloors = new HashSet<>();
+    /** 同一ラン内で取得済みの補給チェスト。retry floorでのチェスト厳選を防ぐ。 */
+    private final Set<String> claimedSupplyChestKeys = new HashSet<>();
 
     public PlayerRunData() {
         this.dungeonOrigin = new BlockPos(0, GameConstants.DUNGEON_BASE_Y, 0);
@@ -42,11 +52,22 @@ public class PlayerRunData {
     public boolean isRunActive() { return runActive; }
     public void setRunActive(boolean v) { runActive = v; }
 
+    public int getAmmoCapacityLevel() { return ammoCapacityLevel; }
+    public void setAmmoCapacityLevel(int ammoCapacityLevel) { this.ammoCapacityLevel = ammoCapacityLevel; }
+
     public boolean isFloorCleared() { return floorCleared; }
     public void setFloorCleared(boolean v) { floorCleared = v; }
 
     public long getRunSeed() { return runSeed; }
     public void setRunSeed(long s) { runSeed = s; }
+    public long getFloorSeedSalt() { return floorSeedSalt; }
+    public void setFloorSeedSalt(long salt) { floorSeedSalt = salt; }
+    public void rerollFloorSeedSalt(long entropy) {
+        floorSeedSalt = System.nanoTime()
+            ^ Long.rotateLeft(entropy, 17)
+            ^ ((long) currentFloor * 0x9E3779B97F4A7C15L);
+        if (floorSeedSalt == 0) floorSeedSalt = 0xD1B54A32D192ED03L;
+    }
 
     public String getThemeName() { return themeName; }
     public void setThemeName(String n) { themeName = n; }
@@ -60,6 +81,22 @@ public class PlayerRunData {
     public long getFloorStartTick() { return floorStartTick; }
     public void setFloorStartTick(long tick) { floorStartTick = tick; }
 
+    public boolean hasClaimedBossReward(int floor) {
+        return claimedBossRewardFloors.contains(floor);
+    }
+
+    public void markBossRewardClaimed(int floor) {
+        claimedBossRewardFloors.add(floor);
+    }
+
+    public boolean hasClaimedSupplyChest(String key) {
+        return key != null && claimedSupplyChestKeys.contains(key);
+    }
+
+    public void markSupplyChestClaimed(String key) {
+        if (key != null && !key.isBlank()) claimedSupplyChestKeys.add(key);
+    }
+
     // ===== ライフサイクル =====
 
     /** 新規ランを開始する */
@@ -69,7 +106,9 @@ public class PlayerRunData {
         if (currentFloor > maxReachedFloor) maxReachedFloor = currentFloor;
         floorCleared = false;
         runSeed = System.nanoTime();
+        rerollFloorSeedSalt(runSeed);
         floorStartTick = 0; // 呼び出し元でサーバーtickを設定
+        claimedSupplyChestKeys.clear();
     }
 
     /** 次の階層へ進む */
@@ -78,6 +117,7 @@ public class PlayerRunData {
         if (currentFloor > maxReachedFloor) maxReachedFloor = currentFloor;
         floorCleared = false;
         runActive = true;
+        rerollFloorSeedSalt(runSeed);
         floorStartTick = 0; // 呼び出し元でサーバーtickを設定
     }
 
@@ -88,8 +128,10 @@ public class PlayerRunData {
         tag.putInt("CurrentFloor", currentFloor);
         tag.putInt("MaxReachedFloor", maxReachedFloor);
         tag.putBoolean("RunActive", runActive);
+        tag.putInt("AmmoCapacityLevel", ammoCapacityLevel);
         tag.putBoolean("FloorCleared", floorCleared);
         tag.putLong("RunSeed", runSeed);
+        tag.putLong("FloorSeedSalt", floorSeedSalt);
         tag.putString("ThemeName", themeName);
         tag.putString("ThemeEnum", theme.name());
         if (dungeonOrigin != null) {
@@ -98,6 +140,16 @@ public class PlayerRunData {
             tag.putInt("OriginZ", dungeonOrigin.getZ());
         }
         tag.putLong("FloorStartTick", floorStartTick);
+        net.minecraft.nbt.ListTag bossRewards = new net.minecraft.nbt.ListTag();
+        for (Integer floor : claimedBossRewardFloors) {
+            bossRewards.add(net.minecraft.nbt.IntTag.valueOf(floor));
+        }
+        tag.put("ClaimedBossRewardFloors", bossRewards);
+        net.minecraft.nbt.ListTag supplyChests = new net.minecraft.nbt.ListTag();
+        for (String key : claimedSupplyChestKeys) {
+            supplyChests.add(net.minecraft.nbt.StringTag.valueOf(key));
+        }
+        tag.put("ClaimedSupplyChestKeys", supplyChests);
         return tag;
     }
 
@@ -105,8 +157,10 @@ public class PlayerRunData {
         if (tag.contains("CurrentFloor")) currentFloor = tag.getInt("CurrentFloor");
         if (tag.contains("MaxReachedFloor")) maxReachedFloor = tag.getInt("MaxReachedFloor");
         if (tag.contains("RunActive")) runActive = tag.getBoolean("RunActive");
+        if (tag.contains("AmmoCapacityLevel")) ammoCapacityLevel = tag.getInt("AmmoCapacityLevel");
         if (tag.contains("FloorCleared")) floorCleared = tag.getBoolean("FloorCleared");
         if (tag.contains("RunSeed")) runSeed = tag.getLong("RunSeed");
+        if (tag.contains("FloorSeedSalt")) floorSeedSalt = tag.getLong("FloorSeedSalt");
         if (tag.contains("ThemeName")) themeName = tag.getString("ThemeName");
         if (tag.contains("ThemeEnum")) {
             try {
@@ -119,6 +173,20 @@ public class PlayerRunData {
             dungeonOrigin = new BlockPos(tag.getInt("OriginX"), tag.getInt("OriginY"), tag.getInt("OriginZ"));
         }
         if (tag.contains("FloorStartTick")) floorStartTick = tag.getLong("FloorStartTick");
+        claimedBossRewardFloors.clear();
+        if (tag.contains("ClaimedBossRewardFloors")) {
+            net.minecraft.nbt.ListTag bossRewards = tag.getList("ClaimedBossRewardFloors", 3);
+            for (int i = 0; i < bossRewards.size(); i++) {
+                claimedBossRewardFloors.add(bossRewards.getInt(i));
+            }
+        }
+        claimedSupplyChestKeys.clear();
+        if (tag.contains("ClaimedSupplyChestKeys")) {
+            net.minecraft.nbt.ListTag supplyChests = tag.getList("ClaimedSupplyChestKeys", 8);
+            for (int i = 0; i < supplyChests.size(); i++) {
+                claimedSupplyChestKeys.add(supplyChests.getString(i));
+            }
+        }
     }
 
     /** ラン状態をリセット */
@@ -128,9 +196,12 @@ public class PlayerRunData {
         runActive = false;
         floorCleared = false;
         runSeed = 0;
+        floorSeedSalt = 0;
         themeName = "RUINS - OVERGROWN";
         theme = RunManager.Theme.MANSION;
         dungeonOrigin = new BlockPos(0, GameConstants.DUNGEON_BASE_Y, 0);
         floorStartTick = 0;
+        claimedSupplyChestKeys.clear();
+        // ボス初回報酬履歴は進行データなので通常リセットでは保持する
     }
 }

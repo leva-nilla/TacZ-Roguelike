@@ -4,9 +4,12 @@ import com.levanilla.rogue.core.*;
 import com.levanilla.rogue.core.RestrictedSlot.SlotType;
 import com.levanilla.rogue.networking.TacRogueNetworking;
 import com.levanilla.rogue.world.LobbyGenerator;
+import com.levanilla.rogue.world.NpcManager;
+import com.levanilla.rogue.world.TacRogueNpcEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraftforge.event.entity.player.PlayerEvent;
@@ -22,25 +25,90 @@ import static com.levanilla.rogue.core.CommonEventHandler.ROGUE_DIM;
  */
 @Mod.EventBusSubscriber(modid = "tac_rogue")
 public class ItemAndLifecycleHandler {
+    private static final String SAVED_HEALTH_KEY = "TacRogueSavedHealth";
 
-    // ===== 村人インタラクト（ショップ / NPC） =====
+    // ===== 旧商人インタラクト =====
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = net.minecraftforge.eventbus.api.EventPriority.HIGHEST)
     public static void onEntityInteract(PlayerInteractEvent.EntityInteract event) {
-        if (!(event.getTarget() instanceof net.minecraft.world.entity.npc.Villager villager)) return;
-        if (!(event.getEntity() instanceof ServerPlayer player)) return;
-
-        // 既存の商人 NPC
-        if (villager.getTags().contains("rogue:merchant")) {
-            TacRogueNetworking.openShop(player);
+        if (event.getTarget() instanceof TacRogueNpcEntity npc && event.getEntity() instanceof ServerPlayer player) {
+            NpcManager.handleCustomNpcInteraction(player, npc);
+            event.setCancellationResult(InteractionResult.SUCCESS);
             event.setCanceled(true);
             return;
         }
 
-        // NpcManager 管理の NPC（Commander, Quartermaster, Intel, Medic）
-        if (com.levanilla.rogue.world.NpcManager.handleInteraction(player, villager)) {
+        if (!(event.getTarget() instanceof net.minecraft.world.entity.npc.Villager villager)) return;
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+
+        if (villager.getTags().contains("rogue:merchant")) {
+            TacRogueNetworking.openNpcMenu(player, "quartermaster", false, false);
             event.setCanceled(true);
         }
+    }
+
+    @SubscribeEvent(priority = net.minecraftforge.eventbus.api.EventPriority.HIGHEST)
+    public static void onEntityInteractSpecific(PlayerInteractEvent.EntityInteractSpecific event) {
+        if (!(event.getTarget() instanceof TacRogueNpcEntity npc)) return;
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        NpcManager.handleCustomNpcInteraction(player, npc);
+        event.setCancellationResult(InteractionResult.SUCCESS);
+        event.setCanceled(true);
+    }
+
+    @SubscribeEvent
+    public static void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
+        if (event.getLevel().isClientSide) return;
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        if (player.level().dimension() != ROGUE_DIM) return;
+
+        BlockPos pos = event.getPos();
+        if (!(event.getLevel().getBlockEntity(pos) instanceof net.minecraft.world.level.block.entity.ChestBlockEntity chest)) {
+            return;
+        }
+        if (!chest.getPersistentData().getBoolean("TacRogueLootChest")) return;
+        int floor = chest.getPersistentData().contains("TacRogueFloor")
+            ? chest.getPersistentData().getInt("TacRogueFloor")
+            : RunManager.getData(player).getCurrentFloor();
+        int chestIndex = chest.getPersistentData().getInt(
+            com.levanilla.rogue.core.service.ChestLootService.CHEST_INDEX_KEY);
+        String claimKey = com.levanilla.rogue.core.service.ChestLootService.claimKey(floor, chestIndex);
+        PlayerRunData data = RunManager.getData(player);
+        if (com.levanilla.rogue.core.service.FloorInstanceManager.hasChestClaimed(chest, player.getUUID())
+            || data.hasClaimedSupplyChest(claimKey)) {
+            player.displayClientMessage(net.minecraft.network.chat.Component.literal("§7This supply cache has already been claimed."), true);
+            event.setCanceled(true);
+            event.setCancellationResult(InteractionResult.SUCCESS);
+            return;
+        }
+
+        refillPersonalSupplyChest(chest, player, Math.max(1, floor), chestIndex);
+        com.levanilla.rogue.core.service.FloorInstanceManager.markChestClaimed(chest, player.getUUID());
+        data.markSupplyChestClaimed(claimKey);
+        QuestManager.advanceQuest(player, QuestManager.QuestType.CHEST_RECOVERY, 1);
+    }
+
+    private static void refillPersonalSupplyChest(net.minecraft.world.level.block.entity.ChestBlockEntity chest,
+                                                  ServerPlayer player,
+                                                  int floor,
+                                                  int chestIndex) {
+        java.util.Random rand = new java.util.Random(player.getUUID().getMostSignificantBits()
+            ^ Long.rotateLeft(player.getUUID().getLeastSignificantBits(), 21)
+            ^ ((long) Math.max(1, floor) * 0x9E3779B97F4A7C15L)
+            ^ ((long) Math.max(0, chestIndex) * 0xD1B54A32D192ED03L));
+        chest.clearContent();
+        java.util.List<ItemStack> loot =
+            com.levanilla.rogue.core.service.ChestLootService.generatePersonalChestLoot(player, floor, chestIndex);
+
+        for (ItemStack stack : loot) {
+            if (stack.isEmpty()) continue;
+            int slot = rand.nextInt(chest.getContainerSize());
+            for (int tries = 0; tries < chest.getContainerSize() && !chest.getItem(slot).isEmpty(); tries++) {
+                slot = (slot + 1) % chest.getContainerSize();
+            }
+            chest.setItem(slot, stack);
+        }
+        chest.setChanged();
     }
 
     // ===== ステーキ使用完了時の回復 =====
@@ -89,7 +157,7 @@ public class ItemAndLifecycleHandler {
                         player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
                             "message.tac_rogue.scrap_sold", GameConstants.SCRAP_SELL_VALUE));
                         stack.shrink(1);
-                        RunManager.sync();
+                        RunManager.syncPlayer(player);
                         event.setCanceled(true);
                     }
                 } else if (stack.is(Items.RAW_GOLD)) {
@@ -103,7 +171,7 @@ public class ItemAndLifecycleHandler {
                         player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
                             "message.tac_rogue.gold_cache", GameConstants.GOLD_CACHE_VALUE));
                         stack.shrink(1);
-                        RunManager.sync();
+                        RunManager.syncPlayer(player);
                         event.setCanceled(true);
                     }
                 } else if (stack.is(Items.COOKED_BEEF)) {
@@ -134,6 +202,75 @@ public class ItemAndLifecycleHandler {
                             "message.tac_rogue.hp_full"), true);
                     }
                     event.setCanceled(true);
+                } else if (stack.is(Items.STRING)) {
+                    // BANDAGE — HP最大値の15%回復
+                    float maxHp = player.getMaxHealth();
+                    float healAmount = maxHp * 0.15f;
+                    if (player.getHealth() < maxHp) {
+                        player.heal(healAmount);
+                        player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                            "\u00A7a[BANDAGE] \u00A7fHealed " + String.format("%.0f", healAmount) + " HP"), true);
+                        stack.shrink(1);
+                    } else {
+                        player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                            "message.tac_rogue.hp_full"), true);
+                    }
+                    event.setCanceled(true);
+                } else if (stack.is(Items.IRON_INGOT)) {
+                    // ARMOR PLATE — 一時的にアーマー+8 (30秒)
+                    java.util.UUID armorUUID = java.util.UUID.fromString("b2d3e4f5-6789-4abc-def0-123456789abc");
+                    var modifier = new net.minecraft.world.entity.ai.attributes.AttributeModifier(
+                        armorUUID, "TacRogue Armor Plate", 8.0,
+                        net.minecraft.world.entity.ai.attributes.AttributeModifier.Operation.ADDITION);
+                    var armorAttr = player.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.ARMOR);
+                    if (armorAttr != null) {
+                        armorAttr.removeModifier(armorUUID);
+                        armorAttr.addTransientModifier(modifier);
+                        // 30秒後に除去するスケジュール
+                        player.getServer().tell(new net.minecraft.server.TickTask(
+                            player.getServer().getTickCount() + 600, () -> {
+                                if (armorAttr.getModifier(armorUUID) != null) {
+                                    armorAttr.removeModifier(armorUUID);
+                                }
+                            }));
+                    }
+                    player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                        "\u00A7b[ARMOR PLATE] \u00A7f+8 Armor for 30 seconds"), true);
+                    stack.shrink(1);
+                    event.setCanceled(true);
+                } else if (stack.is(Items.GLASS_BOTTLE)) {
+                    // ADRENALINE — ダメージ+30% & 速度+20% (20秒) → 終了後スロー2秒
+                    player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                        net.minecraft.world.effect.MobEffects.DAMAGE_BOOST, 400, 0, false, true));
+                    player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                        net.minecraft.world.effect.MobEffects.MOVEMENT_SPEED, 400, 0, false, true));
+                    // 20秒後にスロー付与
+                    player.getServer().tell(new net.minecraft.server.TickTask(
+                        player.getServer().getTickCount() + 400, () -> {
+                            if (player.isAlive()) {
+                                player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                                    net.minecraft.world.effect.MobEffects.MOVEMENT_SLOWDOWN, 40, 1, false, true));
+                            }
+                        }));
+                    player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                        "\u00A7c[ADRENALINE] \u00A7f+30% DMG & +20% Speed for 20s"), true);
+                    stack.shrink(1);
+                    event.setCanceled(true);
+                } else if (stack.is(Items.REDSTONE)) {
+                    // EMP DEVICE — 半径10ブロック内の全モブにスロー+弱体化 (5秒)
+                    var mobs = player.level().getEntitiesOfClass(
+                        net.minecraft.world.entity.Mob.class,
+                        player.getBoundingBox().inflate(10.0));
+                    for (var mob : mobs) {
+                        mob.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                            net.minecraft.world.effect.MobEffects.MOVEMENT_SLOWDOWN, 100, 2, false, true));
+                        mob.addEffect(new net.minecraft.world.effect.MobEffectInstance(
+                            net.minecraft.world.effect.MobEffects.WEAKNESS, 100, 1, false, true));
+                    }
+                    player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                        "\u00A7e[EMP] \u00A7fDisabled " + mobs.size() + " hostiles for 5 seconds"), true);
+                    stack.shrink(1);
+                    event.setCanceled(true);
                 }
             }
         }
@@ -145,15 +282,28 @@ public class ItemAndLifecycleHandler {
     public static void onPlayerLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             RunManager.loadFromPlayerNbt(player);
+            RunManager.getData(player).setRunActive(false);
 
             ServerLevel lobbyLevel = player.server.getLevel(LOBBY_DIM);
-            if (lobbyLevel != null && player.level().dimension() != LOBBY_DIM) {
-                player.teleportTo(lobbyLevel,
-                    GameConstants.LOBBY_X, GameConstants.LOBBY_Y, GameConstants.LOBBY_Z, 0, 0);
-                LobbyGenerator.buildLobby(lobbyLevel, new BlockPos(0, 201, 0));
+            if (lobbyLevel != null) {
+                boolean rebuilt = LobbyGenerator.ensureLobbyBuilt(lobbyLevel, LobbyGenerator.DEFAULT_CENTER);
+                if (player.level().dimension() != LOBBY_DIM || rebuilt) {
+                    player.teleportTo(lobbyLevel,
+                        GameConstants.LOBBY_X, GameConstants.LOBBY_Y, GameConstants.LOBBY_Z, 0, 0);
+                }
             }
             applySlotRestrictions(player);
-            RunManager.sync();
+            restoreRoguePlayerState(player, true);
+            RunManager.syncPlayer(player);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            saveRoguePlayerState(player);
+            com.levanilla.rogue.core.service.FloorInstanceManager.leaveInstance(player, true);
+            RunManager.saveToPlayerNbt(player);
         }
     }
 
@@ -162,12 +312,16 @@ public class ItemAndLifecycleHandler {
     @SubscribeEvent
     public static void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
+            com.levanilla.rogue.core.service.FloorInstanceManager.leaveInstance(player, true);
             ServerLevel lobbyLevel = player.server.getLevel(LOBBY_DIM);
             if (lobbyLevel != null) {
+                LobbyGenerator.ensureLobbyBuilt(lobbyLevel, LobbyGenerator.DEFAULT_CENTER);
                 player.teleportTo(lobbyLevel,
                     GameConstants.LOBBY_X, GameConstants.LOBBY_Y, GameConstants.LOBBY_Z, 0, 0);
             }
             applySlotRestrictions(player);
+            restoreRoguePlayerState(player, false);
+            RunManager.syncPlayer(player);
         }
     }
 
@@ -177,6 +331,30 @@ public class ItemAndLifecycleHandler {
     public static void onPlayerClone(PlayerEvent.Clone event) {
         if (event.isWasDeath()) {
             event.getEntity().getInventory().replaceWith(event.getOriginal().getInventory());
+            event.getEntity().getPersistentData().merge(event.getOriginal().getPersistentData());
+            if (event.getEntity() instanceof ServerPlayer cloned) {
+                event.getOriginal().getTags().stream()
+                    .filter(tag -> tag.startsWith("perk:"))
+                    .forEach(cloned::addTag);
+                RunManager.restorePerkTags(cloned);
+            }
+        }
+    }
+
+    private static void saveRoguePlayerState(ServerPlayer player) {
+        if (player.level().dimension() == LOBBY_DIM || player.level().dimension() == ROGUE_DIM) {
+            player.getPersistentData().putFloat(SAVED_HEALTH_KEY, Math.max(1.0f, player.getHealth()));
+            StaminaManager.saveToPersistentData(player);
+        }
+    }
+
+    private static void restoreRoguePlayerState(ServerPlayer player, boolean restoreHealth) {
+        com.levanilla.rogue.core.service.PlayerPerkTickService.invalidateSnapshot(player);
+        com.levanilla.rogue.core.service.PlayerPerkTickService.applyPerkStats(player);
+        StaminaManager.restoreFromPersistentData(player);
+        if (restoreHealth && player.getPersistentData().contains(SAVED_HEALTH_KEY)) {
+            float savedHealth = player.getPersistentData().getFloat(SAVED_HEALTH_KEY);
+            player.setHealth(Math.max(1.0f, Math.min(savedHealth, player.getMaxHealth())));
         }
     }
 

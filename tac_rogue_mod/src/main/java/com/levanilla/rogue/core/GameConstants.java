@@ -69,9 +69,9 @@ public final class GameConstants {
     public static final int REGEN_DAMAGE_COOLDOWN_TICKS = 100;
 
     /** ダメージ: 伏せ時のボーナス倍率 */
-    public static final float CRAWL_DAMAGE_MULT = 1.40f;
+    public static final float CRAWL_DAMAGE_MULT = 1.25f;
     /** ダメージ: スニーク時のボーナス倍率 */
-    public static final float SNEAK_DAMAGE_MULT = 1.20f;
+    public static final float SNEAK_DAMAGE_MULT = 1.12f;
     /** クリティカルダメージ閾値 */
     public static final float CRITICAL_DAMAGE_THRESHOLD = 20.0f;
     /** パーク「Fortune」によるクリティカルヒット時のダメージ倍率 */
@@ -96,18 +96,18 @@ public final class GameConstants {
     /** 初期ゴールド */
     public static final int INITIAL_GOLD = 100;
 
-    /** ベースキル報酬 */
-    public static final int KILL_REWARD_BASE = 15;
-    /** フロア進行ごとの増加量 */
-    public static final int KILL_REWARD_PER_FLOOR = 2;
-    /** キル報酬の最大キャップ (ハイパーインフレ対策) */
-    public static final int KILL_REWARD_MAX_CAP = 100;
+    /** ベースキル報酬 (v0.5: 15→20 序盤の金欠緩和) */
+    public static final int KILL_REWARD_BASE = 20;
+    /** フロア進行ごとの増加量 (v0.5: 2→3 中盤スケーリング改善) */
+    public static final int KILL_REWARD_PER_FLOOR = 3;
+    /** キル報酬の最大キャップ (v0.5: 100→150 高フロア報酬改善) */
+    public static final int KILL_REWARD_MAX_CAP = 150;
 
     /** デスペナルティの割合 */
     public static final float DEATH_PENALTY_RATE = 0.05f;
 
-    /** 基本ドロップ率 */
-    public static final float DROP_BASE_CHANCE = 0.05f;
+    /** 基本ドロップ率 (v0.5: 0.05→0.08 ドロップ頻度向上) */
+    public static final float DROP_BASE_CHANCE = 0.08f;
 
     /** SCRAP METAL の売却額 */
     public static final int SCRAP_SELL_VALUE = 50;
@@ -124,15 +124,52 @@ public final class GameConstants {
     /** スタッシュ最大行数 */
     public static final int STASH_MAX_LINES = 6;
     /** スタッシュ拡張の基礎費用係数 */
-    public static final int STASH_UPGRADE_COST_BASE = 500;
+    public static final int STASH_UPGRADE_COST_BASE = 2000;
+    /** フラッシュライト最大強化レベル */
+    public static final int FLASHLIGHT_MAX_LEVEL = 5;
+    /** フラッシュライト強化の基礎費用 */
+    public static final int FLASHLIGHT_UPGRADE_COST_BASE = 900;
 
     /** インベントリ最大拡張レベル (2スロット×12レベル=24→実質23スロット全開放) */
     public static final int INV_MAX_LEVEL = 12;
+    /** 弾薬容量最大アップグレードレベル (+50% x 5) */
+    public static final int AMMO_CAPACITY_MAX_LEVEL = 5;
+    /** 弾薬容量拡張の基礎費用 */
+    public static final int AMMO_CAP_UPGRADE_COST_BASE = 2000;
+    public static final int INV_UPGRADE_COST_BASE = 2000;
+
+    /** 近接武器最大アップグレードレベル (+50% x 5) */
+    public static final int MELEE_MAX_LEVEL = 5;
+    /** 近接武器拡張の基礎費用 */
+    public static final int MELEE_UPGRADE_COST_BASE = 1500;
 
     /** OVERCLOCKED パークの最大取得数 */
     public static final int MAX_OVERCLOCKED_PERKS = 2;
     /** CURSED パークの最大取得数 */
     public static final int MAX_CURSED_PERKS = 8;
+    /** パークリロールのコスト */
+    public static final int PERK_REROLL_COST = 500;
+    /** ランダムパークの初期価格 */
+    public static final int RANDOM_PERK_BASE_PRICE = 2000;
+    /** ランダムパーク購入ごとの価格上昇量 */
+    public static final int RANDOM_PERK_PRICE_STEP = 100;
+
+    /** ローグライク内で許可するアーマー属性の上限 */
+    public static final double ROGUE_ARMOR_ATTRIBUTE_MAX = 60.0D;
+    /** 弾薬節約率の最大値。100%化は戦闘リスクが消えるため禁止 */
+    public static final float AMMO_SAVE_MAX_CHANCE = 0.85f;
+    /** 特殊耐性の最大軽減率。完全耐性化を避ける */
+    public static final float SPECIAL_RESISTANCE_MAX = 0.65f;
+    /** レアリティ/パーク合算後のリロード時間倍率下限 */
+    public static final float MIN_EFFECTIVE_RELOAD_MULT = 0.35f;
+    /** レアリティ/パーク合算後の実効連射速度上限 */
+    public static final int MAX_EFFECTIVE_FIRE_RATE_RPM = 1440;
+    /** FIRE_RATE パークのソフトキャップ開始値 */
+    public static final float FIRE_RATE_SOFTCAP_START = 80.0f;
+    /** FIRE_RATE パークのソフトキャップ後の伸び率 */
+    public static final float FIRE_RATE_POST_SOFTCAP_SCALE = 0.20f;
+    /** FIRE_RATE パークの最大ボーナス */
+    public static final float FIRE_RATE_HARD_CAP = 125.0f;
 
     /** フロアクリア判定の間隔（ティック） — 0.5秒 */
     public static final int FLOOR_CLEAR_CHECK_INTERVAL = 10;
@@ -145,6 +182,22 @@ public final class GameConstants {
     public static final float DEFAULT_MAX_STAMINA = 200.0f;
     /** スタミナ消費レート (tick あたり) */
     public static final float STAMINA_CONSUME_RATE = 1.0f;
+    /** ADS中のスタミナ消費レート (tick あたり) */
+    public static final float STAMINA_ADS_CONSUME_RATE = 0.32f;
+    /** ジャンプ1回あたりのスタミナ消費 */
+    public static final float STAMINA_JUMP_COST = 12.0f;
+    /** スタミナ切れ後に再使用できるようになる回復量 */
+    public static final float STAMINA_EXHAUST_RECOVERY = 35.0f;
+    /** スタミナ切れADSを許容する猶予時間 */
+    public static final int STAMINA_ADS_EXHAUST_GRACE_TICKS = 60;
+    /** スタミナ切れADS継続時の移動速度ペナルティ */
+    public static final double STAMINA_ADS_EXHAUST_SPEED_PENALTY = -0.35D;
+    /** スタミナ切れADS継続時の継続自傷ダメージ（HP/秒） */
+    public static final float STAMINA_ADS_EXHAUST_DAMAGE_PER_SECOND = 1.0f;
+    /** スニーク中のADSスタミナ消費倍率 */
+    public static final float STAMINA_ADS_SNEAK_MULT = 0.80f;
+    /** 伏せ中のADSスタミナ消費倍率 */
+    public static final float STAMINA_ADS_PRONE_MULT = 0.65f;
     /** スタミナ回復レート (tick あたり) */
     public static final float STAMINA_REGEN_RATE = 0.5f;
 
@@ -179,15 +232,17 @@ public final class GameConstants {
     public static final int SLOT_GUN_END = 1;
     /** Melee slot: 2 */
     public static final int SLOT_MELEE = 2;
-    /** Item slots: 3-8 */
+    /** Item slots: 3-11 */
     public static final int SLOT_ITEM_START = 3;
-    public static final int SLOT_ITEM_END = 8;
-    /** Ammo slots for gun 1: 9-10 */
-    public static final int SLOT_AMMO_GUN1_START = 9;
-    public static final int SLOT_AMMO_GUN1_END = 10;
-    /** Ammo slots for gun 2: 11-12 */
-    public static final int SLOT_AMMO_GUN2_START = 11;
-    public static final int SLOT_AMMO_GUN2_END = 12;
+    public static final int SLOT_ITEM_END = 11;
+    /** Ammo slots: 12-15 (共通弾薬枠 — gun1/gun2の区別なし) */
+    public static final int SLOT_AMMO_START = 12;
+    public static final int SLOT_AMMO_END = 15;
+    // 後方互換エイリアス
+    public static final int SLOT_AMMO_GUN1_START = SLOT_AMMO_START;
+    public static final int SLOT_AMMO_GUN1_END = 13;
+    public static final int SLOT_AMMO_GUN2_START = 14;
+    public static final int SLOT_AMMO_GUN2_END = SLOT_AMMO_END;
 
     // =====================================================================
     //  6. プリセット (装備選択)
@@ -199,7 +254,7 @@ public final class GameConstants {
     // Balanced
     public static final float BALANCED_HP = 30.0f;
     public static final float BALANCED_ARMOR = 4.0f;
-    public static final float BALANCED_STAMINA = 100.0f;
+    public static final float BALANCED_STAMINA = 120.0f;
     public static final double BALANCED_SPEED = 0.0;
     public static final String BALANCED_GUN = "tacz:glock_17";
     public static final String BALANCED_AMMO = "tacz:9mm";
@@ -209,7 +264,7 @@ public final class GameConstants {
     // Power
     public static final float POWER_HP = 24.0f;
     public static final float POWER_ARMOR = 2.0f;
-    public static final float POWER_STAMINA = 80.0f;
+    public static final float POWER_STAMINA = 100.0f;
     public static final double POWER_SPEED = -0.05;
     public static final String POWER_GUN = "tacz:deagle";
     public static final String POWER_AMMO = "tacz:50ae";
@@ -219,7 +274,7 @@ public final class GameConstants {
     // Classic
     public static final float CLASSIC_HP = 34.0f;
     public static final float CLASSIC_ARMOR = 3.0f;
-    public static final float CLASSIC_STAMINA = 120.0f;
+    public static final float CLASSIC_STAMINA = 140.0f;
     public static final double CLASSIC_SPEED = 0.05;
     public static final String CLASSIC_GUN = "tacz:m1911";
     public static final String CLASSIC_AMMO = "tacz:45acp";
@@ -232,10 +287,10 @@ public final class GameConstants {
 
     /** ドロップテーブル: EMERGENCY RATION (金リンゴ) */
     public static final int DROP_RARE_BASE = 5;
-    /** ドロップテーブル: 武器 (超レア) */
-    public static final int DROP_WEAPON_BASE = 2;
-    /** ドロップテーブル: アタッチメント */
-    public static final int DROP_ATTACHMENT_BASE = 5;
+    /** ドロップテーブル: 武器 (v0.5: 2→4 武器ドロップ倍増) */
+    public static final int DROP_WEAPON_BASE = 4;
+    /** ドロップテーブル: アタッチメント (v0.5: 5→8) */
+    public static final int DROP_ATTACHMENT_BASE = 8;
 
     // === Shop Price Multipliers ===
     public static final float PRICE_MULT_WEAPON = 3.0f;

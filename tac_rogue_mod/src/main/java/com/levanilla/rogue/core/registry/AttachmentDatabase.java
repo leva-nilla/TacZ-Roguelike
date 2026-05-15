@@ -9,6 +9,8 @@ import org.slf4j.LoggerFactory;
 import java.io.*;
 import java.nio.file.*;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.zip.*;
 
 /**
@@ -33,7 +35,12 @@ public final class AttachmentDatabase {
     // アタッチメントID → スロットタイプ (逆引き用)
     private static final Map<String, String> ATTACHMENT_SLOT_TYPE = new HashMap<>();
 
+    // (gunId, attachId) → compatibility
+    private static final ConcurrentMap<CompatibilityKey, Boolean> COMPATIBILITY_CACHE = new ConcurrentHashMap<>();
+
     private static boolean loaded = false;
+    private static int compatibilityGeneration = 0;
+    private static final Path CACHE_FILE = Paths.get("config", "tac_rogue", "attachment_db_cache.json");
 
     // ===== 初期化 =====
 
@@ -43,7 +50,10 @@ public final class AttachmentDatabase {
      */
     public static synchronized void init() {
         if (loaded) return;
+        long started = System.nanoTime();
         loaded = true;
+        COMPATIBILITY_CACHE.clear();
+        compatibilityGeneration++;
 
         List<Path> jarPaths = new ArrayList<>();
 
@@ -81,7 +91,17 @@ public final class AttachmentDatabase {
             LOGGER.warn("[AttachmentDB] Failed to find TacZ core JAR via classloader", e);
         }
 
-        LOGGER.info("[AttachmentDB] Scanning {} JAR(s) for attachment data", jarPaths.size());
+        if (isVerboseLogging()) {
+            LOGGER.info("[AttachmentDB] Scanning {} JAR(s) for attachment data", jarPaths.size());
+        } else {
+            LOGGER.debug("[AttachmentDB] Scanning {} JAR(s) for attachment data", jarPaths.size());
+        }
+
+        if (loadCache(jarPaths)) {
+            LOGGER.debug("[AttachmentDB] Loaded cached {} gun definitions, {} tag groups, {} attachment slot mappings in {} ms",
+                GUN_ALLOWED_ATTACHMENTS.size(), TAG_TO_ATTACHMENTS.size(), ATTACHMENT_SLOT_TYPE.size(), elapsedMs(started));
+            return;
+        }
 
         // Phase 1: タグ定義を読み込み (tacz_tags/attachments/*.json excluding allow_attachments)
         for (Path jar : jarPaths) {
@@ -101,8 +121,10 @@ public final class AttachmentDatabase {
         // Phase 4: スロットタイプ逆引きの補完 (ハードコードタグ、名前推測など)
         buildSlotTypeMap();
 
-        LOGGER.info("[AttachmentDB] Loaded {} gun definitions, {} tag groups, {} attachment slot mappings",
+        LOGGER.debug("[AttachmentDB] Loaded {} gun definitions, {} tag groups, {} attachment slot mappings",
             GUN_ALLOWED_ATTACHMENTS.size(), TAG_TO_ATTACHMENTS.size(), ATTACHMENT_SLOT_TYPE.size());
+        saveCache(jarPaths);
+        LOGGER.debug("[AttachmentDB] Load completed in {} ms", elapsedMs(started));
     }
 
     private static void loadTagDefinitions(Path jarPath) {
@@ -327,6 +349,17 @@ public final class AttachmentDatabase {
 
     /** 銃とアタッチメントの互換性を判定 (ダイレクトマッチ) */
     public static boolean isCompatible(String gunId, String attachId) {
+        ensureLoaded();
+        CompatibilityKey key = new CompatibilityKey(gunId, attachId, compatibilityGeneration);
+        Boolean cached = COMPATIBILITY_CACHE.get(key);
+        if (cached != null) return cached;
+
+        boolean result = computeCompatible(gunId, attachId);
+        COMPATIBILITY_CACHE.put(key, result);
+        return result;
+    }
+
+    private static boolean computeCompatible(String gunId, String attachId) {
         String slotTypeStr = getSlotType(attachId);
         if (slotTypeStr == null) slotTypeStr = guessSlotType(attachId);
 
@@ -374,19 +407,32 @@ public final class AttachmentDatabase {
         return hasNativeSlot;
     }
 
+    /** リソースリロード時にランタイム上の構造DBと互換性結果を破棄する。 */
+    public static synchronized void clearRuntimeCache() {
+        loaded = false;
+        GUN_ALLOWED_ATTACHMENTS.clear();
+        TAG_TO_ATTACHMENTS.clear();
+        ATTACHMENT_SLOT_TYPE.clear();
+        COMPATIBILITY_CACHE.clear();
+        compatibilityGeneration++;
+    }
+
     /** 銃の許可アタッチメントID全セットを取得 */
     public static Set<String> getAllowedAttachments(String gunId) {
+        ensureLoaded();
         Set<String> s = GUN_ALLOWED_ATTACHMENTS.get(gunId);
         return s != null ? Collections.unmodifiableSet(s) : Collections.emptySet();
     }
 
     /** アタッチメントのスロットタイプを取得 */
     public static String getSlotType(String attachId) {
+        ensureLoaded();
         return ATTACHMENT_SLOT_TYPE.get(attachId);
     }
 
     /** 名前ベースフォールバック */
     public static String guessSlotType(String attachId) {
+        ensureLoaded();
         String fromDb = getSlotType(attachId);
         if (fromDb != null) return fromDb;
         String lower = attachId.toLowerCase();
@@ -404,6 +450,7 @@ public final class AttachmentDatabase {
 
     /** 旧APIとの互換性: isSlotAllowed */
     public static boolean isSlotAllowed(String gunId, String slotType) {
+        ensureLoaded();
         Set<String> allowed = GUN_ALLOWED_ATTACHMENTS.get(gunId);
         if (allowed == null) return false;
         for (String attachId : allowed) {
@@ -416,6 +463,7 @@ public final class AttachmentDatabase {
 
     /** 旧APIとの互換性: getAllowedSlots */
     public static Set<String> getAllowedSlots(String gunId) {
+        ensureLoaded();
         Set<String> allowed = GUN_ALLOWED_ATTACHMENTS.get(gunId);
         if (allowed == null) return Collections.emptySet();
         Set<String> slots = new HashSet<>();
@@ -431,5 +479,110 @@ public final class AttachmentDatabase {
     public static boolean isLoaded() { return loaded; }
 
     /** 登録銃数を返す */
-    public static int getGunCount() { return GUN_ALLOWED_ATTACHMENTS.size(); }
+    public static int getGunCount() {
+        ensureLoaded();
+        return GUN_ALLOWED_ATTACHMENTS.size();
+    }
+
+    private static void ensureLoaded() {
+        if (!loaded) {
+            init();
+        }
+    }
+
+    private static long elapsedMs(long startedNs) {
+        return (System.nanoTime() - startedNs) / 1_000_000L;
+    }
+
+    private static boolean isVerboseLogging() {
+        return com.levanilla.rogue.core.RogueConfig.debugLogs();
+    }
+
+    private static boolean loadCache(List<Path> jarPaths) {
+        if (!Files.isRegularFile(CACHE_FILE)) {
+            return false;
+        }
+        try (Reader reader = Files.newBufferedReader(CACHE_FILE)) {
+            AttachmentDbCache cache = GSON.fromJson(reader, AttachmentDbCache.class);
+            if (cache == null || !sourceSignatures(jarPaths).equals(cache.sources)) {
+                return false;
+            }
+            GUN_ALLOWED_ATTACHMENTS.clear();
+            TAG_TO_ATTACHMENTS.clear();
+            ATTACHMENT_SLOT_TYPE.clear();
+            COMPATIBILITY_CACHE.clear();
+            if (cache.gunAllowedAttachments != null) GUN_ALLOWED_ATTACHMENTS.putAll(cache.gunAllowedAttachments);
+            if (cache.tagToAttachments != null) TAG_TO_ATTACHMENTS.putAll(cache.tagToAttachments);
+            if (cache.attachmentSlotType != null) ATTACHMENT_SLOT_TYPE.putAll(cache.attachmentSlotType);
+            return true;
+        } catch (Exception e) {
+            LOGGER.debug("[AttachmentDB] Failed to load cache: {}", e.toString());
+            return false;
+        }
+    }
+
+    private static void saveCache(List<Path> jarPaths) {
+        try {
+            Files.createDirectories(CACHE_FILE.getParent());
+            AttachmentDbCache cache = new AttachmentDbCache();
+            cache.sources = sourceSignatures(jarPaths);
+            cache.gunAllowedAttachments = new HashMap<>(GUN_ALLOWED_ATTACHMENTS);
+            cache.tagToAttachments = new HashMap<>(TAG_TO_ATTACHMENTS);
+            cache.attachmentSlotType = new HashMap<>(ATTACHMENT_SLOT_TYPE);
+            try (Writer writer = Files.newBufferedWriter(CACHE_FILE)) {
+                GSON.toJson(cache, writer);
+            }
+        } catch (Exception e) {
+            LOGGER.debug("[AttachmentDB] Failed to save cache: {}", e.toString());
+        }
+    }
+
+    private static List<SourceSignature> sourceSignatures(List<Path> paths) {
+        List<SourceSignature> signatures = new ArrayList<>();
+        for (Path path : paths) {
+            try {
+                Path normalized = path.toAbsolutePath().normalize();
+                SourceSignature signature = new SourceSignature();
+                signature.path = normalized.toString();
+                signature.size = Files.size(normalized);
+                signature.modified = Files.getLastModifiedTime(normalized).toMillis();
+                signatures.add(signature);
+            } catch (IOException e) {
+                SourceSignature signature = new SourceSignature();
+                signature.path = path.toAbsolutePath().normalize().toString();
+                signature.size = -1L;
+                signature.modified = -1L;
+                signatures.add(signature);
+            }
+        }
+        signatures.sort(Comparator.comparing(s -> s.path));
+        return signatures;
+    }
+
+    private static class AttachmentDbCache {
+        List<SourceSignature> sources;
+        Map<String, Set<String>> gunAllowedAttachments;
+        Map<String, Set<String>> tagToAttachments;
+        Map<String, String> attachmentSlotType;
+    }
+
+    private record CompatibilityKey(String gunId, String attachId, int generation) {}
+
+    private static class SourceSignature {
+        String path;
+        long size;
+        long modified;
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (!(o instanceof SourceSignature other)) return false;
+            return size == other.size && modified == other.modified && Objects.equals(path, other.path);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(path, size, modified);
+        }
+    }
 }

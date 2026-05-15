@@ -1,6 +1,7 @@
 package com.levanilla.rogue.client;
 
 import com.levanilla.rogue.core.TacZRegistryHelper;
+import com.levanilla.rogue.core.registry.AttachmentDatabase;
 import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import org.slf4j.Logger;
@@ -16,11 +17,13 @@ public class ClientReloadListener implements ResourceManagerReloadListener {
 
     @Override
     public void onResourceManagerReload(ResourceManager resourceManager) {
-        LOGGER.info("[TacZ Roguelike] Resource Manager Reload triggered. Clearing caches...");
+        LOGGER.debug("[TacZ Roguelike] Resource Manager Reload triggered. Clearing caches...");
         
-        // TacZRegistryHelperのキャッシュ（ショップの表示名など）をクリア
-        TacZRegistryHelper.clearCache();
+        // 表示名/リスト系と、TacZ資産構造に依存する互換性DBを分けて破棄する。
+        TacZRegistryHelper.clearRegistryCache();
+        TacZRegistryHelper.clearShopItemCache();
+        AttachmentDatabase.clearRuntimeCache();
         
-        LOGGER.info("[TacZ Roguelike] Cache cleared successfully.");
+        LOGGER.debug("[TacZ Roguelike] Cache cleared successfully.");
     }
 }

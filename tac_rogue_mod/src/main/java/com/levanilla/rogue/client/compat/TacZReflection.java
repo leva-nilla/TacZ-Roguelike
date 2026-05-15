@@ -11,6 +11,8 @@ public class TacZReflection {
     private static Field pitchSplineField = null;
     private static Field yawSplineField = null;
     private static Field shootTimeStampField = null;
+    private static Field xRotOField = null;
+    private static Field yRotOField = null;
     
     private static Method isValidPointMethod = null;
     private static Method valueMethod = null;
@@ -29,6 +31,12 @@ public class TacZReflection {
 
             shootTimeStampField = clazz.getDeclaredField("shootTimeStamp");
             shootTimeStampField.setAccessible(true);
+
+            xRotOField = clazz.getDeclaredField("xRotO");
+            xRotOField.setAccessible(true);
+
+            yRotOField = clazz.getDeclaredField("yRotO");
+            yRotOField.setAccessible(true);
 
             Class<?> splineClass = Class.forName("org.apache.commons.math3.analysis.polynomials.PolynomialSplineFunction");
             isValidPointMethod = splineClass.getMethod("isValidPoint", double.class);
@@ -68,6 +76,34 @@ public class TacZReflection {
             return new float[]{pitchVal, yawVal};
         } catch (Exception e) {
             return new float[]{0,0};
+        }
+    }
+
+    public static long getShootTimeStamp() {
+        try {
+            if (shootTimeStampField == null) return -1L;
+            return shootTimeStampField.getLong(null);
+        } catch (Exception ignored) {
+            return -1L;
+        }
+    }
+
+    public static float[] getConsumedRecoilOffsets() {
+        try {
+            float pitch = xRotOField == null ? 0f : (float) xRotOField.getDouble(null);
+            float yaw = yRotOField == null ? 0f : (float) yRotOField.getDouble(null);
+            return new float[]{pitch, yaw};
+        } catch (Exception ignored) {
+            return new float[]{0f, 0f};
+        }
+    }
+
+    public static void consumeCurrentRecoilFrame() {
+        try {
+            float[] offsets = getCurrentRecoilOffsets();
+            if (xRotOField != null) xRotOField.setDouble(null, offsets[0]);
+            if (yRotOField != null) yRotOField.setDouble(null, offsets[1]);
+        } catch (Exception ignored) {
         }
     }
 }

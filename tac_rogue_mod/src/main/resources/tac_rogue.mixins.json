@@ -6,16 +6,33 @@
   "refmap": "tac_rogue.refmap.json",
   "mixins": [
     "MixinSlot",
-    "MixinWitherBoss"
+    "MixinWitherBoss",
+    "MixinItemStack",
+    "MixinAmmoItem",
+    "MixinChestMenu",
+    "MixinInventory",
+    "MixinGunDataShootInterval",
+    "MixinLivingEntityReload",
+    "MixinLivingEntityShootBurst",
+    "MixinModernKineticGunScriptAPI",
+    "MixinPlayerAdvancements",
+    "MixinRangedAttribute",
+    "SlotAccessor"
   ],
   "client": [
     "MixinClientLevel",
     "MixinCreateWorldScreen",
     "MixinInventoryScreen",
     "MixinAbstractContainerScreen",
+    "MixinScreenAccessor",
+    "MixinScreenDirtBackground",
     "MixinTickAnimationEvent",
     "MixinLocalPlayerDraw",
-    "MixinTitleScreen"
+    "MixinLocalPlayerShootBurst",
+    "MixinLeaWindsCameraAgent",
+    "MixinTacZCameraSetupEvent",
+    "MixinObjectAnimationRunner",
+    "KeyMappingAccessor"
   ],
   "injectors": {
     "defaultRequire": 0

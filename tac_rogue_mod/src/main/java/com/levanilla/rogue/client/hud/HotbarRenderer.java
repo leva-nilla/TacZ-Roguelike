@@ -2,27 +2,32 @@ package com.levanilla.rogue.client.hud;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
 
 /**
- * 専用ホットバー描画 — [GUN1][GUN2] | [MELEE] | [ITEM x5] | [AMMO1][AMMO2]
+ * 専用ホットバー描画 — [GUN1][GUN2] | [MELEE] | [ITEM x9] | [AMMO1][AMMO2]
  */
 public final class HotbarRenderer {
 
     private HotbarRenderer() {}
 
     public static void render(GuiGraphics graphics, Minecraft mc, Player player, int screenWidth, int screenHeight) {
-        int slotSize = 20;
+        int slotSize = 18;
         int separatorWidth = 4;
-        // [GUN1][GUN2] | [MELEE] | [ITEM x6] | [AMMO x4]
-        int totalSlots = 2 + 1 + 6 + 4; // 13 slots
-        int totalWidth = totalSlots * slotSize + separatorWidth * 3;
+        int extendedItemGap = 3;
+        // [GUN1][GUN2] | [MELEE] | [ITEM x9] | [AMMO x4]
+        int totalSlots = 2 + 1 + 9 + 4; // 16 slots
+        int totalWidth = totalSlots * slotSize + separatorWidth * 3 + extendedItemGap;
         int baseX = (screenWidth - totalWidth) / 2;
-        int y = screenHeight - 24;
+        int y = screenHeight - 25;
 
         // 背景
-        graphics.fill(baseX - 2, y - 2, baseX + totalWidth + 2, y + slotSize + 2, 0xBB000000);
-        graphics.fill(baseX - 2, y - 2, baseX + totalWidth + 2, y, 0xFF00AAFF);
+        graphics.fill(baseX - 3, y - 11, baseX + totalWidth + 3, y + slotSize + 3, 0xCC02070D);
+        graphics.fill(baseX - 3, y - 11, baseX + totalWidth + 3, y - 9, 0xFF55DDAA);
+        graphics.drawString(mc.font, Component.translatable("hud.tac_rogue.hotbar.gun"), baseX + 3, y - 9, 0x88FF7755, false);
+        graphics.drawString(mc.font, Component.translatable("hud.tac_rogue.hotbar.kit"), baseX + 62, y - 9, 0x8822FF77, false);
+        graphics.drawString(mc.font, Component.translatable("hud.tac_rogue.hotbar.ammo"), baseX + totalWidth - 56, y - 9, 0x88FFFF66, false);
 
         int x = baseX;
 
@@ -91,13 +96,25 @@ public final class HotbarRenderer {
         graphics.fill(x + 1, y + 2, x + 2, y + slotSize - 2, 0x66FFFFFF);
         x += separatorWidth;
 
-        // === ITEM SLOTS (3-8) ===
-        for (int i = 3; i <= 8; i++) {
+        // === ITEM SLOTS (3-11) ===
+        for (int i = com.levanilla.rogue.core.GameConstants.SLOT_ITEM_START;
+             i <= com.levanilla.rogue.core.GameConstants.SLOT_ITEM_END; i++) {
+            if (i == 9) {
+                graphics.fill(x - 1, y + 2, x, y + slotSize - 2, 0x5577FFAA);
+                x += extendedItemGap;
+            }
             boolean selected = i == player.getInventory().selected;
-            int slotColor = selected ? 0xFF225522 : 0x4422FF22;
-            int borderColor = selected ? 0xFF33FF33 : 0x8822AA22;
+            boolean extended = i >= 9;
+            int slotColor = selected ? 0xFF225522 : extended ? 0x5533AA66 : 0x4422FF22;
+            int borderColor = selected ? 0xFF33FF33 : extended ? 0xAA55DDAA : 0x8822AA22;
             graphics.fill(x, y, x + slotSize - 1, y + slotSize, slotColor);
             graphics.renderOutline(x, y, slotSize - 1, slotSize, borderColor);
+            String slotLabel = extended ? "E" + (i - 8) : String.valueOf(i + 1);
+            graphics.pose().pushPose();
+            graphics.pose().translate(x + 1, y + 1, 200);
+            graphics.pose().scale(0.5f, 0.5f, 1.0f);
+            graphics.drawString(mc.font, slotLabel, 0, 0, extended ? 0xAA88FFCC : 0x8822FF22, false);
+            graphics.pose().popPose();
 
             net.minecraft.world.item.ItemStack stack = player.getInventory().items.get(i);
             if (!stack.isEmpty()) {
@@ -111,7 +128,7 @@ public final class HotbarRenderer {
         graphics.fill(x + 1, y + 2, x + 2, y + slotSize - 2, 0x66FFFFFF);
         x += separatorWidth;
 
-        // === AMMO SLOTS (9-12) ===
+        // === AMMO SLOTS (12-15) ===
         for (int ammoIdx = 0; ammoIdx < 4; ammoIdx++) {
             int slotIndex = com.levanilla.rogue.core.GameConstants.SLOT_AMMO_GUN1_START + ammoIdx;
             // Gun 1 ammo = orange tint, Gun 2 ammo = cyan tint
@@ -133,7 +150,7 @@ public final class HotbarRenderer {
                     graphics.pose().pushPose();
                     graphics.pose().translate(x + 2, y + 7, 0);
                     graphics.pose().scale(0.5f, 0.5f, 1.0f);
-                    graphics.drawString(mc.font, "§8AMMO", 0, 0, 0x44FFFFFF, false);
+                    graphics.drawString(mc.font, Component.translatable("hud.tac_rogue.hotbar.ammo_dim"), 0, 0, 0x44FFFFFF, false);
                     graphics.pose().popPose();
                 }
             }

@@ -1,52 +1,75 @@
 package com.levanilla.rogue.client.hud;
 
 import com.levanilla.rogue.client.ClientKeyBinds;
+import com.levanilla.rogue.client.ClientPreferenceManager;
+import com.levanilla.rogue.client.ClientStartupAssist;
+import com.levanilla.rogue.client.KeyComboManager;
+import com.levanilla.rogue.client.KeybindCaptureHelper;
 import com.levanilla.rogue.networking.RogueActionMessage;
 import com.levanilla.rogue.networking.TacRogueNetworking;
+import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.client.KeyMapping;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
-import net.minecraft.client.KeyMapping;
-import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraftforge.client.settings.KeyModifier;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class WelcomeScreen extends Screen {
+    private final List<Row> rows = new ArrayList<>();
 
     private Button closeButton;
-
-    // キー設定用のボタン
-    private Button sprintKeyBtn;
-    private Button sneakKeyBtn;
-    private Button crawlKeyBtn;
-    private Button flashLightKeyBtn;
-    private Button cameraKeyBtn;
-    private Button perspectiveKeyBtn;
-    private Button l3pAdjustKeyBtn;
-    private Button attachKeyBtn;
-    private Button taczInteractKeyBtn;
-    private KeyMapping taczInteractKeyBtnMapping;
-    private Button inspectKeyBtn;
-
+    private Button shaderStartupBtn;
     private AbstractWidget fovBtn;
     private AbstractWidget sensitivityBtn;
 
-    private KeyMapping activeKeybind = null; // 現在設定状態にあるキー
+    private KeyMapping activeKeybind;
+    private KeyMapping taczInteractKeyBtnMapping;
+    private int pendingModifierKey = InputConstants.UNKNOWN.getValue();
+    private int pendingModifierScan = 0;
+    private final List<InputConstants.Key> pendingChord = new ArrayList<>();
 
-    private double scrollY = 0;
-    private double targetScrollY = 0;
-    private int contentHeight = 500; // init() で動的に計算
+    private double scrollY;
+    private double targetScrollY;
+    private int contentHeight;
 
-    private final List<WidgetPos> widgetPositions = new ArrayList<>();
+    private Layout layout = Layout.empty();
 
-    private static class WidgetPos {
-        AbstractWidget widget;
-        int baseY;
-        WidgetPos(AbstractWidget widget, int baseY) {
+    private static final class Row {
+        final Component label;
+        final AbstractWidget widget;
+        final KeyMapping mapping;
+        final int baseY;
+
+        Row(Component label, AbstractWidget widget, KeyMapping mapping, int baseY) {
+            this.label = label;
             this.widget = widget;
+            this.mapping = mapping;
             this.baseY = baseY;
+        }
+    }
+
+    private record Layout(
+        int panelX,
+        int panelY,
+        int panelW,
+        int panelH,
+        int contentX,
+        int contentW,
+        int viewportTop,
+        int viewportBottom,
+        int buttonX,
+        int buttonW,
+        int labelW,
+        int footerY
+    ) {
+        static Layout empty() {
+            return new Layout(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         }
     }
 
@@ -57,163 +80,185 @@ public class WelcomeScreen extends Screen {
     @Override
     protected void init() {
         super.init();
-        this.widgetPositions.clear();
+        this.rows.clear();
+        this.activeKeybind = null;
+        clearPendingModifier();
+        this.pendingChord.clear();
+        autoBindTacZInteract();
 
-        // --- Auto-bind F key to TacZ Interact if it's currently used for offhand ---
-        KeyMapping interactMap = findExactKey("key.tacz.interact.desc", "key.tacz.interact");
-        if (this.minecraft != null && this.minecraft.options != null && interactMap != null) {
-            KeyMapping swapMap = this.minecraft.options.keySwapOffhand;
-            if ("key.keyboard.f".equals(swapMap.saveString()) && !"key.keyboard.f".equals(interactMap.saveString())) {
-                swapMap.setKeyModifierAndCode(net.minecraftforge.client.settings.KeyModifier.NONE, com.mojang.blaze3d.platform.InputConstants.UNKNOWN);
-                interactMap.setKeyModifierAndCode(net.minecraftforge.client.settings.KeyModifier.NONE, com.mojang.blaze3d.platform.InputConstants.getKey("key.keyboard.f"));
-                KeyMapping.resetMapping();
-                this.minecraft.options.save();
-            }
-        }
+        this.layout = computeLayout();
+        int y = 0;
+        y = measureTutorial(y, this.layout.contentW());
+        y += 16;
+        y = addSettingsRows(y);
+        y += 20;
 
-        int centerX = this.width / 2;
+        this.closeButton = Button.builder(Component.translatable("gui.tac_rogue.welcome.start"), b -> closeAndStart())
+            .bounds(this.layout.contentX(), this.layout.footerY(), this.layout.contentW(), 20)
+            .build();
+        this.addRenderableWidget(this.closeButton);
 
-        // 計算上の Y座標
-        int currentY = 50;
+        this.contentHeight = y;
+        clampScroll();
+        updateWidgetPositions();
+    }
 
-        // テキストの高さをざっくり計算する (幅制限: max 360 or width-40)
-        int textWidth = Math.min(360, this.width - 40);
-        int lineHeight = 12;
+    private Layout computeLayout() {
+        int margin = clampInt(Math.min(this.width, this.height) / 24, 10, 28);
+        int panelW = Math.min(720, this.width - margin * 2);
+        int panelH = Math.min(this.height - margin * 2, 520);
+        panelW = Math.max(260, panelW);
+        panelH = Math.max(190, panelH);
 
-        // タイトル
-        currentY += lineHeight * 2; // tut1
-        currentY += this.font.split(Component.translatable("gui.tac_rogue.welcome.tut2"), textWidth).size() * lineHeight;
-        currentY += this.font.split(Component.translatable("gui.tac_rogue.welcome.tut3"), textWidth).size() * lineHeight;
-        currentY += lineHeight;
-        
-        currentY += lineHeight * 2; // tut4
-        currentY += this.font.split(Component.translatable("gui.tac_rogue.welcome.tut5"), textWidth).size() * lineHeight;
-        currentY += lineHeight;
-        
-        currentY += lineHeight * 2; // tut6
-        currentY += this.font.split(Component.translatable("gui.tac_rogue.welcome.tut7"), textWidth).size() * lineHeight;
-        currentY += lineHeight; // scroll_hint
-        currentY += lineHeight * 2;
+        int panelX = (this.width - panelW) / 2;
+        int panelY = Math.max(8, (this.height - panelH) / 2);
+        int contentX = panelX + clampInt(panelW / 22, 14, 26);
+        int contentW = panelW - (contentX - panelX) * 2;
+        int footerY = panelY + panelH - 32;
+        int viewportTop = panelY + 44;
+        int viewportBottom = footerY - 10;
 
-        // ===== キー設定UI領域 (1カラム構成) =====
-        int btnWidth = 150;
-        int colX = centerX; // ボタンは中心から右へ
-        int spacing = 24;
+        int buttonW = clampInt(contentW / 3, 132, 210);
+        int buttonX = contentX + contentW - buttonW;
+        int labelW = Math.max(82, buttonX - contentX - 12);
+        return new Layout(panelX, panelY, panelW, panelH, contentX, contentW, viewportTop, viewportBottom,
+            buttonX, buttonW, labelW, footerY);
+    }
 
-        this.fovBtn = this.minecraft.options.fov().createButton(this.minecraft.options, colX, currentY, btnWidth);
-        this.addRenderableWidget(this.fovBtn);
-        this.widgetPositions.add(new WidgetPos(this.fovBtn, currentY));
-        
-        currentY += spacing;
+    private int measureTutorial(int y, int width) {
+        int textWidth = Math.max(120, width);
+        y += 4;
+        y += 15;
+        y += wrappedHeight("gui.tac_rogue.welcome.tut2", textWidth);
+        y += wrappedHeight("gui.tac_rogue.welcome.tut3", textWidth);
+        y += 12;
+        y += 15;
+        y += wrappedHeight("gui.tac_rogue.welcome.tut5", textWidth);
+        y += 12;
+        y += 15;
+        y += wrappedHeight("gui.tac_rogue.welcome.tut7", textWidth);
+        y += 20;
+        return y;
+    }
 
-        this.sensitivityBtn = this.minecraft.options.sensitivity().createButton(this.minecraft.options, colX, currentY, btnWidth);
-        this.addRenderableWidget(this.sensitivityBtn);
-        this.widgetPositions.add(new WidgetPos(this.sensitivityBtn, currentY));
+    private int wrappedHeight(String key, int width) {
+        return Math.max(12, this.font.split(Component.translatable(key), width).size() * 12);
+    }
 
-        currentY += spacing;
+    private int addSettingsRows(int y) {
+        this.shaderStartupBtn = addButtonRow(Component.translatable("gui.tac_rogue.welcome.shader_startup"),
+            Component.literal(ClientStartupAssist.shaderStatusText()), y, b -> {
+                ClientStartupAssist.setShaderEnabled(!ClientStartupAssist.isShaderEnabled());
+                b.setMessage(Component.literal(ClientStartupAssist.shaderStatusText()));
+            });
+        y += 38;
 
+        this.fovBtn = this.minecraft.options.fov().createButton(this.minecraft.options, this.layout.buttonX(), 0, this.layout.buttonW());
+        addExistingRow(Component.translatable("options.fov"), this.fovBtn, null, y);
+        y += 24;
+
+        this.sensitivityBtn = this.minecraft.options.sensitivity().createButton(this.minecraft.options, this.layout.buttonX(), 0, this.layout.buttonW());
+        addExistingRow(Component.translatable("options.sensitivity"), this.sensitivityBtn, null, y);
+        y += 24;
+
+        y = addKeyRows(y);
+        return y;
+    }
+
+    private int addKeyRows(int y) {
         KeyMapping sprintMap = this.minecraft.options.keySprint;
-        this.sprintKeyBtn = this.addRenderableWidget(Button.builder(getBindingName(sprintMap), b -> this.activeKeybind = sprintMap)
-            .bounds(colX, currentY, btnWidth, 20).build());
-        this.widgetPositions.add(new WidgetPos(this.sprintKeyBtn, currentY));
-        
-        currentY += spacing;
+        addKeyRow("gui.tac_rogue.welcome.key_sprint", sprintMap, y);
+        y += 24;
 
         KeyMapping sneakMap = this.minecraft.options.keyShift;
-        this.sneakKeyBtn = this.addRenderableWidget(Button.builder(getBindingName(sneakMap), b -> this.activeKeybind = sneakMap)
-            .bounds(colX, currentY, btnWidth, 20).build());
-        this.widgetPositions.add(new WidgetPos(this.sneakKeyBtn, currentY));
+        addKeyRow("gui.tac_rogue.welcome.key_sneak", sneakMap, y);
+        y += 24;
 
-        currentY += spacing;
+        y = addOptionalKeyRow("gui.tac_rogue.welcome.key_crawl", y, "key.tacz.crawl.desc", "key.tacz.crawl");
+        y = addKeyRowAndAdvance(Component.translatable("gui.tac_rogue.welcome.key_flashlight"), ClientKeyBinds.FLASHLIGHT, y);
+        y = addKeyRowAndAdvance(Component.translatable("gui.tac_rogue.welcome.key_camera"), ClientKeyBinds.CAMERA_TOGGLE, y);
+        y = addKeyRowAndAdvance(Component.translatable("gui.tac_rogue.welcome.key_perspective"), this.minecraft.options.keyTogglePerspective, y);
+        y = addOptionalKeyRow("gui.tac_rogue.welcome.key_l3p_adjust", y,
+            "key.leawind_third_person.adjust_position", "leawind_third_person.key.adjust_position");
+        y = addOptionalKeyRow("gui.tac_rogue.welcome.key_attach", y, "key.tacz.refit.desc", "key.tacz.refit");
 
-        KeyMapping crawlMap = findExactKey("key.tacz.crawl.desc", "key.tacz.crawl");
-        this.crawlKeyBtn = this.addRenderableWidget(Button.builder(
-            crawlMap != null ? getBindingName(crawlMap) : Component.literal("N/A"), 
-            b -> { if (crawlMap != null) this.activeKeybind = crawlMap; })
-            .bounds(colX, currentY, btnWidth, 20).build());
-        this.widgetPositions.add(new WidgetPos(this.crawlKeyBtn, currentY));
-        if (crawlMap == null) this.crawlKeyBtn.active = false;
+        this.taczInteractKeyBtnMapping = findExactKey("key.tacz.interact.desc", "key.tacz.interact");
+        y = addKeyRowAndAdvance(Component.translatable("gui.tac_rogue.welcome.key_tacz_interact"), this.taczInteractKeyBtnMapping, y);
 
-        currentY += spacing;
+        y = addOptionalKeyRow("gui.tac_rogue.welcome.key_inspect", y, "key.tacz.inspect.desc", "key.tacz.inspect");
+        y = addOptionalKeyRow("gui.tac_rogue.welcome.key_ysm_roulette", y, "key.yes_steve_model.animation_roulette.desc");
+        y = addOptionalKeyRow("gui.tac_rogue.welcome.key_shader_toggle", y,
+            "iris.keybind.toggleShaders", "key.iris.keybind.toggleShaders");
+        y = addOptionalKeyRow("gui.tac_rogue.welcome.key_shader_select", y,
+            "iris.keybind.shaderPackSelection", "key.iris.keybind.shaderPackSelection");
+        return addOptionalKeyRow("gui.tac_rogue.welcome.key_shader_reload", y,
+            "iris.keybind.reload", "key.iris.keybind.reload");
+    }
 
-        KeyMapping flashMap = ClientKeyBinds.FLASHLIGHT;
-        this.flashLightKeyBtn = this.addRenderableWidget(Button.builder(getBindingName(flashMap), b -> this.activeKeybind = flashMap)
-            .bounds(colX, currentY, btnWidth, 20).build());
-        this.widgetPositions.add(new WidgetPos(this.flashLightKeyBtn, currentY));
+    private int addKeyRowAndAdvance(Component label, KeyMapping mapping, int y) {
+        addKeyRow(label, mapping, y);
+        return y + 24;
+    }
 
-        currentY += spacing;
+    private int addOptionalKeyRow(String labelKey, int y, String... keyNames) {
+        addKeyRow(Component.translatable(labelKey), findExactKey(keyNames), y);
+        return y + 24;
+    }
 
-        KeyMapping cameraMap = ClientKeyBinds.CAMERA_TOGGLE;
-        this.cameraKeyBtn = this.addRenderableWidget(Button.builder(getBindingName(cameraMap), b -> this.activeKeybind = cameraMap)
-            .bounds(colX, currentY, btnWidth, 20).build());
-        this.widgetPositions.add(new WidgetPos(this.cameraKeyBtn, currentY));
+    private void addKeyRow(String labelKey, KeyMapping mapping, int y) {
+        addKeyRow(Component.translatable(labelKey), mapping, y);
+    }
 
-        currentY += spacing;
+    private void addKeyRow(Component label, KeyMapping mapping, int y) {
+        Button button = Button.builder(mapping != null ? getBindingName(mapping) : Component.literal("N/A"),
+            b -> {
+                if (mapping != null) {
+                    this.activeKeybind = mapping;
+                    this.pendingChord.clear();
+                    clearPendingModifier();
+                }
+            }).bounds(this.layout.buttonX(), 0, this.layout.buttonW(), 20).build();
+        if (mapping == null) button.active = false;
+        addExistingRow(label, button, mapping, y);
+    }
 
-        KeyMapping perspMap = this.minecraft.options.keyTogglePerspective;
-        this.perspectiveKeyBtn = this.addRenderableWidget(Button.builder(getBindingName(perspMap), b -> this.activeKeybind = perspMap)
-            .bounds(colX, currentY, btnWidth, 20).build());
-        this.widgetPositions.add(new WidgetPos(this.perspectiveKeyBtn, currentY));
+    private Button addButtonRow(Component label, Component message, int y, Button.OnPress onPress) {
+        Button button = Button.builder(message, onPress)
+            .bounds(this.layout.buttonX(), 0, this.layout.buttonW(), 20)
+            .build();
+        addExistingRow(label, button, null, y);
+        return button;
+    }
 
-        currentY += spacing;
+    private void addExistingRow(Component label, AbstractWidget widget, KeyMapping mapping, int y) {
+        this.addRenderableWidget(widget);
+        this.rows.add(new Row(label, widget, mapping, y));
+    }
 
-        KeyMapping l3pMap = findExactKey("key.leawind_third_person.adjust_position", "leawind_third_person.key.adjust_position");
-        this.l3pAdjustKeyBtn = this.addRenderableWidget(Button.builder(
-            l3pMap != null ? getBindingName(l3pMap) : Component.literal("N/A"), 
-            b -> { if (l3pMap != null) this.activeKeybind = l3pMap; })
-            .bounds(colX, currentY, btnWidth, 20).build());
-        this.widgetPositions.add(new WidgetPos(this.l3pAdjustKeyBtn, currentY));
-        if (l3pMap == null) this.l3pAdjustKeyBtn.active = false;
+    private void closeAndStart() {
+        TacRogueNetworking.CHANNEL.sendToServer(new RogueActionMessage(RogueActionMessage.ActionType.TUTORIAL_DONE));
+        if (this.minecraft != null && this.minecraft.player != null) {
+            this.minecraft.player.addTag("rogue:tutorial_seen");
+        }
+        ClientPreferenceManager.markWelcomeSeenForCurrentWorld();
+        this.minecraft.options.save();
+        this.minecraft.setScreen(null);
+    }
 
-        currentY += spacing;
-
-        KeyMapping attachMap = findExactKey("key.tacz.refit.desc", "key.tacz.refit");
-        this.attachKeyBtn = this.addRenderableWidget(Button.builder(
-            attachMap != null ? getBindingName(attachMap) : Component.literal("N/A"), 
-            b -> { if (attachMap != null) this.activeKeybind = attachMap; })
-            .bounds(colX, currentY, btnWidth, 20).build());
-        this.widgetPositions.add(new WidgetPos(this.attachKeyBtn, currentY));
-        if (attachMap == null) this.attachKeyBtn.active = false;
-
-        currentY += spacing;
-
-        this.taczInteractKeyBtnMapping = interactMap;
-        this.taczInteractKeyBtn = this.addRenderableWidget(Button.builder(
-            interactMap != null ? getBindingName(interactMap) : Component.literal("N/A"), 
-            b -> { if (interactMap != null) this.activeKeybind = interactMap; })
-            .bounds(colX, currentY, btnWidth, 20).build());
-        this.widgetPositions.add(new WidgetPos(this.taczInteractKeyBtn, currentY));
-        if (interactMap == null) this.taczInteractKeyBtn.active = false;
-
-        currentY += spacing;
-
-        KeyMapping inspectMap = findExactKey("key.tacz.inspect.desc", "key.tacz.inspect");
-        this.inspectKeyBtn = this.addRenderableWidget(Button.builder(
-            inspectMap != null ? getBindingName(inspectMap) : Component.literal("N/A"), 
-            b -> { if (inspectMap != null) this.activeKeybind = inspectMap; })
-            .bounds(colX, currentY, btnWidth, 20).build());
-        this.widgetPositions.add(new WidgetPos(this.inspectKeyBtn, currentY));
-        if (inspectMap == null) this.inspectKeyBtn.active = false;
-
-        currentY += spacing + 20;
-
-        // 閉じる＆チュートリアル完了ボタン
-        this.closeButton = this.addRenderableWidget(Button.builder(Component.translatable("gui.tac_rogue.welcome.start"), b -> {
-            TacRogueNetworking.CHANNEL.sendToServer(new RogueActionMessage(RogueActionMessage.ActionType.TUTORIAL_DONE));
-            if (this.minecraft != null && this.minecraft.player != null) {
-                this.minecraft.player.addTag("rogue:tutorial_seen");
-            }
+    private void autoBindTacZInteract() {
+        KeyMapping interactMap = findExactKey("key.tacz.interact.desc", "key.tacz.interact");
+        if (this.minecraft == null || this.minecraft.options == null || interactMap == null) return;
+        KeyMapping swapMap = this.minecraft.options.keySwapOffhand;
+        if ("key.keyboard.f".equals(swapMap.saveString()) && !"key.keyboard.f".equals(interactMap.saveString())) {
+            swapMap.setKeyModifierAndCode(KeyModifier.NONE, InputConstants.UNKNOWN);
+            interactMap.setKeyModifierAndCode(KeyModifier.NONE, InputConstants.getKey("key.keyboard.f"));
+            KeyMapping.resetMapping();
             this.minecraft.options.save();
-            this.minecraft.setScreen(null);
-        }).bounds(centerX - 100, currentY, 200, 20).build());
-        this.widgetPositions.add(new WidgetPos(this.closeButton, currentY));
-
-        currentY += 40;
-
-        this.contentHeight = currentY;
+        }
     }
 
     private KeyMapping findExactKey(String... keyNames) {
+        if (this.minecraft == null || this.minecraft.options == null) return null;
         for (String expectedName : keyNames) {
             for (KeyMapping mapping : this.minecraft.options.keyMappings) {
                 if (mapping.getName().equals(expectedName)) {
@@ -225,158 +270,253 @@ public class WelcomeScreen extends Screen {
     }
 
     private Component getBindingName(KeyMapping mapping) {
+        if (mapping == null) return Component.literal("N/A");
         if (this.activeKeybind == mapping) {
-            return Component.literal("> ").append(Component.translatable("gui.tac_rogue.welcome.press_key").withStyle(net.minecraft.ChatFormatting.YELLOW)).append(" <");
+            return Component.literal("> ")
+                .append(this.pendingChord.isEmpty()
+                    ? Component.translatable("gui.tac_rogue.welcome.press_key").withStyle(net.minecraft.ChatFormatting.YELLOW)
+                    : KeybindCaptureHelper.comboLabel(this.pendingChord).withStyle(net.minecraft.ChatFormatting.YELLOW))
+                .append(" <");
         }
+        if (KeyComboManager.hasCombo(mapping)) return KeyComboManager.label(mapping);
         return mapping.getTranslatedKeyMessage();
     }
 
     @Override
+    public void resize(Minecraft minecraft, int width, int height) {
+        super.resize(minecraft, width, height);
+        clampScroll();
+        updateWidgetPositions();
+    }
+
+    @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
-        double maxScroll = Math.max(0, this.contentHeight - this.height);
-        this.targetScrollY = Math.max(0, Math.min(maxScroll, this.targetScrollY - delta * 25));
+        if (mouseX < this.layout.panelX() || mouseX > this.layout.panelX() + this.layout.panelW()
+            || mouseY < this.layout.panelY() || mouseY > this.layout.panelY() + this.layout.panelH()) {
+            return super.mouseScrolled(mouseX, mouseY, delta);
+        }
+        this.targetScrollY -= delta * 28.0D;
+        clampScroll();
         return true;
     }
 
     @Override
     public void tick() {
         super.tick();
+        this.scrollY += (this.targetScrollY - this.scrollY) * 0.45D;
+        if (Math.abs(this.targetScrollY - this.scrollY) < 0.35D) this.scrollY = this.targetScrollY;
+        updateKeyLabels();
+        updateWidgetPositions();
+    }
 
-        // スクロール適用
-        this.scrollY += (this.targetScrollY - this.scrollY) * 0.5f;
-        for (WidgetPos wp : this.widgetPositions) {
-            wp.widget.setY((int) (wp.baseY - this.scrollY));
+    private void updateKeyLabels() {
+        for (Row row : this.rows) {
+            if (!(row.widget instanceof Button button)) continue;
+            if (row.widget == this.shaderStartupBtn) {
+                button.setMessage(Component.literal(ClientStartupAssist.shaderStatusText()));
+                continue;
+            }
+            if (row.mapping != null) {
+                button.setMessage(getBindingName(row.mapping));
+            }
         }
+    }
 
-        // ラベル更新
-        if (this.sprintKeyBtn != null) this.sprintKeyBtn.setMessage(getBindingName(this.minecraft.options.keySprint));
-        if (this.sneakKeyBtn != null) this.sneakKeyBtn.setMessage(getBindingName(this.minecraft.options.keyShift));
-        
-        KeyMapping crawlMap = findExactKey("key.tacz.crawl.desc", "key.tacz.crawl");
-        if (this.crawlKeyBtn != null && crawlMap != null) this.crawlKeyBtn.setMessage(getBindingName(crawlMap));
-        
-        if (this.flashLightKeyBtn != null) this.flashLightKeyBtn.setMessage(getBindingName(ClientKeyBinds.FLASHLIGHT));
-        if (this.cameraKeyBtn != null) this.cameraKeyBtn.setMessage(getBindingName(ClientKeyBinds.CAMERA_TOGGLE));
-        if (this.perspectiveKeyBtn != null) this.perspectiveKeyBtn.setMessage(getBindingName(this.minecraft.options.keyTogglePerspective));
-        
-        KeyMapping l3pMap = findExactKey("key.leawind_third_person.adjust_position", "leawind_third_person.key.adjust_position");
-        if (this.l3pAdjustKeyBtn != null && l3pMap != null) this.l3pAdjustKeyBtn.setMessage(getBindingName(l3pMap));
-        
-        KeyMapping attachMap = findExactKey("key.tacz.refit.desc", "key.tacz.refit");
-        if (this.attachKeyBtn != null && attachMap != null) this.attachKeyBtn.setMessage(getBindingName(attachMap));
-
-        if (this.taczInteractKeyBtn != null && this.taczInteractKeyBtnMapping != null) this.taczInteractKeyBtn.setMessage(getBindingName(this.taczInteractKeyBtnMapping));
-        
-        KeyMapping inspectMap = findExactKey("key.tacz.inspect.desc", "key.tacz.inspect");
-        if (this.inspectKeyBtn != null && inspectMap != null) this.inspectKeyBtn.setMessage(getBindingName(inspectMap));
+    private void updateWidgetPositions() {
+        for (Row row : this.rows) {
+            int y = this.layout.viewportTop() + row.baseY - (int)Math.round(this.scrollY);
+            row.widget.setX(this.layout.buttonX());
+            row.widget.setY(y);
+            row.widget.setWidth(this.layout.buttonW());
+            row.widget.visible = y + row.widget.getHeight() >= this.layout.viewportTop()
+                && y <= this.layout.viewportBottom();
+        }
+        if (this.closeButton != null) {
+            this.closeButton.setX(this.layout.contentX());
+            this.closeButton.setY(this.layout.footerY());
+            this.closeButton.setWidth(this.layout.contentW());
+            this.closeButton.visible = true;
+        }
     }
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         if (this.activeKeybind != null) {
             if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
-                this.minecraft.options.setKey(this.activeKeybind, com.mojang.blaze3d.platform.InputConstants.UNKNOWN);
-            } else {
-                this.minecraft.options.setKey(this.activeKeybind, com.mojang.blaze3d.platform.InputConstants.getKey(keyCode, scanCode));
+                this.activeKeybind.setKeyModifierAndCode(KeyModifier.NONE, InputConstants.UNKNOWN);
+                KeyComboManager.clearCombo(this.activeKeybind);
+                finishKeyCapture();
+                return true;
             }
-            KeyMapping.resetMapping();
-            this.activeKeybind = null;
+            InputConstants.Key key = InputConstants.getKey(keyCode, scanCode);
+            addPendingKey(key);
+            if (KeybindCaptureHelper.isModifierKey(keyCode) && this.pendingChord.size() == 1) {
+                this.pendingModifierKey = keyCode;
+                this.pendingModifierScan = scanCode;
+            }
             return true;
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     @Override
+    public boolean keyReleased(int keyCode, int scanCode, int modifiers) {
+        if (this.activeKeybind != null && !this.pendingChord.isEmpty()) {
+            commitPendingChord();
+            return true;
+        }
+        return super.keyReleased(keyCode, scanCode, modifiers);
+    }
+
+    @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (this.activeKeybind != null) {
-            this.minecraft.options.setKey(this.activeKeybind, com.mojang.blaze3d.platform.InputConstants.Type.MOUSE.getOrCreate(button));
-            KeyMapping.resetMapping();
-            this.activeKeybind = null;
+            addPendingKey(InputConstants.Type.MOUSE.getOrCreate(button));
+            commitPendingChord();
             return true;
         }
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
-    @Override
-    public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-        // 背景を暗くする
-        this.renderBackground(guiGraphics);
-
-        int centerX = this.width / 2;
-
-        guiGraphics.pose().pushPose();
-        guiGraphics.pose().translate(0, -this.scrollY, 0);
-
-        // タイトル
-        guiGraphics.drawCenteredString(this.font, this.title, centerX, 20, 0xFFFFFF);
-
-        // ===== チュートリアル説明 =====
-        int textWidth = Math.min(360, this.width - 40);
-        int textX = centerX - textWidth / 2;
-        int textY = 50;
-        int lineHeight = 12;
-
-        guiGraphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.tut1").withStyle(net.minecraft.ChatFormatting.GOLD), textX, textY, 0xFFFFFF, false);
-        textY += lineHeight * 2;
-        textY = drawMultilineWrapped(guiGraphics, "gui.tac_rogue.welcome.tut2", textX, textY, textWidth, lineHeight, 0xDDDDDD);
-        textY = drawMultilineWrapped(guiGraphics, "gui.tac_rogue.welcome.tut3", textX, textY, textWidth, lineHeight, 0xDDDDDD);
-        textY += lineHeight;
-        
-        guiGraphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.tut4").withStyle(net.minecraft.ChatFormatting.AQUA), textX, textY, 0xFFFFFF, false);
-        textY += lineHeight * 2;
-        textY = drawMultilineWrapped(guiGraphics, "gui.tac_rogue.welcome.tut5", textX, textY, textWidth, lineHeight, 0xDDDDDD);
-        textY += lineHeight;
-        
-        guiGraphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.tut6").withStyle(net.minecraft.ChatFormatting.YELLOW), textX, textY, 0xFFFFFF, false);
-        textY += lineHeight * 2;
-        textY = drawMultilineWrapped(guiGraphics, "gui.tac_rogue.welcome.tut7", textX, textY, textWidth, lineHeight, 0xDDDDDD);
-
-        textY += lineHeight;
-        guiGraphics.drawCenteredString(this.font, Component.translatable("gui.tac_rogue.welcome.scroll_hint").withStyle(net.minecraft.ChatFormatting.GREEN, net.minecraft.ChatFormatting.BOLD), centerX, textY, 0xFFFFFF);
-
-        // ===== キー設定のラベル (1カラム) =====
-        int colLabelX = centerX - 10;
-        int currentY = textY + lineHeight * 2;
-        int spacing = 24;
-        int txtOffsetY = 6; // バニラのボタンテキストとの高さを合わせる
-
-        guiGraphics.drawString(this.font, Component.translatable("options.fov"), colLabelX - this.font.width(Component.translatable("options.fov").getString()), currentY + txtOffsetY, 0xFFFFFF, false);
-        currentY += spacing;
-        guiGraphics.drawString(this.font, Component.translatable("options.sensitivity"), colLabelX - this.font.width(Component.translatable("options.sensitivity").getString()), currentY + txtOffsetY, 0xFFFFFF, false);
-        currentY += spacing;
-        guiGraphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.key_sprint"), colLabelX - this.font.width(Component.translatable("gui.tac_rogue.welcome.key_sprint").getString()), currentY + txtOffsetY, 0xFFFFFF, false);
-        currentY += spacing;
-        guiGraphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.key_sneak"), colLabelX - this.font.width(Component.translatable("gui.tac_rogue.welcome.key_sneak").getString()), currentY + txtOffsetY, 0xFFFFFF, false);
-        currentY += spacing;
-        guiGraphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.key_crawl"), colLabelX - this.font.width(Component.translatable("gui.tac_rogue.welcome.key_crawl").getString()), currentY + txtOffsetY, 0xFFFFFF, false);
-        currentY += spacing;
-        guiGraphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.key_flashlight"), colLabelX - this.font.width(Component.translatable("gui.tac_rogue.welcome.key_flashlight").getString()), currentY + txtOffsetY, 0xFFFFFF, false);
-        currentY += spacing;
-        guiGraphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.key_camera"), colLabelX - this.font.width(Component.translatable("gui.tac_rogue.welcome.key_camera").getString()), currentY + txtOffsetY, 0xFFFFFF, false);
-        currentY += spacing;
-        guiGraphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.key_perspective"), colLabelX - this.font.width(Component.translatable("gui.tac_rogue.welcome.key_perspective").getString()), currentY + txtOffsetY, 0xFFFFFF, false);
-        currentY += spacing;
-        guiGraphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.key_l3p_adjust"), colLabelX - this.font.width(Component.translatable("gui.tac_rogue.welcome.key_l3p_adjust").getString()), currentY + txtOffsetY, 0xFFFFFF, false);
-        currentY += spacing;
-        guiGraphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.key_attach"), colLabelX - this.font.width(Component.translatable("gui.tac_rogue.welcome.key_attach").getString()), currentY + txtOffsetY, 0xFFFFFF, false);
-        currentY += spacing;
-        guiGraphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.key_tacz_interact"), colLabelX - this.font.width(Component.translatable("gui.tac_rogue.welcome.key_tacz_interact").getString()), currentY + txtOffsetY, 0xFFFFFF, false);
-        currentY += spacing;
-        guiGraphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.key_inspect"), colLabelX - this.font.width(Component.translatable("gui.tac_rogue.welcome.key_inspect").getString()), currentY + txtOffsetY, 0xFFFFFF, false);
-
-        guiGraphics.pose().popPose();
-
-        super.render(guiGraphics, mouseX, mouseY, partialTick);
+    private void addPendingKey(InputConstants.Key key) {
+        if (key != null && key != InputConstants.UNKNOWN && !this.pendingChord.contains(key)) {
+            this.pendingChord.add(key);
+        }
     }
 
-    private int drawMultilineWrapped(GuiGraphics guiGraphics, String key, int x, int y, int wrapWidth, int lineHeight, int color) {
-        java.util.List<net.minecraft.util.FormattedCharSequence> lines = this.font.split(Component.translatable(key), wrapWidth);
-        int currentY = y;
-        for (net.minecraft.util.FormattedCharSequence line : lines) {
-            guiGraphics.drawString(this.font, line, x, currentY, color, false);
-            currentY += lineHeight;
+    private void commitPendingChord() {
+        if (this.activeKeybind == null || this.pendingChord.isEmpty()) return;
+        if (this.pendingChord.size() == 1) {
+            KeyComboManager.clearCombo(this.activeKeybind);
+            KeybindCaptureHelper.assign(this.activeKeybind, KeyModifier.NONE, this.pendingChord.get(0));
+        } else if (KeybindCaptureHelper.canUseForgeModifier(this.pendingChord)) {
+            KeyComboManager.clearCombo(this.activeKeybind);
+            KeybindCaptureHelper.assign(this.activeKeybind,
+                KeybindCaptureHelper.forgeModifier(this.pendingChord),
+                KeybindCaptureHelper.mainKey(this.pendingChord));
+        } else {
+            KeyComboManager.setCombo(this.activeKeybind, this.pendingChord);
         }
-        return currentY;
+        finishKeyCapture();
+    }
+
+    private void finishKeyCapture() {
+        this.minecraft.options.save();
+        this.activeKeybind = null;
+        clearPendingModifier();
+        this.pendingChord.clear();
+    }
+
+    private void clearPendingModifier() {
+        this.pendingModifierKey = InputConstants.UNKNOWN.getValue();
+        this.pendingModifierScan = 0;
+    }
+
+    @Override
+    public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        this.renderBackground(graphics);
+        graphics.fill(0, 0, this.width, this.height, 0xB8000000);
+        drawPanel(graphics);
+
+        graphics.enableScissor(this.layout.contentX(), this.layout.viewportTop(),
+            this.layout.contentX() + this.layout.contentW(), this.layout.viewportBottom());
+        renderContent(graphics);
+        graphics.disableScissor();
+
+        super.render(graphics, mouseX, mouseY, partialTick);
+        renderScrollBar(graphics);
+    }
+
+    private void drawPanel(GuiGraphics graphics) {
+        int x = this.layout.panelX();
+        int y = this.layout.panelY();
+        int w = this.layout.panelW();
+        int h = this.layout.panelH();
+        graphics.fill(x, y, x + w, y + h, 0xEA071118);
+        graphics.fill(x, y, x + w, y + 2, 0xFF55DDAA);
+        graphics.fill(x, y + h - 2, x + w, y + h, 0x996F5D26);
+        graphics.renderOutline(x, y, w, h, 0xAA55DDAA);
+        graphics.drawCenteredString(this.font, this.title, this.width / 2, y + 14, 0xFFAAFFDD);
+        graphics.drawCenteredString(this.font, Component.translatable("gui.tac_rogue.welcome.scroll_hint"),
+            this.width / 2, y + 28, 0xFF6FE8C4);
+    }
+
+    private void renderContent(GuiGraphics graphics) {
+        int x = this.layout.contentX();
+        int w = this.layout.contentW();
+        int y = this.layout.viewportTop() - (int)Math.round(this.scrollY);
+
+        graphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.tut1").withStyle(net.minecraft.ChatFormatting.GOLD), x, y + 4, 0xFFFFFFFF, false);
+        y += 19;
+        y = drawWrapped(graphics, "gui.tac_rogue.welcome.tut2", x, y, w, 0xFFD8DEE9);
+        y = drawWrapped(graphics, "gui.tac_rogue.welcome.tut3", x, y, w, 0xFFD8DEE9);
+        y += 12;
+        graphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.tut4").withStyle(net.minecraft.ChatFormatting.AQUA), x, y, 0xFFFFFFFF, false);
+        y += 15;
+        y = drawWrapped(graphics, "gui.tac_rogue.welcome.tut5", x, y, w, 0xFFD8DEE9);
+        y += 12;
+        graphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.tut6").withStyle(net.minecraft.ChatFormatting.YELLOW), x, y, 0xFFFFFFFF, false);
+        y += 15;
+        drawWrapped(graphics, "gui.tac_rogue.welcome.tut7", x, y, w, 0xFFD8DEE9);
+
+        for (Row row : this.rows) {
+            int rowY = this.layout.viewportTop() + row.baseY - (int)Math.round(this.scrollY);
+            if (rowY + 20 < this.layout.viewportTop() || rowY > this.layout.viewportBottom()) continue;
+            graphics.drawString(this.font, fit(row.label, this.layout.labelW()), x, rowY + 6, 0xFFE7FFF7, false);
+        }
+
+        int memoryY = this.layout.viewportTop() + rowsStartY() + 24 - (int)Math.round(this.scrollY);
+        if (memoryY >= this.layout.viewportTop() && memoryY <= this.layout.viewportBottom()) {
+            graphics.drawString(this.font, fit(Component.literal(ClientStartupAssist.memoryAdvice()), this.layout.contentW()),
+                x, memoryY + 2, 0xFFB8C0CC, false);
+        }
+    }
+
+    private int rowsStartY() {
+        return this.rows.isEmpty() ? this.contentHeight : this.rows.get(0).baseY;
+    }
+
+    private int drawWrapped(GuiGraphics graphics, String key, int x, int y, int width, int color) {
+        for (net.minecraft.util.FormattedCharSequence line : this.font.split(Component.translatable(key), width)) {
+            graphics.drawString(this.font, line, x, y, color, false);
+            y += 12;
+        }
+        return y;
+    }
+
+    private void renderScrollBar(GuiGraphics graphics) {
+        int maxScroll = maxScroll();
+        if (maxScroll <= 0) return;
+        int barX = this.layout.panelX() + this.layout.panelW() - 8;
+        int trackTop = this.layout.viewportTop();
+        int trackBottom = this.layout.viewportBottom();
+        int trackH = Math.max(1, trackBottom - trackTop);
+        int thumbH = Math.max(18, (int)(trackH * (trackH / (double)Math.max(trackH, this.contentHeight))));
+        int thumbY = trackTop + (int)((trackH - thumbH) * (this.scrollY / maxScroll));
+        graphics.fill(barX, trackTop, barX + 2, trackBottom, 0x4455DDAA);
+        graphics.fill(barX - 1, thumbY, barX + 3, thumbY + thumbH, 0xDD55DDAA);
+    }
+
+    private Component fit(Component component, int maxWidth) {
+        String text = component.getString();
+        if (this.font.width(text) <= maxWidth) return component;
+        while (text.length() > 1 && this.font.width(text + "...") > maxWidth) {
+            text = text.substring(0, text.length() - 1);
+        }
+        return Component.literal(text + "...");
+    }
+
+    private void clampScroll() {
+        int max = maxScroll();
+        this.targetScrollY = Math.max(0, Math.min(max, this.targetScrollY));
+        this.scrollY = Math.max(0, Math.min(max, this.scrollY));
+    }
+
+    private int maxScroll() {
+        return Math.max(0, this.contentHeight - Math.max(1, this.layout.viewportBottom() - this.layout.viewportTop()));
+    }
+
+    private static int clampInt(int value, int min, int max) {
+        return Math.max(min, Math.min(max, value));
     }
 }
-

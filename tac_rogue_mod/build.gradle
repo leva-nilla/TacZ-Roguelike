@@ -75,6 +75,7 @@ dependencies {
 
     implementation fg.deobf("maven.modrinth:timeless-and-classics-zero:1.1.7-hotfix2")
     implementation fg.deobf("maven.modrinth:leawind-third-person:2.2.0")
+    compileOnly fg.deobf("maven.modrinth:lr-tactical:0.3.0")
     runtimeOnly fg.deobf("maven.modrinth:architectury-api:9.2.14+forge")
 
     compileOnly(annotationProcessor("io.github.llamalad7:mixinextras-common:0.5.0-beta.2"))

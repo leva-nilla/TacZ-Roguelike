@@ -2,6 +2,8 @@ package com.levanilla.rogue.world;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.Container;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import org.slf4j.Logger;
@@ -41,17 +43,122 @@ public class MapGenerator {
     private static final int MAX_ROOM     = 18;
     private static final int ROOM_HEIGHT  = 5;
     private static final int CORRIDOR_W   = 3;
+    private static final int BOSS_CORRIDOR_W = 5;  // ボスフロアの通路幅（Ravager等の巨体対応）
     private static final int WALL_THICK   = 1;
     private static final int ROOM_RADIUS  = 70;           // 部屋配置の有効半径
+    private static final int CLEAR_RADIUS = ROOM_RADIUS + 8 + 1;
+    private static final int CLEAR_MIN_Y_OFFSET = -4;
+    private static final int CLEAR_MAX_Y_OFFSET = ROOM_HEIGHT + 4;
+    private static final int SET_BLOCK_FLAGS = 2 | 16; // 2=クライアント通知, 16=ライト計算スキップ
+    private static final int MAX_STORED_FOOTPRINTS = 32;
+    private static final float EXTRA_SUPPLY_CHEST_CHANCE =
+        readFloatProperty("tac_rogue.extraSupplyChestChance", 0.25F, 0.0F, 1.0F);
+    public static final int DEFAULT_GENERATION_BLOCKS_PER_TICK =
+        Integer.getInteger("tac_rogue.generationBlocksPerTick", 5000);
+
+    private static final ThreadLocal<DungeonFootprint> ACTIVE_FOOTPRINT = new ThreadLocal<>();
+    private static final ThreadLocal<GenerationJob> ACTIVE_GENERATION_JOB = new ThreadLocal<>();
+    private static final Map<DungeonKey, DungeonFootprint> DUNGEON_FOOTPRINTS =
+        Collections.synchronizedMap(new LinkedHashMap<DungeonKey, DungeonFootprint>(16, 0.75f, true) {
+            private static final long serialVersionUID = 1L;
+
+            @Override
+            protected boolean removeEldestEntry(Map.Entry<DungeonKey, DungeonFootprint> eldest) {
+                return size() > MAX_STORED_FOOTPRINTS;
+            }
+        });
+
+    public static final class GenerationJob {
+        private final ServerLevel level;
+        private final LinkedHashMap<BlockPos, BlockState> blockUpdates = new LinkedHashMap<>();
+        private final List<Runnable> completionActions = new ArrayList<>();
+        private BlockPos spawnPos;
+        private boolean completionActionsRun;
+
+        private GenerationJob(ServerLevel level) {
+            this.level = level;
+        }
+
+        private void addBlock(BlockPos pos, BlockState state) {
+            BlockPos key = pos.immutable();
+            blockUpdates.remove(key);
+            blockUpdates.put(key, state);
+        }
+
+        private void addCompletionAction(Runnable action) {
+            completionActions.add(action);
+        }
+
+        private void setSpawnPos(BlockPos spawnPos) {
+            this.spawnPos = spawnPos == null ? null : spawnPos.immutable();
+        }
+
+        public BlockPos getSpawnPos() {
+            return spawnPos;
+        }
+
+        public int remainingBlockUpdates() {
+            return blockUpdates.size();
+        }
+
+        public boolean isComplete() {
+            return blockUpdates.isEmpty() && completionActionsRun;
+        }
+
+        public boolean tick(int maxBlockUpdates) {
+            int budget = Math.max(1, maxBlockUpdates);
+            int placed = 0;
+            Iterator<Map.Entry<BlockPos, BlockState>> iterator = blockUpdates.entrySet().iterator();
+            while (placed < budget && iterator.hasNext()) {
+                Map.Entry<BlockPos, BlockState> update = iterator.next();
+                placeBlockNow(level, update.getKey(), update.getValue());
+                iterator.remove();
+                placed++;
+            }
+            if (blockUpdates.isEmpty() && !completionActionsRun) {
+                completionActionsRun = true;
+                for (Runnable action : List.copyOf(completionActions)) {
+                    action.run();
+                }
+                completionActions.clear();
+            }
+            return isComplete();
+        }
+
+        public void cancel() {
+            blockUpdates.clear();
+            completionActions.clear();
+            completionActionsRun = true;
+        }
+    }
 
     // ===================================================================
     //  メインエントリポイント
     // ===================================================================
     public static BlockPos generateRoom(ServerLevel level, BlockPos center,
                                          ThemeManager.ThemeInstance themeOverride, int floor, long runSeed) {
+        return generateRoom(level, center, themeOverride, floor, runSeed, 0L);
+    }
+
+    public static BlockPos generateRoom(ServerLevel level, BlockPos center,
+                                         ThemeManager.ThemeInstance themeOverride, int floor, long runSeed,
+                                         long floorSeedSalt) {
+        return generateRoom(level, center, themeOverride, floor, runSeed, floorSeedSalt, null, "SOLO", 1);
+    }
+
+    public static BlockPos generateRoom(ServerLevel level, BlockPos center,
+                                         ThemeManager.ThemeInstance themeOverride, int floor, long runSeed,
+                                         long floorSeedSalt, String instanceId, String mode, int participantCount) {
         clearPreviousDungeon(level, center);
 
-        long seed = System.nanoTime() ^ (floor * 7919L) ^ runSeed;
+        DungeonFootprint footprint = new DungeonFootprint();
+        ACTIVE_FOOTPRINT.set(footprint);
+        try {
+
+        long seed = runSeed
+            ^ (floor * 7919L)
+            ^ Long.rotateLeft(floorSeedSalt, 17)
+            ^ 0x5F3759DFL;
         Random rand = new Random(seed);
 
         long worldSeed = level.getSeed();
@@ -79,6 +186,7 @@ public class MapGenerator {
         }
 
         // 2b: 通路をグリッドに描画（直線接続）
+        int corrWidth = isBoss ? BOSS_CORRIDOR_W : CORRIDOR_W;
         for (int i = 0; i < rooms.size() - 1; i++) {
             int[] from = rooms.get(i);
             int[] to   = rooms.get(i + 1);
@@ -86,7 +194,7 @@ public class MapGenerator {
             int fz = GRID_CENTER + from[1] + from[3] / 2;
             int tx = GRID_CENTER + to[0] + to[2] / 2;
             int tz = GRID_CENTER + to[1] + to[3] / 2;
-            stampCorridor(grid, fx, fz, tx, tz);
+            stampCorridor(grid, fx, fz, tx, tz, corrWidth);
         }
 
         // ループ接続（50%確率）
@@ -100,7 +208,7 @@ public class MapGenerator {
                     int fz = GRID_CENTER + from[1] + from[3] / 2;
                     int tx = GRID_CENTER + to[0] + to[2] / 2;
                     int tz = GRID_CENTER + to[1] + to[3] / 2;
-                    stampCorridor(grid, fx, fz, tx, tz);
+                    stampCorridor(grid, fx, fz, tx, tz, corrWidth);
                 }
             }
         }
@@ -170,6 +278,8 @@ public class MapGenerator {
         }
 
         // --- Phase 5: 部屋内装飾 (decor/accent活用 + ステルスカバー) ---
+        int supplyChests = 0;
+        int maxSupplyChests = isBoss ? 1 : 1 + (rand.nextFloat() < EXTRA_SUPPLY_CHEST_CHANCE ? 1 : 0);
         for (int ri = 0; ri < rooms.size(); ri++) {
             int[] room = rooms.get(ri);
             int rx = center.getX() + room[0];
@@ -225,6 +335,26 @@ public class MapGenerator {
                 setBlock(level, new BlockPos(bx, baseY + 1, bz), theme.wall);
                 setBlock(level, new BlockPos(bx + 1, baseY + 1, bz), theme.wall);
             }
+
+            if (decorateRoomArchetype(level, rand, theme, baseY, ri, isBoss, rx, rz, rw, rd,
+                supplyChests < maxSupplyChests, floor, instanceId, mode, supplyChests)) {
+                supplyChests++;
+            }
+        }
+        if (supplyChests == 0 && !rooms.isEmpty()) {
+            int fallbackIndex = isBoss && rooms.size() > 2 ? 2 : Math.min(1, rooms.size() - 1);
+            int[] room = rooms.get(fallbackIndex);
+            buildSupplyCorner(level, rand, theme, baseY,
+                center.getX() + room[0],
+                center.getZ() + room[1],
+                room[2],
+                room[3],
+                true,
+                floor,
+                instanceId,
+                mode,
+                0);
+            supplyChests = 1;
         }
 
         // --- Phase 5.5: 通路のアクセント壁 ---
@@ -264,13 +394,21 @@ public class MapGenerator {
             int bz = center.getZ() + bossRoom[1];
             int bw = bossRoom[2];
             int bd = bossRoom[3];
-            // アリーナ柱 (4本) — 部屋の1/4位置
-            int qw = bw / 4;
-            int qd = bd / 4;
+            // アリーナ柱 (4本) — 部屋の1/3位置（中央エリアを広く確保）
+            int qw = bw / 3;
+            int qd = bd / 3;
             int[][] pillarPos = {{qw, qd}, {bw - qw, qd}, {qw, bd - qd}, {bw - qw, bd - qd}};
             for (int[] pp : pillarPos) {
                 for (int py = 1; py <= ROOM_HEIGHT - 1; py++) {
                     setBlock(level, new BlockPos(bx + pp[0], baseY + py, bz + pp[1]), theme.accent);
+                }
+            }
+            // 中心エリアの空間確保: 柱の内側にブロックが残らないようクリア
+            for (int dx = qw + 1; dx < bw - qw; dx++) {
+                for (int dz = qd + 1; dz < bd - qd; dz++) {
+                    for (int py = 1; py < ROOM_HEIGHT; py++) {
+                        setBlock(level, new BlockPos(bx + dx, baseY + py, bz + dz), net.minecraft.world.level.block.Blocks.AIR.defaultBlockState());
+                    }
                 }
             }
             // 床パターン (チェッカー)
@@ -287,7 +425,12 @@ public class MapGenerator {
         BlockPos spawnPos = center.above(1);
         int[] spawnRoom = null;
         if (!rooms.isEmpty()) {
-            spawnRoom = rooms.get(0);
+            if (isBoss && rooms.size() > 1) {
+                // ボスフロア: プレイヤーは外周部屋(index 1)にスポーン → ボスは中心部屋に待機
+                spawnRoom = rooms.get(1);
+            } else {
+                spawnRoom = rooms.get(0);
+            }
             int sx = center.getX() + spawnRoom[0] + spawnRoom[2] / 2;
             int sz = center.getZ() + spawnRoom[1] + spawnRoom[3] / 2;
             spawnPos = new BlockPos(sx, baseY + 1, sz);
@@ -295,6 +438,18 @@ public class MapGenerator {
         ensureSpawnSafety(level, spawnPos, theme);
 
         int totalMobsSpawned = 0;
+
+        // ボスフロア: ボスは中心部屋 (index 0) にスポーン
+        if (isBoss && !rooms.isEmpty()) {
+            int[] bossRoom = rooms.get(0);
+            int bossX = center.getX() + bossRoom[0] + bossRoom[2] / 2;
+            int bossZ = center.getZ() + bossRoom[1] + bossRoom[3] / 2;
+            BlockPos bossSpawnPos = new BlockPos(bossX, baseY + 1, bossZ);
+            spawnBossAfterBlocks(level, bossSpawnPos, floor, biomeIndex, instanceId, mode, participantCount);
+            totalMobsSpawned++;
+        }
+
+        List<int[]> eligibleMobRooms = new ArrayList<>();
         for (int i = 1; i < rooms.size(); i++) {
             int[] room = rooms.get(i);
             int rx = center.getX() + room[0] + room[2] / 2;
@@ -308,20 +463,43 @@ public class MapGenerator {
                     continue; // 近すぎる部屋はスキップ
                 }
             }
+            if (spawnRoom != null && isBoss && room == spawnRoom) {
+                continue; // ボス前室は準備用の安全地帯にする
+            }
 
             BlockPos mobSpawn = new BlockPos(rx, baseY + 1, rz);
 
-            if (isBoss && i == 1) {
-                RoomManager.spawnBoss(level, mobSpawn, floor, biomeIndex);
-                RoomManager.spawnMobs(level, mobSpawn, 3, floor, biomeIndex);
-                totalMobsSpawned += 4;
+            if (isBoss) {
+                // ボスフロアの外周部屋: 雑魚を配置
+                mobSpawn = pickMobSpawnInRoom(center, room, baseY, rand);
+                int bossAdds = floor < 10 ? 1 : 2;
+                spawnMobsAfterBlocks(level, mobSpawn, bossAdds, floor, biomeIndex, instanceId, mode, participantCount);
+                totalMobsSpawned += bossAdds;
             } else {
-                int mobCount = RoomManager.getMobCountForFloor(level, floor);
-                RoomManager.spawnMobs(level, mobSpawn, mobCount, floor, biomeIndex);
-                totalMobsSpawned += mobCount;
+                eligibleMobRooms.add(room);
             }
         }
-        LOGGER.info("[TacRogue] Floor {} generated: {} rooms, {} mobs spawned", floor, rooms.size(), totalMobsSpawned);
+        if (!isBoss && !eligibleMobRooms.isEmpty()) {
+            Collections.shuffle(eligibleMobRooms, rand);
+            int remainingBudget = RoomManager.getTotalMobBudgetForFloor(level, floor, eligibleMobRooms.size(), participantCount);
+            int maxPerRoom = RoomManager.getMaxMobsPerRoomForFloor(floor);
+
+            for (int i = 0; i < eligibleMobRooms.size() && remainingBudget > 0; i++) {
+                int[] room = eligibleMobRooms.get(i);
+                int roomsLeft = eligibleMobRooms.size() - i;
+                int mobCount = Math.min(maxPerRoom, (int) Math.ceil(remainingBudget / (double) roomsLeft));
+                BlockPos mobSpawn = pickMobSpawnInRoom(center, room, baseY, rand);
+
+                spawnMobsAfterBlocks(level, mobSpawn, mobCount, floor, biomeIndex, instanceId, mode, participantCount);
+                totalMobsSpawned += mobCount;
+                remainingBudget -= mobCount;
+            }
+        }
+        if (isVerboseLogging()) {
+            LOGGER.info("[TacRogue] Floor {} generated: {} rooms, {} mobs queued", floor, rooms.size(), totalMobsSpawned);
+        } else {
+            LOGGER.debug("[TacRogue] Floor {} generated: {} rooms, {} mobs queued", floor, rooms.size(), totalMobsSpawned);
+        }
 
         // --- Phase 5.5: 外周封鎖壁（部屋配置有効範囲の外側に配置） ---
         // GRID_SIZE全体ではなく、実際の配置範囲+マージンのみ囲む
@@ -339,12 +517,190 @@ public class MapGenerator {
             }
         }
 
+        storeDungeonFootprint(level, center, footprint);
         return spawnPos;
+        } finally {
+            ACTIVE_FOOTPRINT.remove();
+        }
+    }
+
+    public static GenerationJob generateRoomJob(ServerLevel level, BlockPos center,
+                                                ThemeManager.ThemeInstance themeOverride, int floor, long runSeed,
+                                                long floorSeedSalt, String instanceId, String mode,
+                                                int participantCount) {
+        GenerationJob job = new GenerationJob(level);
+        ACTIVE_GENERATION_JOB.set(job);
+        try {
+            job.setSpawnPos(generateRoom(level, center, themeOverride, floor, runSeed, floorSeedSalt,
+                instanceId, mode, participantCount));
+            return job;
+        } finally {
+            ACTIVE_GENERATION_JOB.remove();
+        }
+    }
+
+    public static void clearStoredDungeon(ServerLevel level, BlockPos center) {
+        clearPreviousDungeon(level, center);
     }
 
     // ===================================================================
     //  グリッド操作
     // ===================================================================
+
+    private static boolean decorateRoomArchetype(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                              int baseY, int roomIndex, boolean isBoss,
+                                              int rx, int rz, int rw, int rd,
+                                              boolean allowSupplyChest, int floor, String instanceId, String mode,
+                                              int chestIndex) {
+        if (rw < 7 || rd < 7) return false;
+
+        int archetype = isBoss && roomIndex == 0 ? 4 : Math.floorMod(roomIndex + rand.nextInt(5), 6);
+        switch (archetype) {
+            case 0 -> buildOpenCombatMarkers(level, theme, baseY, rx, rz, rw, rd);
+            case 1 -> buildCoverRoom(level, theme, baseY, rx, rz, rw, rd);
+            case 2 -> buildConnectorRoom(level, theme, baseY, rx, rz, rw, rd);
+            case 3 -> {
+                if (buildSupplyCorner(level, rand, theme, baseY, rx, rz, rw, rd, allowSupplyChest,
+                    floor, instanceId, mode, chestIndex)) {
+                    return true;
+                }
+            }
+            case 4 -> buildArenaMarks(level, theme, baseY, rx, rz, rw, rd);
+            default -> buildLowVisibilityRoom(level, rand, theme, baseY, rx, rz, rw, rd);
+        }
+        return false;
+    }
+
+    private static void buildOpenCombatMarkers(ServerLevel level, ThemeManager.ThemeInstance theme,
+                                               int baseY, int rx, int rz, int rw, int rd) {
+        int cx = rx + rw / 2;
+        int cz = rz + rd / 2;
+        setBlock(level, new BlockPos(cx, baseY, cz), theme.accent);
+        setBlock(level, new BlockPos(cx - 1, baseY, cz), theme.floor);
+        setBlock(level, new BlockPos(cx + 1, baseY, cz), theme.floor);
+        setBlock(level, new BlockPos(cx, baseY, cz - 1), theme.floor);
+        setBlock(level, new BlockPos(cx, baseY, cz + 1), theme.floor);
+    }
+
+    private static void buildCoverRoom(ServerLevel level, ThemeManager.ThemeInstance theme,
+                                       int baseY, int rx, int rz, int rw, int rd) {
+        int cx = rx + rw / 2;
+        int cz = rz + rd / 2;
+        for (int dx = -2; dx <= 2; dx++) {
+            if (dx == 0) continue;
+            setBlock(level, new BlockPos(cx + dx, baseY + 1, cz - 2), theme.wall);
+            setBlock(level, new BlockPos(cx + dx, baseY + 1, cz + 2), theme.wall);
+        }
+        setBlock(level, new BlockPos(cx - 2, baseY + 2, cz - 2), theme.accent);
+        setBlock(level, new BlockPos(cx + 2, baseY + 2, cz + 2), theme.accent);
+    }
+
+    private static void buildConnectorRoom(ServerLevel level, ThemeManager.ThemeInstance theme,
+                                           int baseY, int rx, int rz, int rw, int rd) {
+        int cx = rx + rw / 2;
+        int cz = rz + rd / 2;
+        for (int dx = -2; dx <= 2; dx++) {
+            setBlock(level, new BlockPos(cx + dx, baseY, cz), theme.accent);
+        }
+        for (int dz = -2; dz <= 2; dz++) {
+            setBlock(level, new BlockPos(cx, baseY, cz + dz), theme.accent);
+        }
+        setBlock(level, new BlockPos(cx, baseY + ROOM_HEIGHT, cz), theme.light);
+    }
+
+    private static boolean buildSupplyCorner(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                             int baseY, int rx, int rz, int rw, int rd,
+                                             boolean allowChest, int floor, String instanceId, String mode,
+                                             int chestIndex) {
+        int sx = rx + 2;
+        int sz = rz + rd - 3;
+        setBlock(level, new BlockPos(sx, baseY + 1, sz), Blocks.BARREL.defaultBlockState());
+        if (allowChest) {
+            BlockPos chestPos = new BlockPos(sx + 1, baseY + 1, sz);
+            setBlock(level, chestPos, Blocks.CHEST.defaultBlockState());
+            markSupplyChest(level, chestPos, floor, chestIndex, instanceId, mode);
+        } else {
+            setBlock(level, new BlockPos(sx + 1, baseY + 1, sz), theme.decor);
+        }
+        setBlock(level, new BlockPos(sx, baseY + 2, sz), theme.light);
+        setBlock(level, new BlockPos(sx + 2, baseY + 1, sz), theme.wall);
+        setBlock(level, new BlockPos(sx + 2, baseY + 2, sz), theme.wall);
+        return allowChest;
+    }
+
+    private static void markSupplyChest(ServerLevel level, BlockPos pos, int floor, int chestIndex, String instanceId, String mode) {
+        runAfterGenerationBlocks(() -> markSupplyChestAfterBlocks(level, pos, floor, chestIndex, instanceId, mode));
+    }
+
+    private static void markSupplyChestAfterBlocks(ServerLevel level, BlockPos pos, int floor, int chestIndex, String instanceId, String mode) {
+        if (!(level.getBlockEntity(pos) instanceof net.minecraft.world.level.block.entity.ChestBlockEntity chest)) return;
+        chest.clearContent();
+        chest.getPersistentData().putBoolean("TacRogueLootChest", true);
+        chest.getPersistentData().putBoolean("TacRogueChestClaimed", false);
+        chest.getPersistentData().putInt(com.levanilla.rogue.core.service.ChestLootService.CHEST_INDEX_KEY, Math.max(0, chestIndex));
+        com.levanilla.rogue.core.service.FloorInstanceManager.stampBlockEntity(
+            chest,
+            instanceId,
+            floor,
+            com.levanilla.rogue.core.service.FloorInstanceManager.EntryMode.parse(mode));
+        chest.setCustomName(net.minecraft.network.chat.Component.literal("[ROGUE SUPPLY CACHE]"));
+        chest.setChanged();
+    }
+
+    private static void spawnBossAfterBlocks(ServerLevel level, BlockPos pos, int floor, int biomeIndex,
+                                             String instanceId, String mode, int participantCount) {
+        runAfterGenerationBlocks(() ->
+            RoomManager.spawnBoss(level, pos, floor, biomeIndex, instanceId, mode, participantCount));
+    }
+
+    private static void spawnMobsAfterBlocks(ServerLevel level, BlockPos pos, int count, int floor, int biomeIndex,
+                                             String instanceId, String mode, int participantCount) {
+        runAfterGenerationBlocks(() ->
+            RoomManager.spawnMobs(level, pos, count, floor, biomeIndex, instanceId, mode, participantCount));
+    }
+
+    private static void runAfterGenerationBlocks(Runnable action) {
+        GenerationJob job = ACTIVE_GENERATION_JOB.get();
+        if (job == null) {
+            action.run();
+        } else {
+            job.addCompletionAction(action);
+        }
+    }
+
+    private static void buildArenaMarks(ServerLevel level, ThemeManager.ThemeInstance theme,
+                                        int baseY, int rx, int rz, int rw, int rd) {
+        int cx = rx + rw / 2;
+        int cz = rz + rd / 2;
+        int radius = Math.max(2, Math.min(rw, rd) / 4);
+        for (int d = -radius; d <= radius; d++) {
+            setBlock(level, new BlockPos(cx + d, baseY, cz - radius), theme.accent);
+            setBlock(level, new BlockPos(cx + d, baseY, cz + radius), theme.accent);
+            setBlock(level, new BlockPos(cx - radius, baseY, cz + d), theme.accent);
+            setBlock(level, new BlockPos(cx + radius, baseY, cz + d), theme.accent);
+        }
+    }
+
+    private static void buildLowVisibilityRoom(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                               int baseY, int rx, int rz, int rw, int rd) {
+        int patches = Math.max(2, Math.min(5, (rw + rd) / 7));
+        for (int i = 0; i < patches; i++) {
+            int px = rx + 2 + rand.nextInt(Math.max(1, rw - 4));
+            int pz = rz + 2 + rand.nextInt(Math.max(1, rd - 4));
+            setBlock(level, new BlockPos(px, baseY + 1, pz), Blocks.COBWEB.defaultBlockState());
+        }
+        setBlock(level, new BlockPos(rx + rw / 2, baseY + ROOM_HEIGHT, rz + rd / 2), Blocks.AIR.defaultBlockState());
+    }
+
+    private static BlockPos pickMobSpawnInRoom(BlockPos center, int[] room, int baseY, Random rand) {
+        int marginX = room[2] >= 8 ? 2 : 1;
+        int marginZ = room[3] >= 8 ? 2 : 1;
+        int xRange = Math.max(1, room[2] - marginX * 2);
+        int zRange = Math.max(1, room[3] - marginZ * 2);
+        int x = center.getX() + room[0] + marginX + rand.nextInt(xRange);
+        int z = center.getZ() + room[1] + marginZ + rand.nextInt(zRange);
+        return new BlockPos(x, baseY + 1, z);
+    }
 
     private static void stampRoom(int[][] grid, int gx, int gz, int w, int d) {
         for (int x = -WALL_THICK; x < w + WALL_THICK; x++) {
@@ -364,7 +720,11 @@ public class MapGenerator {
     }
 
     private static void stampCorridor(int[][] grid, int fx, int fz, int tx, int tz) {
-        int halfW = CORRIDOR_W / 2;
+        stampCorridor(grid, fx, fz, tx, tz, CORRIDOR_W);
+    }
+
+    private static void stampCorridor(int[][] grid, int fx, int fz, int tx, int tz, int corridorWidth) {
+        int halfW = corridorWidth / 2;
 
         // X軸方向
         int xDir = fx < tx ? 1 : -1;
@@ -488,8 +848,10 @@ public class MapGenerator {
 
     private static List<int[]> generateRing(Random rand, boolean isBoss) {
         List<int[]> rooms = new ArrayList<>();
-        // 中心スポーン部屋
-        rooms.add(new int[]{-8, -8, 16, 16});
+        // 中心スポーン部屋（ボス時: 24x24 で巨体ボスの移動空間を確保）
+        int centerSize = isBoss ? 24 : 16;
+        int centerHalf = centerSize / 2;
+        rooms.add(new int[]{-centerHalf, -centerHalf, centerSize, centerSize});
         int count = isBoss ? 8 : (10 + rand.nextInt(6));
         double angleStep = 2.0 * Math.PI / count;
         int radius = 35 + rand.nextInt(15);
@@ -535,9 +897,9 @@ public class MapGenerator {
     private static void generateBranchRecursive(List<int[]> rooms, Random rand,
                                                   int x, int z, int depth, int maxDepth, int direction) {
         if (depth > maxDepth || rooms.size() >= 30) return;
-        if (Math.abs(x) > ROOM_RADIUS || Math.abs(z) > ROOM_RADIUS) return;
         int w = MIN_ROOM + rand.nextInt(8);
         int d = MIN_ROOM + rand.nextInt(8);
+        if (x < -ROOM_RADIUS || z < -ROOM_RADIUS || x + w > ROOM_RADIUS || z + d > ROOM_RADIUS) return;
         rooms.add(new int[]{x, z, w, d});
         int branches = 2 + rand.nextInt(2);
         for (int b = 0; b < branches; b++) {
@@ -577,43 +939,228 @@ public class MapGenerator {
     private static void ensureSpawnSafety(ServerLevel level, BlockPos pos, ThemeManager.ThemeInstance theme) {
         for (int dx = -1; dx <= 1; dx++) {
             for (int dz = -1; dz <= 1; dz++) {
-                level.setBlock(pos.offset(dx, -1, dz), theme.floor, 2);
+                setBlock(level, pos.offset(dx, -1, dz), theme.floor);
             }
         }
         for (int dx = -1; dx <= 1; dx++) {
             for (int dy = 0; dy <= 2; dy++) {
                 for (int dz = -1; dz <= 1; dz++) {
-                    level.setBlock(pos.offset(dx, dy, dz), Blocks.AIR.defaultBlockState(), 2);
+                    setBlock(level, pos.offset(dx, dy, dz), Blocks.AIR.defaultBlockState());
                 }
             }
         }
     }
 
     /**
-     * 最新のダンジョン領域を確実に消去するため、
-     * 生成予定の center 周辺を「前回履歴に関わらず」完全にクリアする
+     * 通常は前回生成時のフットプリントだけを消す。
+     * 履歴がない場合は従来の固定範囲クリアにフォールバックする。
      */
     private static void clearPreviousDungeon(ServerLevel level, BlockPos center) {
-        int r = ROOM_RADIUS + 8 + 1; // wallRの分 + 1マージン
+        DungeonFootprint footprint = removeDungeonFootprint(level, center);
+        if (footprint != null && !footprint.isEmpty()) {
+            int clearedBlocks = clearFootprint(level, footprint);
+            clearDroppedItems(level, footprint.toAabb(1));
+            if (isVerboseLogging()) {
+                LOGGER.info("[TacRogue] Cleared dungeon footprint at {} ({} tracked, {} cleared)",
+                    center, footprint.blockCount(), clearedBlocks);
+            } else {
+                LOGGER.debug("[TacRogue] Cleared dungeon footprint at {} ({} tracked, {} cleared)",
+                    center, footprint.blockCount(), clearedBlocks);
+            }
+            return;
+        }
+
+        clearPreviousDungeonFallback(level, center);
+    }
+
+    private static DungeonFootprint removeDungeonFootprint(ServerLevel level, BlockPos center) {
+        synchronized (DUNGEON_FOOTPRINTS) {
+            return DUNGEON_FOOTPRINTS.remove(DungeonKey.of(level, center));
+        }
+    }
+
+    private static void storeDungeonFootprint(ServerLevel level, BlockPos center, DungeonFootprint footprint) {
+        if (footprint.isEmpty()) return;
+        synchronized (DUNGEON_FOOTPRINTS) {
+            DUNGEON_FOOTPRINTS.put(DungeonKey.of(level, center), footprint);
+        }
+    }
+
+    private static void clearPreviousDungeonFallback(ServerLevel level, BlockPos center) {
+        int r = CLEAR_RADIUS; // wallRの分 + 1マージン
         int cx = center.getX();
         int cz = center.getZ();
-        int minY = center.getY() - 4;
-        int maxY = center.getY() + ROOM_HEIGHT + 4;
-        LOGGER.info("[TacRogue] Forcibly clearing dungeon area at {} (radius {})", center, r);
+        int minY = center.getY() + CLEAR_MIN_Y_OFFSET;
+        int maxY = center.getY() + CLEAR_MAX_Y_OFFSET;
+        int clearedBlocks = 0;
+        if (isVerboseLogging()) {
+            LOGGER.info("[TacRogue] Fallback clearing dungeon area at {} (radius {})", center, r);
+        } else {
+            LOGGER.debug("[TacRogue] Fallback clearing dungeon area at {} (radius {})", center, r);
+        }
 
         for (int x = cx - r; x <= cx + r; x++) {
             for (int z = cz - r; z <= cz + r; z++) {
                 for (int y = minY; y <= maxY; y++) {
-                    BlockPos bp = new BlockPos(x, y, z);
-                    if (!level.getBlockState(bp).isAir()) {
-                        level.setBlock(bp, Blocks.AIR.defaultBlockState(), 2 | 16);
-                    }
+                    if (clearDungeonBlock(level, new BlockPos(x, y, z))) clearedBlocks++;
                 }
             }
+        }
+
+        clearDroppedItems(level, new net.minecraft.world.phys.AABB(
+            cx - r, minY, cz - r, cx + r + 1, maxY + 1, cz + r + 1));
+        LOGGER.debug("[TacRogue] Fallback cleared {} dungeon blocks at {}", clearedBlocks, center);
+    }
+
+    private static int clearFootprint(ServerLevel level, DungeonFootprint footprint) {
+        int clearedBlocks = 0;
+        for (BlockPos pos : footprint.blocks()) {
+            if (clearDungeonBlock(level, pos)) clearedBlocks++;
+        }
+        return clearedBlocks;
+    }
+
+    private static boolean clearDungeonBlock(ServerLevel level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        if (state.isAir()) return false;
+        if (state.hasBlockEntity()) {
+            clearContainerIfPresent(level, pos);
+        }
+        level.setBlock(pos, Blocks.AIR.defaultBlockState(), SET_BLOCK_FLAGS);
+        return true;
+    }
+
+    private static void clearDroppedItems(ServerLevel level, net.minecraft.world.phys.AABB area) {
+        for (net.minecraft.world.entity.item.ItemEntity item : level.getEntitiesOfClass(net.minecraft.world.entity.item.ItemEntity.class, area)) {
+            item.remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
+        }
+    }
+
+    private static void clearContainerIfBlockEntityPossible(ServerLevel level, BlockPos pos) {
+        if (level.getBlockState(pos).hasBlockEntity()) {
+            clearContainerIfPresent(level, pos);
+        }
+    }
+
+    private static void clearContainerIfPresent(ServerLevel level, BlockPos pos) {
+        BlockEntity blockEntity = level.getBlockEntity(pos);
+        if (blockEntity instanceof Container container) {
+            container.clearContent();
+            blockEntity.setChanged();
+            level.removeBlockEntity(pos);
         }
     }
 
     private static void setBlock(ServerLevel level, BlockPos pos, BlockState state) {
-        level.setBlock(pos, state, 2 | 16); // 2=クライアント通知, 16=ライト計算スキップ
+        recordTouchedBlock(pos);
+        GenerationJob job = ACTIVE_GENERATION_JOB.get();
+        if (job != null) {
+            job.addBlock(pos, state);
+            return;
+        }
+        placeBlockNow(level, pos, state);
+    }
+
+    private static void placeBlockNow(ServerLevel level, BlockPos pos, BlockState state) {
+        clearContainerIfBlockEntityPossible(level, pos);
+        level.setBlock(pos, state, SET_BLOCK_FLAGS);
+    }
+
+    private static boolean isVerboseLogging() {
+        return com.levanilla.rogue.core.RogueConfig.debugLogs();
+    }
+
+    private static float readFloatProperty(String key, float fallback, float min, float max) {
+        try {
+            String value = System.getProperty(key);
+            if (value == null || value.isBlank()) return fallback;
+            return Math.max(min, Math.min(max, Float.parseFloat(value)));
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
+    private static void recordTouchedBlock(BlockPos pos) {
+        DungeonFootprint footprint = ACTIVE_FOOTPRINT.get();
+        if (footprint != null) {
+            footprint.record(pos);
+        }
+    }
+
+    private static final class DungeonKey {
+        private final String dimension;
+        private final int x;
+        private final int y;
+        private final int z;
+
+        private DungeonKey(String dimension, int x, int y, int z) {
+            this.dimension = dimension;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+
+        private static DungeonKey of(ServerLevel level, BlockPos center) {
+            return new DungeonKey(level.dimension().location().toString(),
+                center.getX(), center.getY(), center.getZ());
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) return true;
+            if (!(obj instanceof DungeonKey other)) return false;
+            return x == other.x && y == other.y && z == other.z && Objects.equals(dimension, other.dimension);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(dimension, x, y, z);
+        }
+    }
+
+    private static final class DungeonFootprint {
+        private final Set<BlockPos> blocks = new HashSet<>();
+        private int minX = Integer.MAX_VALUE;
+        private int minY = Integer.MAX_VALUE;
+        private int minZ = Integer.MAX_VALUE;
+        private int maxX = Integer.MIN_VALUE;
+        private int maxY = Integer.MIN_VALUE;
+        private int maxZ = Integer.MIN_VALUE;
+
+        private DungeonFootprint() {
+        }
+
+        private void record(BlockPos pos) {
+            BlockPos immutablePos = pos.immutable();
+            if (!blocks.add(immutablePos)) return;
+
+            int x = immutablePos.getX();
+            int y = immutablePos.getY();
+            int z = immutablePos.getZ();
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (z < minZ) minZ = z;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+            if (z > maxZ) maxZ = z;
+        }
+
+        private boolean isEmpty() {
+            return blocks.isEmpty();
+        }
+
+        private int blockCount() {
+            return blocks.size();
+        }
+
+        private Set<BlockPos> blocks() {
+            return blocks;
+        }
+
+        private net.minecraft.world.phys.AABB toAabb(int margin) {
+            return new net.minecraft.world.phys.AABB(
+                minX - margin, minY - margin, minZ - margin,
+                maxX + margin + 1, maxY + margin + 1, maxZ + margin + 1);
+        }
     }
 }

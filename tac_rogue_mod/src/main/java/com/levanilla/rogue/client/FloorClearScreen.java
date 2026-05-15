@@ -1,7 +1,6 @@
 package com.levanilla.rogue.client;
 
 import com.levanilla.rogue.core.PerkDefinition;
-import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.networking.RogueActionMessage;
 import com.levanilla.rogue.networking.TacRogueNetworking;
 import net.minecraft.client.gui.GuiGraphics;
@@ -11,7 +10,6 @@ import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Random;
 
 /**
  * フロアクリア後に表示されるパーク選択画面。
@@ -20,56 +18,24 @@ import java.util.Random;
 public class FloorClearScreen extends Screen {
 
     private boolean perkSelected = false;
-    private final List<PerkDefinition> choices = new ArrayList<>();
+    private final List<PerkDefinition> choices;
     private PerkDefinition selectedPerk = null;
     private final boolean isFarming;
 
-    public FloorClearScreen(boolean isFarming) {
+    /**
+     * サーバーから受け取ったパーク候補で画面を構築する。
+     * SEC-1対策: 候補はサーバー側で生成・セッション登録済み。
+     */
+    public FloorClearScreen(boolean isFarming, List<PerkDefinition> serverChoices) {
         super(Component.translatable("gui.tac_rogue.floor_clear.title"));
         this.isFarming = isFarming;
-        if (isFarming) {
+        this.choices = serverChoices != null ? serverChoices : new ArrayList<>();
+        if (isFarming || choices.isEmpty()) {
             this.perkSelected = true;
-        } else {
-            generatePerkChoices();
         }
     }
 
-    private void generatePerkChoices() {
-        Random rng = new Random();
-        PerkDefinition.Category[] cats = PerkDefinition.Category.values();
-        PerkDefinition.Modifier[] mods = PerkDefinition.Modifier.values();
-        int floor = RunManager.getCurrentFloor();
-        
-        // 階層に基づく最大修飾子ティアの制限
-        int maxTierAllowed = Math.min(5, 1 + (floor / 5));
-
-        while (choices.size() < 3) {
-            PerkDefinition.Category cat = cats[rng.nextInt(cats.length)];
-            
-            // 修飾子の重み付き抽選
-            java.util.List<PerkDefinition.Modifier> allowedMods = new java.util.ArrayList<>();
-            for (PerkDefinition.Modifier m : mods) {
-                if (m.tier <= maxTierAllowed) {
-                    int weight = (maxTierAllowed - m.tier) + 1 + (floor / 10);
-                    if (m.tier == maxTierAllowed) weight += (floor % 5); // 最新ティアへのボーナス
-                    for (int j = 0; j < weight; j++) allowedMods.add(m);
-                }
-            }
-            PerkDefinition.Modifier mod = allowedMods.isEmpty() ? mods[0] : allowedMods.get(rng.nextInt(allowedMods.size()));
-            
-            // 階層に基づくレベル最低値の保証
-            int minLevel = Math.min(8, 1 + (floor / 4));
-            int level = Math.min(10, minLevel + rng.nextInt(Math.max(1, floor / 2 + 1)));
-
-            PerkDefinition perk = new PerkDefinition(cat, mod, level);
-            // 重複回避
-            boolean dup = false;
-            for (PerkDefinition p : choices) {
-                if (p.category == perk.category) { dup = true; break; }
-            }
-            if (!dup) choices.add(perk);
-        }
-    }
+    // パーク候補の生成はサーバー側 (OpenFloorClearScreenMessage.sendFloorClear) で行う
 
     @Override
     protected void init() {
@@ -99,6 +65,15 @@ public class FloorClearScreen extends Screen {
                     }
                 ).bounds(cardX, cy + 50, cardW, 20).build());
             }
+
+            // --- REROLL BUTTON ---
+            this.addRenderableWidget(Button.builder(
+                Component.translatable("gui.tac_rogue.perk_screen.reroll", com.levanilla.rogue.core.GameConstants.PERK_REROLL_COST),
+                b -> {
+                    TacRogueNetworking.CHANNEL.sendToServer(
+                        new RogueActionMessage(RogueActionMessage.ActionType.REROLL_PERK, "floor_clear"));
+                }
+            ).bounds(cx - 50, cy + 80, 100, 20).build());
         } else {
             // パーク選択済み: NEXT FLOOR / RETURN LOBBY を表示
             this.addRenderableWidget(Button.builder(
@@ -139,7 +114,7 @@ public class FloorClearScreen extends Screen {
         if (!perkSelected) {
             // パーク選択フェーズ
             graphics.drawCenteredString(this.font,
-                Component.literal("§e▸ SELECT A PERK"),
+                Component.translatable("gui.tac_rogue.floor_clear.select_perk"),
                 cx, cy - 55, 0xFFFFFF00);
 
             int cardW = 130;
@@ -179,8 +154,16 @@ public class FloorClearScreen extends Screen {
                     int tradeoffY = (cy - 8) + (int)(descLineY * 0.85f) + 2;
                     graphics.pose().translate(cardX + 3, tradeoffY, 0);
                     graphics.pose().scale(0.75f, 0.75f, 1.0f);
-                    String tradeoffText = net.minecraft.network.chat.Component.translatable(perk.modifier.tradeoff).getString();
-                    graphics.drawString(this.font, "§c⚠ " + tradeoffText, 0, 0, 0xFFFF4444, false);
+                    java.util.List<net.minecraft.util.FormattedCharSequence> tradeoffLines = splitJapaneseFriendly(
+                        Component.literal("§c! ").append(Component.translatable(perk.modifier.tradeoff)),
+                        (int)(cardW / 0.75f) - 8);
+                    int lineY = 0;
+                    int maxY = (int)((cy + 44 - tradeoffY) / 0.75f);
+                    for (int li = 0; li < tradeoffLines.size() && li < 3; li++) {
+                        if (lineY + 10 > maxY) break;
+                        graphics.drawString(this.font, tradeoffLines.get(li), 0, lineY, 0xFFFF4444, false);
+                        lineY += 10;
+                    }
                     graphics.pose().popPose();
                 }
             }
@@ -188,18 +171,18 @@ public class FloorClearScreen extends Screen {
             // パーク選択済み または 周回プレイ
             if (isFarming) {
                 graphics.drawCenteredString(this.font,
-                    Component.literal("§a✓ フロア制圧完了。報酬確保済み。"),
+                    Component.translatable("gui.tac_rogue.floor_clear.reward_secured"),
                     cx, cy - 45, 0xFF00FF00);
             } else {
                 graphics.drawCenteredString(this.font,
-                    Component.literal("§a✓ " + selectedPerk.getDisplayName() + " を取得！"),
+                    Component.translatable("gui.tac_rogue.floor_clear.perk_acquired", selectedPerk.getDisplayName()),
                     cx, cy - 45, selectedPerk.getRarityColor());
                 graphics.drawCenteredString(this.font,
                     Component.literal("§7" + selectedPerk.getDescription()),
                     cx, cy - 30, 0xFFCCCCCC);
             }
             graphics.drawCenteredString(this.font,
-                Component.literal("§7次の行動を選択してください"),
+                Component.translatable("gui.tac_rogue.floor_clear.choose_next"),
                 cx, cy + 5, 0xFF888888);
         }
 
@@ -214,5 +197,19 @@ public class FloorClearScreen extends Screen {
     @Override
     public boolean shouldCloseOnEsc() {
         return false;
+    }
+
+    private java.util.List<net.minecraft.util.FormattedCharSequence> splitJapaneseFriendly(Component component, int width) {
+        java.util.List<net.minecraft.util.FormattedCharSequence> lines = new java.util.ArrayList<>();
+        String text = component.getString()
+            .replace("。", "。\n")
+            .replace("。§", "。\n§")
+            .replace(". ", ".\n")
+            .replace("; ", ";\n");
+        for (String paragraph : text.split("\\n")) {
+            if (paragraph.isBlank()) continue;
+            lines.addAll(this.font.split(Component.literal(paragraph), width));
+        }
+        return lines;
     }
 }

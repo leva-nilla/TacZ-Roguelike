@@ -6,6 +6,7 @@ import com.levanilla.rogue.networking.TacRogueNetworking;
 import com.tacz.guns.api.event.common.*;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -42,6 +43,15 @@ public class TacZEventHandler {
     /** 射撃統計: プレイヤー → 総ヒット数 */
     private static final ConcurrentHashMap<UUID, Integer> shotsHit = new ConcurrentHashMap<>();
 
+    /** 連続キル判定用: プレイヤー → 最終キルtick */
+    private static final ConcurrentHashMap<UUID, Long> lastKillTick = new ConcurrentHashMap<>();
+
+    @SubscribeEvent
+    public static void onGunReload(GunReloadEvent event) {
+        // Real reload timing is handled once in MixinLivingEntityReload.
+        // Animation timing is handled client-side in MixinObjectAnimationRunner.
+    }
+
     // ===== GunFireEvent: 射撃の瞬間 =====
 
     /**
@@ -56,9 +66,9 @@ public class TacZEventHandler {
         if (event.getLogicalSide() != LogicalSide.SERVER) return;
         if (!(event.getShooter() instanceof ServerPlayer player)) return;
 
-        // ロビーでの射撃禁止 (正規 TacZ API — リフレクション不要)
+        // ロビーでは射撃確認とデバッグボス検証を許可する。
+        // ダメージ側は CombatEventHandler / EntityHurtByGunEvent で対象を絞る。
         if (player.level().dimension() == LOBBY_DIM) {
-            event.setCanceled(true);
             return;
         }
 
@@ -68,17 +78,22 @@ public class TacZEventHandler {
         shotsFired.compute(player.getUUID(), (k, v) -> (v == null ? 0 : v) + 1);
 
         // === パーク: AMMO_EFFICIENCY (弾薬節約) ===
-        float ammoEff = sumPerkEffect(player, "perk:AMMO_EFFICIENCY");
-        if (ammoEff > 0) {
-            float chance = Math.min(ammoEff / 100.0f, 0.5f); // 上限50%
-            if (player.getRandom().nextFloat() < chance) {
-                net.minecraft.world.item.ItemStack gun = event.getGunItemStack();
-                if (gun.hasTag()) {
-                    int currentAmmo = gun.getTag().getInt("GunCurrentAmmoCount");
-                    int maxAmmo = TacZRegistryHelper.getMagazineSize(gun.getTag().getString("GunId"));
-                    if (currentAmmo + 1 <= maxAmmo) {
-                        gun.getTag().putInt("GunCurrentAmmoCount", currentAmmo + 1);
-                    }
+        float consumeChance = 1.0f;
+        for (String tag : player.getTags()) {
+            if (tag.startsWith("perk:AMMO_EFFICIENCY")) {
+                PerkDefinition perk = PerkDefinition.fromTag(tag);
+                consumeChance *= (1.0f - perk.calculateEffect() / 100.0f);
+            }
+        }
+        float saveChance = Math.min(GameConstants.AMMO_SAVE_MAX_CHANCE, Math.max(0.0f, 1.0f - consumeChance));
+        if (saveChance > 0 && player.getRandom().nextFloat() < saveChance) {
+            net.minecraft.world.item.ItemStack gun = event.getGunItemStack();
+            if (gun.hasTag()) {
+                int currentAmmo = gun.getTag().getInt("GunCurrentAmmoCount");
+                int maxAmmo = WeaponRarity.getEffectiveMagazineSize(
+                    gun, TacZRegistryHelper.getMagazineSize(gun.getTag().getString("GunId")));
+                if (currentAmmo + 1 <= maxAmmo) {
+                    gun.getTag().putInt("GunCurrentAmmoCount", currentAmmo + 1);
                 }
             }
         }
@@ -109,7 +124,10 @@ public class TacZEventHandler {
     public static void onEntityHurtByGun(EntityHurtByGunEvent.Pre event) {
         if (event.getLogicalSide() != LogicalSide.SERVER) return;
         if (!(event.getAttacker() instanceof ServerPlayer attacker)) return;
-        if (attacker.level().dimension() != ROGUE_DIM) return;
+        boolean lobbyDebugBoss = attacker.level().dimension() == LOBBY_DIM
+            && event.getHurtEntity() != null
+            && event.getHurtEntity().getTags().contains("rogue:boss");
+        if (attacker.level().dimension() != ROGUE_DIM && !lobbyDebugBoss) return;
 
         float damage = event.getBaseAmount();
 
@@ -117,7 +135,7 @@ public class TacZEventHandler {
         shotsHit.compute(attacker.getUUID(), (k, v) -> (v == null ? 0 : v) + 1);
 
         // === パーク: DAMAGE (攻撃力ボーナス) ===
-        float damageBonus = sumPerkEffect(attacker, "perk:DAMAGE") / 100.0f;
+        float damageBonus = softcapPercent(sumPerkEffect(attacker, "perk:DAMAGE"), 150.0f, 0.35f, 350.0f) / 100.0f;
         damage *= (1.0f + damageBonus);
 
         // === パーク: SHARPSHOOTER (狙撃手) ===
@@ -138,17 +156,27 @@ public class TacZEventHandler {
             }
         }
 
+        ItemStack heldGun = attacker.getMainHandItem();
+        boolean isShotgun = isShotgun(heldGun);
+
         // === パーク: FORTUNE (クリティカルヒット) ===
-        float critChance = sumPerkEffect(attacker, "perk:FORTUNE") / 100.0f;
-        float overCritBonus = Math.max(0, critChance - 1.0f);
+        float rawCritChance = sumPerkEffect(attacker, "perk:FORTUNE") / 100.0f;
+        float critChance = Math.min(0.70f, rawCritChance);
+        float overCritBonus = Math.min(0.35f, Math.max(0, rawCritChance - 0.70f) * 0.25f);
         boolean perkCrit = critChance > 0 && attacker.getRandom().nextFloat() < critChance;
         if (perkCrit) {
             damage *= (GameConstants.CRITICAL_DAMAGE_MULT + overCritBonus);
         }
 
-        // === パーク: GUN_PROFICIENCY (射撃熟練度) ===
-        float gunProfBonus = sumPerkEffect(attacker, "perk:GUN_PROFICIENCY") / 100.0f;
-        damage *= (1.0f + gunProfBonus * 0.7f);
+        // GUN_PROFICIENCY is firearm control, not another flat DAMAGE copy.
+        float gunProf = softcapPercent(sumPerkEffect(attacker, "perk:GUN_PROFICIENCY"), 180.0f, 0.35f, 320.0f) / 100.0f;
+        if (gunProf > 0.0f) {
+            float controlScale = event.isHeadShot() ? 0.45f : 0.18f;
+            if (isShotgun) {
+                controlScale *= 0.65f;
+            }
+            damage *= (1.0f + gunProf * controlScale);
+        }
 
         // === パーク: HANDLING (取り回し) ===
         float handlingBonus = sumPerkEffect(attacker, "perk:HANDLING") / 100.0f;
@@ -161,15 +189,15 @@ public class TacZEventHandler {
         }
 
         // === 武器レアリティダメージ倍率 ===
-        net.minecraft.world.item.ItemStack heldGun = attacker.getMainHandItem();
         damage *= WeaponRarity.getDamageMult(heldGun);
 
         // === ヘッドショットボーナスの強化 ===
         if (event.isHeadShot()) {
             float hsMult = event.getHeadshotMultiplier();
-            float hsBonus = sumPerkEffect(attacker, "perk:FORTUNE") / 200.0f; // クリティカルの半分
-            float headHunterBonus = sumPerkEffect(attacker, "perk:HEAD_HUNTER") / 100.0f;
-            event.setHeadshotMultiplier(hsMult + hsBonus + headHunterBonus);
+            float hsBonus = Math.min(0.25f, sumPerkEffect(attacker, "perk:FORTUNE") / 400.0f);
+            float headHunterBonus = Math.min(0.75f, sumPerkEffect(attacker, "perk:HEAD_HUNTER") / 150.0f);
+            float gunProfHeadshotBonus = Math.min(0.35f, gunProf * 0.35f);
+            event.setHeadshotMultiplier(hsMult + hsBonus + headHunterBonus + gunProfHeadshotBonus);
         }
 
         // === スニーク/伏せ時のダメージボーナス ===
@@ -203,21 +231,57 @@ public class TacZEventHandler {
             }
         }
 
+        // === ショットガンの無敵時間無効化（ペレット連続ヒット） ===
+        // TacZGunRegistry API でカテゴリ判定 → 追加ガンパックのショットガンにも対応
+        if (isShotgun) {
+            if (hurtEntity != null) {
+                hurtEntity.invulnerableTime = 0;
+            }
+        }
+
         // ダメージを反映
         event.setBaseAmount(damage);
 
-        // === ダメージインジケーター通知 ===
+        // === ダメージコンテキスト登録 (CombatEventHandler.onLivingHurt で最終ダメージと共にインジケーター送信) ===
+        // TacZがこの後 HS倍率 + 防具貫通を適用し、LivingHurtEvent を発火するため、
+        // ここでは最終ダメージを知ることができない。コンテキストのみ受け渡す。
         if (hurtEntity != null) {
-            double x = hurtEntity.getX();
-            double y = hurtEntity.getY() + hurtEntity.getBbHeight();
-            double z = hurtEntity.getZ();
-            boolean isCritical = perkCrit || event.isHeadShot() || damage > GameConstants.CRITICAL_DAMAGE_THRESHOLD;
-
-            String data = String.format("%.1f:%.2f:%.2f:%.2f:%b", damage, x, y, z, isCritical);
-            TacRogueNetworking.CHANNEL.send(
-                net.minecraftforge.network.PacketDistributor.ALL.noArg(),
-                new com.levanilla.rogue.networking.SyncDataMessage("dmg:" + data));
+            net.minecraft.world.phys.Vec3 impactPos = resolveDamageIndicatorAnchor(attacker, hurtEntity, event.getBullet(), event.isHeadShot());
+            CombatEventHandler.registerGunDamageContext(
+                hurtEntity.getId(), event.isHeadShot(), isShotgun, perkCrit, impactPos);
         }
+    }
+
+    private static net.minecraft.world.phys.Vec3 resolveDamageIndicatorAnchor(
+        ServerPlayer attacker,
+        net.minecraft.world.entity.Entity hurtEntity,
+        net.minecraft.world.entity.Entity bullet,
+        boolean headshot
+    ) {
+        net.minecraft.world.phys.AABB box = hurtEntity.getBoundingBox();
+        if (bullet != null) {
+            net.minecraft.world.phys.Vec3 bulletPos = bullet.position();
+            if (isFinite(bulletPos) && box.inflate(0.55D).contains(bulletPos)) {
+                return bulletPos;
+            }
+        }
+
+        net.minecraft.world.phys.Vec3 eye = attacker.getEyePosition();
+        net.minecraft.world.phys.Vec3 look = attacker.getLookAngle();
+        if (isFinite(eye) && isFinite(look) && look.lengthSqr() > 0.001D) {
+            double distance = Math.max(8.0D, eye.distanceTo(hurtEntity.position()) + 4.0D);
+            net.minecraft.world.phys.Vec3 end = eye.add(look.normalize().scale(distance));
+            java.util.Optional<net.minecraft.world.phys.Vec3> clipped = box.inflate(0.12D).clip(eye, end);
+            if (clipped.isPresent() && isFinite(clipped.get())) {
+                return clipped.get();
+            }
+        }
+
+        return hurtEntity.position().add(0.0D, hurtEntity.getBbHeight() * (headshot ? 0.88D : 0.68D), 0.0D);
+    }
+
+    private static boolean isFinite(net.minecraft.world.phys.Vec3 vec) {
+        return vec != null && Double.isFinite(vec.x) && Double.isFinite(vec.y) && Double.isFinite(vec.z);
     }
 
     // ===== EntityKillByGunEvent: 銃撃キル報酬 =====
@@ -239,6 +303,11 @@ public class TacZEventHandler {
         net.minecraft.world.entity.Entity killed = event.getKilledEntity();
         if (killed != null) {
             processedGunKills.put(killed.getUUID(), System.currentTimeMillis());
+        }
+
+        // Boss reward is shared with non-TacZ kills so gun kills do not miss the weapon roll.
+        if (killed instanceof net.minecraft.world.entity.LivingEntity living && killed.getTags().contains("rogue:boss")) {
+            com.levanilla.rogue.core.service.BossRewardService.handleBossKill(killer, living);
         }
 
         // キル報酬
@@ -269,6 +338,21 @@ public class TacZEventHandler {
 
         // クエスト: キルカウント
         QuestManager.advanceQuest(killer, QuestManager.QuestType.KILL_COUNT, 1);
+
+        if (killed != null && killed.getTags().contains("tac_rogue_variant")) {
+            QuestManager.advanceQuest(killer, QuestManager.QuestType.ELITE_HUNT, 1);
+        }
+
+        net.minecraft.world.item.ItemStack heldGun = killer.getMainHandItem();
+        if (!heldGun.isEmpty() && WeaponRarity.getRarity(heldGun).stars >= WeaponRarity.Rarity.RARE.stars) {
+            QuestManager.advanceQuest(killer, QuestManager.QuestType.RARITY_KILL, 1);
+        }
+
+        long nowTick = killer.server.getTickCount();
+        Long previousKill = lastKillTick.put(killer.getUUID(), nowTick);
+        if (previousKill != null && nowTick - previousKill <= 100) {
+            QuestManager.advanceQuest(killer, QuestManager.QuestType.FAST_CHAIN, 1);
+        }
 
         // クエスト: ステルスキル (ターゲットに気づかれていない状態でのキル)
         if (killed instanceof Mob mob && mob.getTarget() == null) {
@@ -372,15 +456,34 @@ public class TacZEventHandler {
 
     // ===== パーク効果合算 =====
 
+    // PERF-2: PerkDefinition.sumEffect() に委譲（DRY原則）
     private static float sumPerkEffect(ServerPlayer player, String perkPrefix) {
-        float total = 0;
-        for (String tag : player.getTags()) {
-            if (tag.startsWith(perkPrefix)) {
-                PerkDefinition perk = PerkDefinition.fromTag(tag);
-                total += perk.calculateEffect();
+        return PerkDefinition.sumEffect(player, perkPrefix);
+    }
+
+    private static float softcapPercent(float rawPercent, float softStart, float postSoftScale, float hardCap) {
+        if (rawPercent <= softStart) {
+            return rawPercent;
+        }
+        float compressed = softStart + (rawPercent - softStart) * postSoftScale;
+        return Math.min(compressed, hardCap);
+    }
+
+    private static boolean isShotgun(ItemStack heldGun) {
+        boolean isShotgun = false;
+        net.minecraft.resources.ResourceLocation heldGunId = com.levanilla.rogue.core.registry.TacZGunRegistry.getGunId(heldGun);
+        if (heldGunId != null) {
+            com.levanilla.rogue.core.registry.TacZGunRegistry.GunProfile profile =
+                com.levanilla.rogue.core.registry.TacZGunRegistry.getProfile(heldGunId);
+            if (profile != null) {
+                isShotgun = (profile.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.SHOTGUN);
             }
         }
-        return total;
+        if (!isShotgun && heldGun.hasTag() && heldGun.getTag() != null) {
+            String gunIdStr = heldGun.getTag().getString("GunId").toLowerCase(java.util.Locale.ROOT);
+            isShotgun = gunIdStr.contains("shotgun");
+        }
+        return isShotgun;
     }
 
     // ===== サーバー毎チック (メモリリーク防止) =====
@@ -392,5 +495,15 @@ public class TacZEventHandler {
                 cleanupProcessedKills();
             }
         }
+    }
+
+    // ===== メモリリーク防止 =====
+
+    /** サーバー停止時にスタティックマップをクリア */
+    public static void clearMemory() {
+        processedGunKills.clear();
+        shotsFired.clear();
+        shotsHit.clear();
+        lastKillTick.clear();
     }
 }

@@ -1,5 +1,6 @@
 package com.levanilla.rogue.mixin;
 
+import com.levanilla.rogue.core.GameConstants;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.entity.player.Player;
 import org.spongepowered.asm.mixin.Mixin;
@@ -42,10 +43,10 @@ public abstract class MixinSlot {
             return;
         }
         
-        // 拡張インベントリ(スロット13〜35)には銃・近接武器を一切配置させない
+        // 拡張インベントリには銃・近接武器を一切配置させない
         if (slot.container instanceof net.minecraft.world.entity.player.Inventory) {
             int containerSlot = slot.getContainerSlot();
-            if (containerSlot >= 13 && containerSlot <= 35) {
+            if (containerSlot > GameConstants.SLOT_AMMO_GUN2_END && containerSlot <= 35) {
                 if (stack.hasTag()) {
                     net.minecraft.nbt.CompoundTag tag = stack.getTag();
                     if (tag != null && (tag.contains("GunId") || tag.contains("MeleeWeaponId"))) {

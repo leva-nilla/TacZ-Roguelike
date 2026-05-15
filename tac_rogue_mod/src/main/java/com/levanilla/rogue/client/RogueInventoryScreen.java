@@ -1,20 +1,26 @@
 package com.levanilla.rogue.client;
 
 import com.levanilla.rogue.core.RunManager;
+import com.levanilla.rogue.core.ShopStockManager;
 import com.levanilla.rogue.core.TacZRegistryHelper;
+import com.levanilla.rogue.core.registry.ShopCatalog;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.Slot;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import com.levanilla.rogue.core.PerkDefinition;
 import com.levanilla.rogue.core.GameConstants;
 import com.levanilla.rogue.core.StaminaManager;
+import com.levanilla.rogue.core.WeaponRarity;
 
 /**
  * 繝励Ξ繧､繝､繝ｼ縺ｮ繧ｹ繝・・繧ｿ繧ｹ縲√ヱ繝ｼ繧ｯ縲√す繝ｧ繝・・縲√Α繝・す繝ｧ繝ｳ諠・ｱ繧定｡ｨ遉ｺ縺吶ｋ螟壽ｩ溯・繧､繝ｳ繝吶Φ繝医Μ逕ｻ髱｢
@@ -30,6 +36,8 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
     private int shopPage = 0;
     private int perkScrollOffset = 0;
     private int questScrollOffset = 0;
+    private int statusScrollOffset = 0;
+    private boolean floorEntrySoloMode = true;
     private static final int ITEMS_PER_PAGE = 6;
 
     public void setActiveTab(Tab tab) {
@@ -39,8 +47,8 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
 
     public RogueInventoryScreen(AbstractContainerMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
-        this.imageWidth = 220;
-        this.imageHeight = 166;
+        this.imageWidth = 236;
+        this.imageHeight = 172;
     }
 
     @Override
@@ -66,8 +74,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
             int catPanelW = 65;
             int listX = x - 110 + catPanelW + 4;
             int panelRight = x + imageWidth + 100;
-            List<com.levanilla.rogue.core.registry.ShopCatalog.ShopItem> items = shopCategoryFilter == null ?
-                TacZRegistryHelper.getAllShopItems() : TacZRegistryHelper.getItemsByCategory(shopCategoryFilter);
+            List<com.levanilla.rogue.core.registry.ShopCatalog.ShopItem> items = getVisibleShopItems();
             int startIndex = shopPage * ITEMS_PER_PAGE;
             int listY = y + 10;
             for (int i = 0; i < ITEMS_PER_PAGE && (startIndex + i) < items.size(); i++) {
@@ -77,13 +84,13 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
                 }
             }
         } else if (activeTab == Tab.PERKS && player != null) {
-            int perkY = y + 26;
+            int perkY = y + 32;
             int rightX = x + 10;
             List<PerkGroupEntry> groups = buildPerkGroups(player);
-            int visible = Math.min(groups.size() - perkScrollOffset, 7);
+            int visible = Math.min(groups.size() - perkScrollOffset, 6);
             for (int i = 0; i < visible; i++) {
-                int py = perkY + i * 22;
-                if (mouseX >= rightX && mouseX <= rightX + 280 && mouseY >= py && mouseY <= py + 20) {
+                int py = perkY + i * 25;
+                if (mouseX >= rightX && mouseX <= rightX + 280 && mouseY >= py && mouseY <= py + 23) {
                     hoveredPerkIndex = i + perkScrollOffset;
                 }
             }
@@ -139,7 +146,9 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
             graphics.renderTooltip(this.font, this.hoveredSlot.getItem(), mouseX, mouseY);
         }
         if (activeTab == Tab.SHOP && hoveredShopItem >= 0 && player != null) {
-            renderShopTooltip(graphics, player, mouseX, mouseY);
+            if (!sellMode) {
+                renderShopTooltip(graphics, player, mouseX, mouseY);
+            }
         }
         if (activeTab == Tab.PERKS && hoveredPerkIndex >= 0 && player != null) {
             renderPerkTooltip(graphics, player, mouseX, mouseY);
@@ -150,19 +159,50 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
     }
 
     /** ショップアイテムのツールチップ描画 */
-    private void renderShopTooltip(GuiGraphics graphics, net.minecraft.client.player.LocalPlayer player, int mouseX, int mouseY) {
-        List<com.levanilla.rogue.core.registry.ShopCatalog.ShopItem> items = shopCategoryFilter == null ?
+    private List<com.levanilla.rogue.core.registry.ShopCatalog.ShopItem> getVisibleShopItems() {
+        List<com.levanilla.rogue.core.registry.ShopCatalog.ShopItem> baseItems = shopCategoryFilter == null ?
             TacZRegistryHelper.getAllShopItems() : TacZRegistryHelper.getItemsByCategory(shopCategoryFilter);
+        int shopFloor = ShopStockManager.getShopFloor(RunManager.getCurrentFloor(), RunManager.isFloorCleared());
+        if (cachedVisibleShopSource == baseItems
+            && cachedVisibleShopCategory == shopCategoryFilter
+            && cachedVisibleShopFloor == shopFloor) {
+            return cachedVisibleShopItems;
+        }
+
+        if (cachedVisibleShopSource != baseItems) {
+            shopCompatibilityCache.clear();
+        }
+        cachedVisibleShopItems = ShopStockManager.filterAvailable(baseItems, shopFloor);
+        cachedVisibleShopSource = baseItems;
+        cachedVisibleShopCategory = shopCategoryFilter;
+        cachedVisibleShopFloor = shopFloor;
+        return cachedVisibleShopItems;
+    }
+
+    private void renderShopTooltip(GuiGraphics graphics, net.minecraft.client.player.LocalPlayer player, int mouseX, int mouseY) {
+        List<com.levanilla.rogue.core.registry.ShopCatalog.ShopItem> items = getVisibleShopItems();
         int idx = shopPage * ITEMS_PER_PAGE + hoveredShopItem;
         if (idx < 0 || idx >= items.size()) return;
         com.levanilla.rogue.core.registry.ShopCatalog.ShopItem item = items.get(idx);
-        int gold = RunManager.getClientGold();
-        boolean canAfford = gold >= item.price;
+        int actualPrice = item.price;
+        if (item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.SPECIAL) {
+            int currentLevel = 0;
+            if (item.id.equals("rogue:ammo_capacity_upgrade")) currentLevel = com.levanilla.rogue.core.RunManager.getClientAmmoCapacityLevel();
+            else if (item.id.equals("rogue:inv_upgrade")) currentLevel = player.getPersistentData().getInt("TacRogue_InvLevel");
+            else if (item.id.equals("rogue:stash_upgrade")) currentLevel = Math.max(0, com.levanilla.rogue.core.RunManager.getClientStashLines() - 2);
+            else if (item.id.equals("rogue:melee_upgrade")) currentLevel = player.getPersistentData().getInt("TacRogueMeleeLevel");
+            else if (item.id.equals("rogue:flashlight_upgrade")) currentLevel = com.levanilla.rogue.core.RunManager.getClientFlashlightLevel();
+            else if (item.id.equals("rogue:random_perk")) currentLevel = player.getPersistentData().getInt("RandomPerkBuys");
+            actualPrice = com.levanilla.rogue.core.PriceManager.getUpgradePrice(item.id, currentLevel);
+        }
+
+        int gold = com.levanilla.rogue.core.RunManager.getClientGold();
+        boolean canAfford = gold >= actualPrice;
 
         List<Component> tooltip = new ArrayList<>();
         tooltip.add(Component.literal("\u00A7e" + item.displayName));
         tooltip.add(Component.literal("\u00A77Category: \u00A7f" + item.category.label));
-        tooltip.add(Component.literal("\u00A77Price: " + (canAfford ? "\u00A76" : "\u00A7c") + "$" + item.price));
+        tooltip.add(Component.literal("\u00A77Price: " + (canAfford ? "\u00A76" : "\u00A7c") + "$" + actualPrice));
         tooltip.add(Component.literal("\u00A77Held: \u00A76$" + gold));
         
         String desc = switch (item.category) {
@@ -174,13 +214,44 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
             case LMG -> "Suppressive fire with large ammo capacity.";
             case EXPLOSIVE -> "Heavy explosive weapon. Splash damage.";
             case MELEE -> "Close combat weapon. No ammo needed.";
+            case TACTICAL -> "Throwable tactical equipment.";
             case ATTACHMENT -> "Attach to weapons to boost performance.";
             case AMMO -> "Ammo for matching weapons x32.";
-            case SPECIAL -> "Upgrade that changes gameplay.";
+            case SPECIAL -> {
+                if (item.id.equals("rogue:ammo_capacity_upgrade")) {
+                    int ammoCapLevel = RunManager.getClientAmmoCapacityLevel();
+                    int nextLevel = ammoCapLevel + 1;
+                    int currentMultiplier = (int)((capLevelToMultiplier(ammoCapLevel) - 1.0f) * 100);
+                    int nextMultiplier = (int)((capLevelToMultiplier(nextLevel) - 1.0f) * 100);
+                    if (ammoCapLevel >= 5) { // GameConstants.AMMO_CAPACITY_MAX_LEVEL
+                        yield "\u00A7fThis pouch is at MAX LEVEL! (+" + currentMultiplier + "% Amount)";
+                    } else {
+                        yield "\u00A7fIncreases purchased ammo amount.\n\u00A7aCurrent Bonus: +" + currentMultiplier + "% \u00A77-> \u00A7e+" + nextMultiplier + "%";
+                    }
+                } else if (item.id.equals("rogue:inv_upgrade")) {
+                    yield "\u00A7fUnlocks 2 more backpack slots.";
+                } else if (item.id.equals("rogue:stash_upgrade")) {
+                    yield "\u00A7fUnlocks 1 row in stash.";
+                } else if (item.id.equals("rogue:melee_upgrade")) {
+                    yield "\u00A7fUpgrades your Melee stats.";
+                } else if (item.id.equals("rogue:flashlight_upgrade")) {
+                    int flashlightLevel = com.levanilla.rogue.core.RunManager.getClientFlashlightLevel();
+                    yield "\u00A7fExtends flashlight range and spread.\n\u00A7aCurrent Lvl: " + flashlightLevel + " \u00A77-> \u00A7e" + (flashlightLevel + 1);
+                } else if (item.id.equals("rogue:random_perk")) {
+                    yield "\u00A7fGet a random perk. Cost increases each time.";
+                }
+                yield "Upgrade that changes gameplay.";
+            }
         };
-        tooltip.add(Component.literal("\u00A78" + desc));
+        for (String line : desc.split("\n")) {
+            tooltip.add(Component.literal("\u00A78" + line));
+        }
         if (!canAfford) tooltip.add(Component.literal("\u00A7cNot enough gold!"));
         graphics.renderComponentTooltip(this.font, tooltip, mouseX, mouseY);
+    }
+
+    private float capLevelToMultiplier(int level) {
+        return 1.0f + (level * 0.5f);
     }
 
     // ===== クエストタブ描画 =====
@@ -228,7 +299,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         if (questScrollOffset < 0) questScrollOffset = 0;
 
         if (cachedQuests.isEmpty()) {
-            graphics.drawString(this.font, "\u00A77No quest data \u2014 talk to Commander NPC",
+            graphics.drawString(this.font, Component.translatable("gui.tac_rogue.quest_screen.no_data"),
                 panelLeft + 10, questY, 0xFF888888, false);
             // クエスト同期リクエスト
             if (this.minecraft != null) {
@@ -250,6 +321,8 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
             String[] quest = cachedQuests.get(qi);
             String questId = quest[0];
             String typeName = quest[1];
+            String roleName = quest.length > 6 ? quest[6] : "quest.tac_rogue.role.contract";
+            boolean rareWeaponReward = quest.length > 7 && "true".equals(quest[7]);
             int target = 0, progress = 0, goldReward = 0;
             boolean completed = false;
             try {
@@ -277,6 +350,13 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
             // クエストタイプ名
             net.minecraft.network.chat.Component typeComp = net.minecraft.network.chat.Component.translatable(typeName);
             graphics.drawString(this.font, typeComp, panelLeft + 22, qy + 2, completed ? 0xFF00FF00 : 0xFFDDDDDD, false);
+
+            net.minecraft.network.chat.Component roleComp = net.minecraft.network.chat.Component.translatable(roleName);
+            int roleColor = rareWeaponReward ? 0xFFFF66DD : 0xFF88AAFF;
+            graphics.drawString(this.font, roleComp, panelLeft + 22, qy + 11, roleColor, false);
+            if (rareWeaponReward) {
+                graphics.drawString(this.font, "\u00A7d\u2726", panelLeft + 82, qy + 11, 0xFFFF66DD, true);
+            }
 
             // 進捗バー
             int barX = panelLeft + 150;
@@ -311,14 +391,14 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         }
 
         // 完了カウント
-        long completedCount = cachedQuests.stream().filter(q -> "true".equals(q[5])).count();
+        long completedCount = cachedQuests.stream().filter(q -> q.length > 5 && "true".equals(q[5])).count();
         String summary = "\u00A77" + completedCount + "/" + cachedQuests.size() + " completed";
         graphics.drawString(this.font, summary, panelLeft + 10, y + imageHeight + 25, 0xFF888888, false);
     }
 
     private void renderTabHighlight(GuiGraphics graphics) {
-        int[] offsets = {-6, 61, 113, 165, 217};
-        int[] widths = {65, 50, 50, 50, 65};
+        int[] offsets = {-6, 61, 113, 165, 217, 284};
+        int[] widths = {65, 50, 50, 50, 65, 55};
         int index = activeTab.ordinal();
         if (index >= 0 && index < offsets.length) {
             graphics.fill(tabX + offsets[index], tabY, tabX + offsets[index] + widths[index], tabY + 15, 0x4400FFFF);
@@ -327,102 +407,240 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
     }
 
     private void renderStatusTab(GuiGraphics graphics, net.minecraft.client.player.LocalPlayer player, int x, int y) {
-        int lx = x + 10;
-        int rx = x + 155;
+        int lx = x - 96;
+        int viewportTop = y + 5;
+        int viewportBottom = y + imageHeight + 35;
+        int viewportHeight = viewportBottom - viewportTop;
+        int top = y + 8;
+        int leftW = 178;
+        int rightX = x + 92;
+        int rightW = 218;
 
-        // === VITAL SIGNS ===
-        graphics.drawString(this.font, "\u00A7b\u2588 VITAL SIGNS", lx, y + 8, 0xFF00AAFF, false);
-        int hp = (int) player.getHealth();
-        int maxHp = (int) player.getMaxHealth();
-        int hpColor = hp > maxHp * 0.5 ? 0xFF00FF88 : hp > maxHp * 0.25 ? 0xFFFFFF00 : 0xFFFF4444;
-        // HP bar
-        int barW = 130;
-        int barY = y + 22;
-        graphics.fill(lx, barY, lx + barW, barY + 8, 0x44FFFFFF);
-        int fillW = maxHp > 0 ? (int) ((float) hp / maxHp * barW) : 0;
-        graphics.fill(lx, barY, lx + fillW, barY + 8, hpColor);
-        graphics.drawString(this.font, "HP " + hp + "/" + maxHp, lx + barW + 4, barY, hpColor, false);
-
-        // Stamina bar
-        float sta = com.levanilla.rogue.core.StaminaManager.getStamina(player);
-        float maxSta = com.levanilla.rogue.core.StaminaManager.getMaxStamina(player);
-        int staBarY = barY + 12;
-        graphics.fill(lx, staBarY, lx + barW, staBarY + 8, 0x44FFFFFF);
-        int staFill = maxSta > 0 ? (int) (sta / maxSta * barW) : 0;
-        graphics.fill(lx, staBarY, lx + staFill, staBarY + 8, 0xFF00FFFF);
-        graphics.drawString(this.font, "STA " + (int) (sta / 20) + "s", lx + barW + 4, staBarY, 0xFF00DDFF, false);
-
-        // Stats grid
-        int gy = staBarY + 16;
+        float hp = player.getHealth();
+        float maxHp = player.getMaxHealth();
+        float hpRatio = maxHp > 0.0f ? Math.max(0.0f, Math.min(1.0f, hp / maxHp)) : 0.0f;
+        int hpPercent = Math.round(hpRatio * 100.0f);
+        int hpColor = hpRatio > 0.5f ? 0xFF00FF88 : hpRatio > 0.25f ? 0xFFFFFF00 : 0xFFFF4444;
+        float maxSta = StaminaManager.getClientMaxStamina();
+        float sta = StaminaManager.getClientStamina();
         int armor = (int) player.getAttributeValue(Attributes.ARMOR);
-        double speed = player.getAttributeBaseValue(Attributes.MOVEMENT_SPEED);
-        graphics.drawString(this.font, "\u00A77DEF: \u00A7f" + armor, lx, gy, 0xFFAABBFF, false);
-        graphics.drawString(this.font, "\u00A77SPD: \u00A7f" + String.format("%.3f", speed), rx, gy, 0xFFFFFFFF, false);
-        gy += 12;
-        graphics.drawString(this.font, "\u00A76GOLD: \u00A7e$" + RunManager.getClientGold(), lx, gy, 0xFFFFCC00, false);
-        graphics.drawString(this.font, "\u00A7aFLOOR: \u00A7f" + RunManager.getCurrentFloor(), rx, gy, 0xFF00FF00, false);
-
-        // === COMBAT STATS ===
-        gy += 18;
-        graphics.fill(lx - 2, gy - 2, lx + 280, gy, 0x4400AAFF);
-        graphics.drawString(this.font, "\u00A7b\u2588 COMBAT STATS", lx, gy + 2, 0xFF00AAFF, false);
-        gy += 14;
+        double speed = player.getAttributeValue(Attributes.MOVEMENT_SPEED);
 
         float dmgBonus = sumClientPerkEffect(player, "perk:DAMAGE");
         float hsBonus = sumClientPerkEffect(player, "perk:FORTUNE");
+        float fireRateBonus = WeaponRarity.getFireRatePerkBonusPercent(player);
         float reloadBonus = sumClientPerkEffect(player, "perk:RELOAD_SPEED");
+        float autoloaderEffect = sumClientPerkEffect(player, "perk:AUTOLOADER");
         float resistBonus = sumClientPerkEffect(player, "perk:RESISTANCE");
         float vampBonus = sumClientPerkEffect(player, "perk:VAMPIRE");
         float goldBonus = sumClientPerkEffect(player, "perk:GOLD_RUSH");
+        float staminaBonus = sumClientPerkEffect(player, "perk:STAMINA");
+        float magBonus = sumClientPerkEffect(player, "perk:MAG_SIZE");
+        List<String> details = buildStatusDetailLines(player, armor, resistBonus, fireRateBonus, reloadBonus, autoloaderEffect, staminaBonus);
+        int tacticalH = Math.max(54, 43 + details.size() * 10);
+        int combatBottomY = top + 188;
+        int contentHeight = (combatBottomY + tacticalH + 8) - viewportTop;
+        int maxScroll = Math.max(0, contentHeight - viewportHeight);
+        statusScrollOffset = Math.max(0, Math.min(statusScrollOffset, maxScroll));
 
-        graphics.drawString(this.font, "\u00A7cDMG+: \u00A7f" + String.format("%.0f%%", dmgBonus), lx, gy, 0xFFFF4444, false);
-        graphics.drawString(this.font, "\u00A7eCRIT: \u00A7f" + String.format("%.0f%%", hsBonus), rx, gy, 0xFFFFFF00, false);
-        gy += 11;
-        graphics.drawString(this.font, "\u00A7bAUTO+: \u00A7f" + String.format("%.0f%%", reloadBonus), lx, gy, 0xFF00FFFF, false);
-        graphics.drawString(this.font, "\u00A75RES:  \u00A7f" + String.format("%.0f%%", resistBonus), rx, gy, 0xFFAA88FF, false);
-        gy += 11;
-        graphics.drawString(this.font, "\u00A74VAMP: \u00A7f" + String.format("%.1f", vampBonus / 10f), lx, gy, 0xFFCC0000, false);
-        graphics.drawString(this.font, "\u00A76GOLD: \u00A7f" + String.format("+%.0f%%", goldBonus), rx, gy, 0xFFFFD700, false);
+        graphics.enableScissor(lx - 4, viewportTop, rightX + rightW + 4, viewportBottom);
+        graphics.pose().pushPose();
+        graphics.pose().translate(0, -statusScrollOffset, 0);
 
-        // === POSTURE ===
-        gy += 16;
-        graphics.fill(lx - 2, gy - 2, lx + 280, gy, 0x4400AAFF);
-        graphics.drawString(this.font, "\u00A7b\u2588 POSTURE", lx, gy + 2, 0xFF00AAFF, false);
-        gy += 14;
-        String posture = player.isSwimming() ? "\u00A72PRONE" : player.isShiftKeyDown() ? "\u00A7eSNEAK" : "\u00A7fSTANDING";
-        float postureDmg = player.isSwimming() ? GameConstants.CRAWL_DAMAGE_MULT : player.isShiftKeyDown() ? GameConstants.SNEAK_DAMAGE_MULT : 1.0f;
-        graphics.drawString(this.font, "\u00A77Stance: " + posture, lx, gy, 0xFFFFFFFF, false);
-        graphics.drawString(this.font, "\u00A77DMG x" + String.format("%.2f", postureDmg), rx, gy, 0xFFFFFFFF, false);
+        drawPanel(graphics, lx, top, leftW, 70, tr("gui.tac_rogue.status.panel.vitals"), 0xFF00DDFF);
+        drawProgressBar(graphics, lx + 10, top + 20, leftW - 20, 8, hp, maxHp, hpColor, 0xFF3B1D28);
+        graphics.drawString(this.font, String.format(java.util.Locale.ROOT, "HP %d%%  %.1f/%.1f", hpPercent, hp, maxHp), lx + 10, top + 32, hpColor, false);
+        drawProgressBar(graphics, lx + 10, top + 45, leftW - 20, 8, sta, maxSta, 0xFF00D9FF, 0xFF172B38);
+        graphics.drawString(this.font, String.format(java.util.Locale.ROOT, "STA %.0f/%.0f", sta, maxSta), lx + 10, top + 57, 0xFF9BEAFF, false);
 
-        // Total perk count
-        gy += 16;
-        int totalPerks = 0;
-        for (String tag : player.getTags()) {
-            if (tag.startsWith("perk:")) totalPerks++;
+        drawPanel(graphics, lx, top + 78, leftW, 78, tr("gui.tac_rogue.status.panel.operator"), 0xFF88CCFF);
+        drawMetric(graphics, lx + 10, top + 98, tr("gui.tac_rogue.status.metric.armor"), String.valueOf(armor), 0xFFAABBFF);
+        drawMetric(graphics, lx + 92, top + 98, tr("gui.tac_rogue.status.metric.speed"), String.format(java.util.Locale.ROOT, "%.3f", speed), 0xFFFFFFFF);
+        drawMetric(graphics, lx + 10, top + 122, tr("gui.tac_rogue.status.metric.gold"), "$" + RunManager.getClientGold(), 0xFFFFD45C);
+        drawMetric(graphics, lx + 92, top + 122, tr("gui.tac_rogue.status.metric.perks"), String.valueOf(countClientPerks(player)), 0xFFAAFFCC);
+
+        drawPanel(graphics, rightX, top, rightW, 70, tr("gui.tac_rogue.status.panel.run_state"), 0xFFFFDD66);
+        drawMetric(graphics, rightX + 10, top + 20, tr("gui.tac_rogue.status.metric.floor"), String.valueOf(RunManager.getCurrentFloor()), 0xFF88FF88);
+        drawMetric(graphics, rightX + 76, top + 20, tr("gui.tac_rogue.status.metric.max"), String.valueOf(RunManager.getMaxReachedFloor()), 0xFF88CCFF);
+        String runState = RunManager.isFloorCleared()
+            ? tr("gui.tac_rogue.status.state.extract")
+            : RunManager.isRunActive() ? tr("gui.tac_rogue.status.state.active") : tr("gui.tac_rogue.status.state.lobby");
+        int runStateColor = RunManager.isFloorCleared() ? 0xFF55DDAA : RunManager.isRunActive() ? 0xFF00FF88 : 0xFFFFDD66;
+        drawMetric(graphics, rightX + 142, top + 20, tr("gui.tac_rogue.status.metric.state"), runState, runStateColor);
+        String theme = RunManager.getCurrentThemeName();
+        graphics.drawString(this.font, "\u00A77" + tr("gui.tac_rogue.status.metric.theme"), rightX + 10, top + 45, 0xFF888888, false);
+        graphics.drawString(this.font, trim(theme, 30), rightX + 10, top + 56, 0xFFFFFFFF, false);
+
+        drawPanel(graphics, rightX, top + 78, rightW, 102, tr("gui.tac_rogue.status.panel.combat_modifiers"), 0xFFFF6666);
+        drawMetric(graphics, rightX + 10, top + 98, tr("gui.tac_rogue.status.metric.damage"), fmtMult(1.0f + dmgBonus / 100.0f), 0xFFFF7777);
+        drawMetric(graphics, rightX + 76, top + 98, tr("gui.tac_rogue.status.metric.crit"), fmtChance(hsBonus), 0xFFFFFF66);
+        drawMetric(graphics, rightX + 142, top + 98, tr("gui.tac_rogue.status.metric.reload"), fmtPercent(reloadBonus), 0xFF66EEFF);
+        drawMetric(graphics, rightX + 10, top + 122, tr("gui.tac_rogue.status.metric.special_resist"), fmtMult(specialResistanceTaken(resistBonus)), 0xFFCCAAFF);
+        drawMetric(graphics, rightX + 76, top + 122, tr("gui.tac_rogue.status.metric.vamp"), String.format(java.util.Locale.ROOT, "+%.1f", vampBonus / 10f), 0xFFFF8888);
+        drawMetric(graphics, rightX + 142, top + 122, tr("gui.tac_rogue.status.metric.gold"), fmtPercent(goldBonus), 0xFFFFD700);
+        drawMetric(graphics, rightX + 10, top + 146, tr("gui.tac_rogue.status.metric.fire_rate"), fmtMult(1.0f + fireRateBonus / 100.0f), 0xFFFF9966);
+
+        int bottomY = combatBottomY;
+        drawPanel(graphics, lx, bottomY, leftW + rightW + 10, tacticalH, tr("gui.tac_rogue.status.panel.tactical_state"), 0xFFAAFFCC);
+        boolean prone = player.hasPose(net.minecraft.world.entity.Pose.SWIMMING) || player.isSwimming();
+        boolean sneaking = player.hasPose(net.minecraft.world.entity.Pose.CROUCHING)
+            || player.isShiftKeyDown()
+            || ClientEventHandler.isRogueSneakToggled();
+        String posture = prone
+            ? "\u00A72" + tr("gui.tac_rogue.status.stance.prone")
+            : sneaking ? "\u00A7e" + tr("gui.tac_rogue.status.stance.sneak") : "\u00A7f" + tr("gui.tac_rogue.status.stance.standing");
+        float postureDmg = prone ? GameConstants.CRAWL_DAMAGE_MULT : sneaking ? GameConstants.SNEAK_DAMAGE_MULT : 1.0f;
+        graphics.drawString(this.font, "\u00A77" + tr("gui.tac_rogue.status.stance", posture), lx + 10, bottomY + 17, 0xFFFFFFFF, false);
+        graphics.drawString(this.font, "\u00A77" + tr("gui.tac_rogue.status.posture_damage", String.format(java.util.Locale.ROOT, "%.2f", postureDmg)), lx + 116, bottomY + 17, 0xFFFFFFFF, false);
+        graphics.drawString(this.font, "\u00A77" + tr("gui.tac_rogue.status.stamina_mult", fmtMult(1.0f + staminaBonus / 100.0f)), lx + 236, bottomY + 17, 0xFFAAFFCC, false);
+        graphics.drawString(this.font, "\u00A77" + tr("gui.tac_rogue.status.magazine_mult", fmtMult(1.0f + magBonus / 100.0f)), lx + 322, bottomY + 17, 0xFFAAFFCC, false);
+
+        int detailY = bottomY + 31;
+        for (int i = 0; i < details.size(); i++) {
+            graphics.drawString(this.font, "\u00A78- \u00A7f" + details.get(i),
+                lx + 10, detailY + i * 10, 0xFFE0E0E0, false);
         }
-        graphics.drawString(this.font, "\u00A77Perks: \u00A7f" + totalPerks, lx, gy, 0xFFAAAAAA, false);
+        graphics.pose().popPose();
+        graphics.disableScissor();
+
+        if (maxScroll > 0) {
+            int barX = rightX + rightW - 4;
+            int barH = Math.max(20, viewportHeight * viewportHeight / contentHeight);
+            int barY = viewportTop + (viewportHeight - barH) * statusScrollOffset / maxScroll;
+            graphics.fill(barX, viewportTop, barX + 2, viewportBottom, 0x44111111);
+            graphics.fill(barX, barY, barX + 2, barY + barH, 0xAA00DDFF);
+        }
+    }
+
+    private List<String> buildStatusDetailLines(net.minecraft.client.player.LocalPlayer player, int armor,
+                                                float resistBonus, float fireRateBonus, float reloadBonus,
+                                                float autoloaderEffect, float staminaBonus) {
+        List<String> lines = new ArrayList<>();
+        float armorReduction = armor <= 0 ? 0.0f : armor / (armor + 20.0f);
+        float volatileTaken = 1.0f + countModifier(player, PerkDefinition.Modifier.VOLATILE) * 0.20f;
+        lines.add(tr("gui.tac_rogue.status.armor_mitigation", fmtOnePercent(armorReduction * 100.0f)));
+        lines.add(tr("gui.tac_rogue.status.resistance_damage_taken", fmtMult(specialResistanceTaken(resistBonus))));
+        lines.add(tr("gui.tac_rogue.status.volatile_damage_taken", fmtMult(volatileTaken)));
+        lines.add(tr("gui.tac_rogue.status.dodge_effective",
+            fmtOnePercent(Math.min(75.0f, effectiveStackedChance(player, PerkDefinition.Category.DODGE, 1.0f)))));
+        lines.add(tr("gui.tac_rogue.status.ammo_save_effective", fmtOnePercent(effectiveAmmoSaveChance(player))));
+        lines.add(formatEffectivePerkValue(player, PerkDefinition.Category.SCAVENGER, sumClientPerkEffect(player, "perk:SCAVENGER")));
+        lines.add(tr("gui.tac_rogue.status.fire_rate_effective", fmtMult(1.0f + fireRateBonus / 100.0f)));
+        lines.add(tr("gui.tac_rogue.status.reload_effective", fmtMult(1.0f + reloadBonus / 100.0f)));
+        lines.add(tr("gui.tac_rogue.status.autoloader_rate", fmtAutoloaderRate(autoloaderEffect)));
+        lines.add(tr("gui.tac_rogue.status.regen_delay",
+            String.format(java.util.Locale.ROOT, "%.1fs", GameConstants.REGEN_DAMAGE_COOLDOWN_TICKS / 20.0f)));
+        lines.add(tr("gui.tac_rogue.status.ads_stamina_drain", fmtMult(Math.max(0.1f, 1.0f - staminaBonus / 200.0f))));
+        lines.add(tr("gui.tac_rogue.status.flashlight_level", com.levanilla.rogue.core.ClientRunState.getFlashlightLevel()));
+        return lines;
+    }
+
+    private static int countModifier(net.minecraft.client.player.LocalPlayer player, PerkDefinition.Modifier modifier) {
+        int count = 0;
+        for (String tag : player.getTags()) {
+            if (tag.startsWith("perk:") && PerkDefinition.fromTag(tag).modifier == modifier) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private void drawPanel(GuiGraphics graphics, int x, int y, int w, int h, String title, int color) {
+        graphics.fill(x, y, x + w, y + h, 0x6607111F);
+        graphics.fill(x, y, x + 3, y + h, color);
+        graphics.renderOutline(x, y, w, h, 0x6600AAFF);
+        graphics.drawString(this.font, title, x + 8, y + 6, color, false);
+    }
+
+    private void drawProgressBar(GuiGraphics graphics, int x, int y, int w, int h, float value, float max, int fillColor, int bgColor) {
+        graphics.fill(x, y, x + w, y + h, bgColor);
+        int fillW = max > 0 ? Math.max(0, Math.min(w, (int)(value / max * w))) : 0;
+        graphics.fill(x, y, x + fillW, y + h, fillColor);
+        graphics.renderOutline(x, y, w, h, 0x55FFFFFF);
+    }
+
+    private void drawMetric(GuiGraphics graphics, int x, int y, String label, String value, int color) {
+        graphics.drawString(this.font, "\u00A77" + label, x, y, 0xFF888888, false);
+        graphics.drawString(this.font, value, x, y + 10, color, false);
+    }
+
+    private static String fmtPercent(float value) {
+        return String.format(java.util.Locale.ROOT, "+%.0f%%", value);
+    }
+
+    private static String fmtChance(float chancePercent) {
+        return String.format(java.util.Locale.ROOT, "%.1f%%", Math.max(0.0f, Math.min(100.0f, chancePercent)));
+    }
+
+    private static String fmtOnePercent(float chancePercent) {
+        return String.format(java.util.Locale.ROOT, "%.1f%%", Math.max(0.0f, chancePercent));
+    }
+
+    private static String fmtMult(float value) {
+        return String.format(java.util.Locale.ROOT, "x%.2f", value);
+    }
+
+    private static String fmtAutoloaderRate(float effect) {
+        if (effect <= 0.0f) return "0.0/s";
+        return String.format(java.util.Locale.ROOT, "%.1f/s", PerkDefinition.getAutoloaderRoundsPerSecond(effect));
+    }
+
+    private static String tr(String key, Object... args) {
+        return Component.translatable(key, args).getString();
+    }
+
+    private static int countClientPerks(net.minecraft.client.player.LocalPlayer player) {
+        int total = 0;
+        for (String tag : player.getTags()) {
+            if (tag.startsWith("perk:")) total++;
+        }
+        return total;
+    }
+
+    private static String trim(String value, int max) {
+        if (value == null) return "";
+        if (value.length() <= max) return value;
+        return value.substring(0, Math.max(0, max - 3)) + "...";
+    }
+
+    private static String categoryInitial(com.levanilla.rogue.core.registry.ShopCatalog.Category category) {
+        String label = tr("gui.tac_rogue.shop_screen.category." + category.name().toLowerCase(java.util.Locale.ROOT));
+        return label.isEmpty() ? category.name().substring(0, 1) : label.substring(0, 1);
     }
 
     // === Perk grouping data class ===
-    private record PerkGroupEntry(String categoryKey, PerkDefinition samplePerk, int count, float totalEffect) {}
+    private record PerkGroupEntry(String categoryKey, PerkDefinition samplePerk, int count, float totalEffect, List<PerkDefinition> perks) {}
 
     private List<PerkGroupEntry> buildPerkGroups(net.minecraft.client.player.LocalPlayer player) {
-        Map<String, List<PerkDefinition>> grouped = new LinkedHashMap<>();
+        List<String> perkTags = new ArrayList<>();
         for (String tag : player.getTags()) {
             if (tag.startsWith("perk:")) {
-                PerkDefinition perk = PerkDefinition.fromTag(tag);
-                String key = perk.category.name() + ":" + perk.modifier.name();
-                grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(perk);
+                perkTags.add(tag);
             }
+        }
+        perkTags.sort(String::compareTo);
+        String signature = String.join("|", perkTags);
+        if (signature.equals(cachedPerkTagSignature)) {
+            return cachedPerkGroups;
+        }
+
+        Map<String, List<PerkDefinition>> grouped = new LinkedHashMap<>();
+        for (String tag : perkTags) {
+            PerkDefinition perk = PerkDefinition.fromTag(tag);
+            String key = perk.category.name(); // modifierの違いを無視してカテゴリでまとめる
+            grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(perk);
         }
         List<PerkGroupEntry> result = new ArrayList<>();
         for (var entry : grouped.entrySet()) {
             List<PerkDefinition> perks = entry.getValue();
             float totalEffect = 0;
             for (PerkDefinition p : perks) totalEffect += p.calculateEffect();
-            result.add(new PerkGroupEntry(entry.getKey(), perks.get(0), perks.size(), totalEffect));
+            result.add(new PerkGroupEntry(entry.getKey(), perks.get(0), perks.size(), totalEffect, perks));
         }
-        return result;
+        result.sort(java.util.Comparator.comparing(g -> g.samplePerk().category.displayName.toLowerCase(java.util.Locale.ROOT)));
+        cachedPerkTagSignature = signature;
+        cachedPerkGroups = result;
+        return cachedPerkGroups;
     }
 
     private void renderPerksTab(GuiGraphics graphics, net.minecraft.client.player.LocalPlayer player, int x, int y) {
@@ -432,58 +650,57 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         // Header with count
         int totalPerks = 0;
         for (PerkGroupEntry g : groups) totalPerks += g.count();
-        graphics.drawString(this.font, "\u00A7bADAPTATIONS \u00A77(" + totalPerks + " total, " + groups.size() + " types)", rightX, y + 8, 0xFF00AAFF, false);
+        graphics.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.adaptations"), rightX, y + 8, 0xFF00AAFF, false);
+        graphics.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.perk_count", totalPerks, groups.size()), rightX + 88, y + 8, 0xFF888888, false);
 
-        int perkY = y + 22;
-        int maxVisible = 7;
+        int perkY = y + 32;
+        int maxVisible = 6;
         int maxScroll = Math.max(0, groups.size() - maxVisible);
         if (perkScrollOffset > maxScroll) perkScrollOffset = maxScroll;
 
         // Scroll indicator
         if (perkScrollOffset > 0) {
-            graphics.drawCenteredString(this.font, "\u00A78\u25B2 scroll up", rightX + 140, perkY - 10, 0xFF555555);
+            graphics.drawCenteredString(this.font, Component.translatable("gui.tac_rogue.inventory.scroll_up"), rightX + 140, perkY - 10, 0xFF555555);
         }
 
         int rendered = 0;
         for (int i = perkScrollOffset; i < groups.size() && rendered < maxVisible; i++) {
             PerkGroupEntry group = groups.get(i);
             PerkDefinition perk = group.samplePerk();
-            int py = perkY + rendered * 22;
+            int py = perkY + rendered * 25;
             int rarityColor = perk.getRarityColor();
             boolean hovered = (hoveredPerkIndex == i);
 
             // Card background
             int cardW = 280;
-            int bgColor = hovered ? 0x44FFFFFF : 0x22FFFFFF;
-            graphics.fill(rightX, py, rightX + cardW, py + 20, bgColor);
-            graphics.fill(rightX, py, rightX + 2, py + 20, rarityColor | 0xFF000000);
+            int bgColor = hovered ? 0x66446655 : 0x3307111F;
+            graphics.fill(rightX, py, rightX + cardW, py + 23, bgColor);
+            graphics.fill(rightX, py, rightX + 3, py + 23, rarityColor | 0xFF000000);
+            graphics.renderOutline(rightX, py, cardW, 23, hovered ? 0xAAFFFFFF : 0x4400AAFF);
 
             // Perk name
-            String displayName = perk.getDisplayName();
-            graphics.drawString(this.font, displayName, rightX + 6, py + 2, rarityColor | 0xFF000000, false);
+            String displayName = trim(perk.category.displayName, 19);
+            graphics.drawString(this.font, displayName, rightX + 8, py + 3, rarityColor | 0xFF000000, false);
 
             // Count badge
             if (group.count() > 1) {
                 String countBadge = "x" + group.count();
-                int nameW = this.font.width(displayName);
-                graphics.drawString(this.font, "\u00A7e" + countBadge, rightX + 8 + nameW, py + 2, 0xFFFFCC00, false);
+                graphics.drawString(this.font, "\u00A7e" + countBadge, rightX + 112, py + 3, 0xFFFFCC00, false);
             }
 
-            // Total effect
-            float effect = group.totalEffect();
-            String effectStr;
-            if (perk.category == PerkDefinition.Category.REGENERATION || perk.category == PerkDefinition.Category.VAMPIRE) {
-                effectStr = String.format("Total: +%.1f", effect / 10.0f);
-            } else {
-                effectStr = "Total: +" + (int) effect + "%";
-            }
-            graphics.drawString(this.font, "\u00A7a" + effectStr, rightX + 6, py + 11, 0xFF88FF88, false);
+            String effectStr = formatEffectivePerkValue(player, perk.category, group.totalEffect());
+            graphics.drawString(this.font, "\u00A7a" + effectStr, rightX + 8, py + 13, 0xFF88FF88, false);
 
             // Modifier tag
-            if (perk.modifier != PerkDefinition.Modifier.NONE) {
-                String modText = "\u00A77[" + perk.modifier.prefix + "]";
+            PerkDefinition.Modifier strongest = getStrongestModifier(group.perks());
+            boolean risky = group.perks().stream().anyMatch(this::isRiskyModifier);
+            if (strongest != PerkDefinition.Modifier.NONE) {
+                String modText = (risky ? "\u00A7c! " : "\u00A77") + strongest.prefix.toUpperCase(java.util.Locale.ROOT);
                 int modW = this.font.width(modText);
-                graphics.drawString(this.font, modText, rightX + cardW - modW - 4, py + 6, perk.modifier.color, false);
+                graphics.drawString(this.font, modText, rightX + cardW - modW - 8, py + 4, strongest.color, false);
+                if (risky) {
+                    graphics.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.risk_modifier"), rightX + cardW - 76, py + 14, 0xFFFF7777, false);
+                }
             }
             rendered++;
         }
@@ -494,8 +711,8 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
 
         // Scroll down indicator
         if (perkScrollOffset + maxVisible < groups.size()) {
-            graphics.drawCenteredString(this.font, "\u00A78\u25BC scroll down (" + (groups.size() - perkScrollOffset - maxVisible) + " more)",
-                rightX + 140, perkY + maxVisible * 22 + 2, 0xFF555555);
+            graphics.drawCenteredString(this.font, Component.translatable("gui.tac_rogue.inventory.scroll_down", groups.size() - perkScrollOffset - maxVisible),
+                rightX + 140, perkY + maxVisible * 25 + 2, 0xFF555555);
         }
 
         // === Cursed penalty summary ===
@@ -508,21 +725,56 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
             }
         }
         if (cursedCount > 0) {
-            int summaryY = perkY + Math.min(rendered, maxVisible) * 22 + 14;
-            graphics.fill(rightX, summaryY - 2, rightX + 280, summaryY + 12 + cursedCount * 10, 0x44990033);
-            graphics.drawString(this.font, "\u00A7c\u26A0 CURSED (" + cursedCount + "/" + GameConstants.MAX_CURSED_PERKS + ")",
-                rightX + 4, summaryY, 0xFFFF4444, false);
-            int lineY = summaryY + 12;
-            for (PerkDefinition cp : cursedPerks) {
-                String penalty = getCursedPenaltyText(cp);
-                graphics.pose().pushPose();
-                graphics.pose().translate(rightX + 8, lineY, 0);
-                graphics.pose().scale(0.85f, 0.85f, 1.0f);
-                graphics.drawString(this.font, penalty, 0, 0, 0xFFCC6666, false);
-                graphics.pose().popPose();
-                lineY += 10;
+            int cursedStartOffset = Math.max(0, perkScrollOffset - groups.size());
+            int visibleCursed = Math.max(0, cursedCount - cursedStartOffset);
+            int maxSummaryLines = Math.min(visibleCursed, 7 - rendered);
+            if (maxSummaryLines > 0) {
+                int summaryY = perkY + rendered * 25 + 4;
+                int panelBottom = y + imageHeight + 25; // パネル下限（余白考慮）
+                // パネルからはみ出さないよう表示行数を制限
+                int availableHeight = panelBottom - summaryY - 14;
+                int effectiveLines = Math.min(maxSummaryLines, Math.max(0, availableHeight / 10));
+                if (effectiveLines > 0 && summaryY < panelBottom) {
+                    graphics.fill(rightX, summaryY - 2, rightX + 280, summaryY + 12 + effectiveLines * 10, 0x44990033);
+                    graphics.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.cursed_count", cursedCount, GameConstants.MAX_CURSED_PERKS),
+                        rightX + 4, summaryY, 0xFFFF4444, false);
+                    int lineY = summaryY + 12;
+                    int shown = 0;
+
+                    for (int i = cursedStartOffset; i < cursedPerks.size() && shown < effectiveLines; i++) {
+                        if (lineY + 10 > panelBottom) break; // パネル外なら描画しない
+                        PerkDefinition cp = cursedPerks.get(i);
+                        String penalty = getCursedPenaltyText(cp);
+                        graphics.pose().pushPose();
+                        graphics.pose().translate(rightX + 8, lineY, 0);
+                        graphics.pose().scale(0.75f, 0.75f, 1.0f); // 少し小さくしてはみ出し防止
+                        graphics.drawString(this.font, penalty, 0, 0, 0xFFCC6666, false);
+                        graphics.pose().popPose();
+                        lineY += 10;
+                        shown++;
+                    }
+                }
             }
         }
+    }
+
+    private PerkDefinition.Modifier getStrongestModifier(List<PerkDefinition> perks) {
+        PerkDefinition.Modifier strongest = PerkDefinition.Modifier.NONE;
+        for (PerkDefinition perk : perks) {
+            if (perk.modifier.tier > strongest.tier || perk.modifier.multiplier > strongest.multiplier) {
+                strongest = perk.modifier;
+            }
+        }
+        return strongest;
+    }
+
+    private boolean isRiskyModifier(PerkDefinition perk) {
+        return perk.modifier == PerkDefinition.Modifier.CURSED
+            || perk.modifier == PerkDefinition.Modifier.VOLATILE
+            || perk.modifier == PerkDefinition.Modifier.CORRUPTED
+            || perk.modifier == PerkDefinition.Modifier.OVERCLOCKED
+            || perk.modifier == PerkDefinition.Modifier.FRACTURED
+            || perk.modifier == PerkDefinition.Modifier.TITANIC;
     }
 
     /** Cursed パークのペナルティテキストを返す */
@@ -533,9 +785,11 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
             case ARMOR -> "\u00A7c-" + effect + "% Armor";
             case VELOCITY -> "\u00A7c-" + effect + "% Movement Speed";
             case DAMAGE -> "\u00A7c-" + effect + "% Accuracy (recoil+)";
-            case RELOAD_SPEED -> "\u00A7c+" + effect + "% Autoload Rate";
+            case FIRE_RATE -> "\u00A7c-" + effect + "% Fire Rate";
+            case RELOAD_SPEED -> "\u00A7c-" + effect + "% Reload Speed";
+            case AUTOLOADER -> "\u00A7c-" + fmtAutoloaderRate(perk.calculateEffect()) + " Autoload";
             case STAMINA -> "\u00A7c-" + effect + "% Stamina Regen";
-            case RESISTANCE -> "\u00A7c-" + effect + "% Explosion Resist";
+            case RESISTANCE -> "\u00A7c-" + effect + "% Special Resist";
             default -> "\u00A7c\u2022 " + perk.category.displayName + " penalty";
         };
     }
@@ -554,21 +808,36 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         }
         // Per-unit and total effect
         float unitEffect = perk.calculateEffect();
-        String unitStr = (perk.category == PerkDefinition.Category.REGENERATION || perk.category == PerkDefinition.Category.VAMPIRE)
-            ? String.format("%.1f", unitEffect / 10f) : String.format("%.0f%%", unitEffect);
-        String totalStr = (perk.category == PerkDefinition.Category.REGENERATION || perk.category == PerkDefinition.Category.VAMPIRE)
-            ? String.format("%.1f", group.totalEffect() / 10f) : String.format("%.0f%%", group.totalEffect());
-        tooltip.add(Component.literal("\u00A77Per unit: +" + unitStr + "  \u00A7aTotal: +" + totalStr));
-        if (perk.modifier != PerkDefinition.Modifier.NONE) {
-            tooltip.add(Component.literal("\u00A77Modifier: ").append(
-                Component.literal(perk.modifier.prefix).withStyle(s -> s.withColor(perk.modifier.color))));
-            if (!perk.modifier.tradeoff.isEmpty()) {
-                tooltip.add(Component.literal("\u00A7c\u26A0 ").append(Component.translatable(perk.modifier.tradeoff)));
-            }
-            if (perk.modifier == PerkDefinition.Modifier.CURSED) {
-                tooltip.add(Component.literal(getCursedPenaltyText(perk)));
+        String unitStr;
+        if (perk.category == PerkDefinition.Category.REGENERATION || perk.category == PerkDefinition.Category.VAMPIRE) {
+            unitStr = String.format("+%.1f", unitEffect / 10f);
+        } else if (perk.category == PerkDefinition.Category.AUTOLOADER) {
+            unitStr = fmtAutoloaderRate(unitEffect);
+        } else {
+            unitStr = String.format("+%.0f%%", unitEffect);
+        }
+
+        String totalStr = formatEffectivePerkValue(player, perk.category, group.totalEffect());
+        tooltip.add(Component.literal("\u00A77Per unit: " + unitStr + "  \u00A7aTotal: " + totalStr));
+
+        boolean hasModifiers = false;
+        for (PerkDefinition pk : group.perks()) {
+            if (pk.modifier != PerkDefinition.Modifier.NONE) {
+                if (!hasModifiers) {
+                    tooltip.add(Component.literal("\u00A77Modifiers:"));
+                    hasModifiers = true;
+                }
+                net.minecraft.network.chat.MutableComponent modLine = Component.literal("  " + pk.modifier.prefix).withStyle(s -> s.withColor(pk.modifier.color));
+                if (!pk.modifier.tradeoff.isEmpty()) {
+                    modLine.append(Component.literal(" \u00A77- ").append(pk.getModifierDescriptionComponent()));
+                }
+                tooltip.add(modLine);
+                if (pk.modifier == PerkDefinition.Modifier.CURSED) {
+                    tooltip.add(Component.literal("   " + getCursedPenaltyText(pk)));
+                }
             }
         }
+
         tooltip.add(Component.literal("\u00A78Level: " + perk.level));
         graphics.renderComponentTooltip(this.font, tooltip, mouseX, mouseY);
     }
@@ -584,12 +853,69 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         return total;
     }
 
+    private static String formatEffectivePerkValue(net.minecraft.client.player.LocalPlayer player, PerkDefinition.Category category, float totalEffect) {
+        return switch (category) {
+            case AMMO_EFFICIENCY -> tr("gui.tac_rogue.status.summary.ammo_save", fmtOnePercent(effectiveAmmoSaveChance(player)));
+            case DODGE -> tr("gui.tac_rogue.status.summary.dodge",
+                fmtOnePercent(Math.min(75.0f, effectiveStackedChance(player, category, 1.0f))));
+            case SCAVENGER -> {
+                float drop = com.levanilla.rogue.core.GameConstants.DROP_BASE_CHANCE
+                    * com.levanilla.rogue.core.DifficultyManager.getDropMultiplier()
+                    * (1.0f + totalEffect / 100.0f);
+                yield tr("gui.tac_rogue.status.summary.scavenger", fmtOnePercent(Math.min(100.0f, drop * 100.0f)));
+            }
+            case REGENERATION, VAMPIRE, QUICK_FIX -> tr("gui.tac_rogue.status.summary.effect",
+                String.format(java.util.Locale.ROOT, "+%.1f", totalEffect / 10.0f));
+            case GUN_PROFICIENCY -> String.format(java.util.Locale.ROOT,
+                "body x%.2f / head +%.0f%%",
+                1.0f + totalEffect * 0.18f / 100.0f,
+                Math.min(35.0f, totalEffect * 0.35f));
+            case FIRE_RATE -> tr("gui.tac_rogue.status.summary.fire_rate",
+                fmtMult(1.0f + WeaponRarity.getFireRatePerkBonusPercent(player) / 100.0f));
+            case STAMINA, DAMAGE, GOLD_RUSH, HANDLING, FORTUNE -> fmtMult(1.0f + totalEffect / 100.0f);
+            case RESISTANCE -> fmtMult(specialResistanceTaken(totalEffect));
+            case RELOAD_SPEED -> tr("gui.tac_rogue.status.summary.reload", fmtPercent(totalEffect));
+            case AUTOLOADER -> tr("gui.tac_rogue.status.summary.autoloader", fmtAutoloaderRate(totalEffect));
+            default -> tr("gui.tac_rogue.status.summary.total", "+" + (int) totalEffect + "%");
+        };
+    }
+
+    private static float effectiveAmmoSaveChance(net.minecraft.client.player.LocalPlayer player) {
+        return Math.min(GameConstants.AMMO_SAVE_MAX_CHANCE * 100.0f,
+            effectiveStackedChance(player, PerkDefinition.Category.AMMO_EFFICIENCY, 1.0f));
+    }
+
+    private static float specialResistanceTaken(float totalEffect) {
+        float resist = Math.min(totalEffect / 100.0f, GameConstants.SPECIAL_RESISTANCE_MAX);
+        return Math.max(0.0f, 1.0f - Math.max(0.0f, resist));
+    }
+
+    private static float effectiveStackedChance(net.minecraft.client.player.LocalPlayer player, PerkDefinition.Category category, float scale) {
+        float failChance = 1.0f;
+        for (String tag : player.getTags()) {
+            if (tag.startsWith("perk:" + category.name())) {
+                float chance = Math.max(0.0f, PerkDefinition.fromTag(tag).calculateEffect() / 100.0f * scale);
+                failChance *= Math.max(0.0f, 1.0f - chance);
+            }
+        }
+        return (1.0f - failChance) * 100.0f;
+    }
+
     private com.levanilla.rogue.core.registry.ShopCatalog.Category shopCategoryFilter = null; // null = ALL
     private boolean sellMode = false;
     private int hoveredShopItem = -1;
     private int hoveredInvSlot = -1;
     private int hoveredPerkIndex = -1;
     private int hoveredQuestIndex = -1;
+    private List<ShopCatalog.ShopItem> cachedVisibleShopItems = List.of();
+    private List<ShopCatalog.ShopItem> cachedVisibleShopSource = null;
+    private ShopCatalog.Category cachedVisibleShopCategory = null;
+    private int cachedVisibleShopFloor = Integer.MIN_VALUE;
+    private List<String> cachedShopHeldGunIds = List.of();
+    private String cachedShopHeldGunSignature = "";
+    private final Map<String, ShopCompatibility> shopCompatibilityCache = new HashMap<>();
+    private List<PerkGroupEntry> cachedPerkGroups = List.of();
+    private String cachedPerkTagSignature = "";
 
     private void renderQuestTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
         if (hoveredQuestIndex < 0 || hoveredQuestIndex >= cachedQuests.size()) return;
@@ -599,9 +925,12 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         String target = quest.length > 2 ? quest[2] : "0";
         String progress = quest.length > 3 ? quest[3] : "0";
         String gold = quest.length > 4 ? quest[4] : "0";
+        String roleName = quest.length > 6 ? quest[6] : "quest.tac_rogue.role.contract";
+        boolean rareWeaponReward = quest.length > 7 && "true".equals(quest[7]);
 
         List<Component> tooltip = new ArrayList<>();
         tooltip.add(Component.translatable(typeName).withStyle(s -> s.withColor(0xFFE5FF)));
+        tooltip.add(Component.translatable(roleName).withStyle(s -> s.withColor(0x88AAFF)));
 
         String langKey = "quest.tac_rogue." + questId;
         String typeDescKey = typeName + ".desc";
@@ -612,17 +941,77 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         } else if (net.minecraft.client.resources.language.I18n.exists(typeDescKey)) {
             // Type-based dynamic descriptions (e.g., "Clear floor in %s seconds")
             tooltip.add(Component.translatable(typeDescKey, target).withStyle(s -> s.withColor(0xAAAAAA)));
-            tooltip.add(Component.literal("Reward: " + gold + " G").withStyle(s -> s.withColor(0xFFD700)));
+            tooltip.add(Component.translatable("gui.tac_rogue.quest_screen.reward_gold", gold).withStyle(s -> s.withColor(0xFFD700)));
         } else {
             // Ultimate fallback
-            tooltip.add(Component.literal("Target: " + target).withStyle(s -> s.withColor(0xAAAAAA)));
-            tooltip.add(Component.literal("Reward: " + gold + " G").withStyle(s -> s.withColor(0xFFD700)));
+            tooltip.add(Component.translatable("gui.tac_rogue.quest_screen.target", target).withStyle(s -> s.withColor(0xAAAAAA)));
+            tooltip.add(Component.translatable("gui.tac_rogue.quest_screen.reward_gold", gold).withStyle(s -> s.withColor(0xFFD700)));
         }
 
         // Add Progress Information
-        tooltip.add(Component.literal("Progress: " + progress + " / " + target).withStyle(s -> s.withColor(0x00E5FF)));
+        tooltip.add(Component.translatable("gui.tac_rogue.quest_screen.progress", progress, target).withStyle(s -> s.withColor(0x00E5FF)));
+        if (rareWeaponReward) {
+            tooltip.add(Component.translatable("quest.tac_rogue.reward.rare_weapon").withStyle(s -> s.withColor(0xFF66DD)));
+        }
         
         graphics.renderComponentTooltip(this.font, tooltip, mouseX, mouseY);
+    }
+
+    private void refreshShopHeldGunCache(net.minecraft.client.player.LocalPlayer player) {
+        List<String> heldGunIds = new ArrayList<>();
+        StringBuilder signature = new StringBuilder();
+        if (player != null) {
+            for (int s = 0; s < player.getInventory().getContainerSize(); s++) {
+                net.minecraft.world.item.ItemStack invStack = player.getInventory().getItem(s);
+                if (invStack.isEmpty() || !invStack.hasTag()) continue;
+                net.minecraft.nbt.CompoundTag tag = invStack.getTag();
+                if (!tag.contains("GunId")) continue;
+                String gunId = tag.getString("GunId");
+                heldGunIds.add(gunId);
+                signature.append(s).append(':').append(gunId).append(';');
+            }
+        }
+
+        String nextSignature = signature.toString();
+        if (!nextSignature.equals(cachedShopHeldGunSignature)) {
+            cachedShopHeldGunSignature = nextSignature;
+            cachedShopHeldGunIds = List.copyOf(heldGunIds);
+            shopCompatibilityCache.clear();
+        }
+    }
+
+    private ShopCompatibility shopCompatibilityFor(ShopCatalog.ShopItem item) {
+        if (item.category != ShopCatalog.Category.AMMO && item.category != ShopCatalog.Category.ATTACHMENT) {
+            return ShopCompatibility.NONE;
+        }
+        if (cachedShopHeldGunIds.isEmpty()) return ShopCompatibility.NONE;
+
+        String key = item.category.name() + "|" + item.id;
+        ShopCompatibility cached = shopCompatibilityCache.get(key);
+        if (cached != null) return cached;
+
+        for (String gunId : cachedShopHeldGunIds) {
+            boolean compatible = item.category == ShopCatalog.Category.AMMO
+                ? item.id.equals(TacZRegistryHelper.getAmmoForGun(gunId))
+                : com.levanilla.rogue.core.registry.AttachmentDatabase.isCompatible(gunId, item.id);
+            if (compatible) {
+                ShopCompatibility result = new ShopCompatibility(true, compactGunName(gunId));
+                shopCompatibilityCache.put(key, result);
+                return result;
+            }
+        }
+
+        shopCompatibilityCache.put(key, ShopCompatibility.NONE);
+        return ShopCompatibility.NONE;
+    }
+
+    private static String compactGunName(String gunId) {
+        String name = gunId.contains(":") ? gunId.substring(gunId.indexOf(':') + 1) : gunId;
+        return name.toUpperCase(java.util.Locale.ROOT);
+    }
+
+    private record ShopCompatibility(boolean compatible, String gunName) {
+        private static final ShopCompatibility NONE = new ShopCompatibility(false, "");
     }
 
     private void renderShopTab(GuiGraphics graphics, net.minecraft.client.player.LocalPlayer player, int x, int y) {
@@ -634,13 +1023,13 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         int gold = RunManager.getClientGold();
 
         // Header bar — タブバーの下に配置 (被り回避)
-        String modeLabel = sellMode ? "\u00A7c\u00A7lSELL" : "\u00A7e\u00A7lSHOP";
+        Component modeLabel = Component.translatable(sellMode ? "gui.tac_rogue.shop_screen.mode_sell" : "gui.tac_rogue.inventory.shop");
         graphics.drawString(this.font, modeLabel, listX, y - 4, sellMode ? 0xFFFF4444 : 0xFFFFCC00, false);
         graphics.drawString(this.font, "\u00A76$ " + gold, listX + 50, y - 4, 0xFFFFD700, false);
 
         if (sellMode) {
             // === Sell mode ===
-            graphics.drawString(this.font, "\u00A77Select item to sell", listX, y + 5, 0xFFAAAAAA, false);
+            graphics.drawString(this.font, Component.translatable("gui.tac_rogue.shop_screen.select_item"), listX, y + 5, 0xFFAAAAAA, false);
             int listY = y + 18;
             int slotIdx = 0;
             int maxSellItems = 10;
@@ -672,7 +1061,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
                 slotIdx++;
             }
             if (slotIdx == 0) {
-                graphics.drawString(this.font, "\u00A78No sellable items", listX, listY, 0xFF555555, false);
+                graphics.drawString(this.font, Component.translatable("gui.tac_rogue.shop_screen.no_sellable_items"), listX, listY, 0xFF555555, false);
             }
         } else {
             // === Purchase mode ===
@@ -684,39 +1073,14 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
             graphics.renderOutline(catPanelX, catTabY - 2, catPanelW, (cats.length + 1) * tabH + 4, 0xAA00AAFF);
 
             // Item list
-            List<com.levanilla.rogue.core.registry.ShopCatalog.ShopItem> items = shopCategoryFilter == null ?
-                TacZRegistryHelper.getAllShopItems() :
-                TacZRegistryHelper.getItemsByCategory(shopCategoryFilter);
+            List<com.levanilla.rogue.core.registry.ShopCatalog.ShopItem> items = getVisibleShopItems();
             int maxPages = items.isEmpty() ? 0 : (items.size() - 1) / ITEMS_PER_PAGE;
             if (shopPage > maxPages) shopPage = maxPages;
             // Page indicator — ヘッダー右寄りに配置（金額と被らない）
-            graphics.drawString(this.font, String.format("\u00A77PG %d/%d", shopPage + 1, maxPages + 1),
+            graphics.drawString(this.font, Component.translatable("gui.tac_rogue.shop_screen.page", shopPage + 1, maxPages + 1),
                 panelRight - 90, y - 10, 0xFFAAAAAA, false);
 
-            // Held items check
-            java.util.Set<String> heldGunIds = new java.util.HashSet<>();
-            java.util.Set<String> heldAmmoIds = new java.util.HashSet<>();
-            java.util.Set<String> heldAttTypes = new java.util.HashSet<>();
-            for (int s = 0; s < player.getInventory().getContainerSize(); s++) {
-                net.minecraft.world.item.ItemStack invStack = player.getInventory().getItem(s);
-                if (!invStack.isEmpty() && invStack.hasTag()) {
-                    net.minecraft.nbt.CompoundTag itag = invStack.getTag();
-                    if (itag.contains("GunId")) {
-                        String gunId = itag.getString("GunId");
-                        heldGunIds.add(gunId);
-                        heldAmmoIds.add(gunId);
-                        if (itag.contains("Attachments")) {
-                            net.minecraft.nbt.CompoundTag att = itag.getCompound("Attachments");
-                            for (String key : att.getAllKeys()) {
-                                heldAttTypes.add(key);
-                            }
-                        }
-                    }
-                    if (itag.contains("AmmoId")) {
-                        heldAmmoIds.add(itag.getString("AmmoId"));
-                    }
-                }
-            }
+            refreshShopHeldGunCache(player);
 
             int startIndex = shopPage * ITEMS_PER_PAGE;
             int listY = y + 8;
@@ -726,27 +1090,9 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
                 boolean hovered = (hoveredShopItem == i);
                 int iy = listY + (i * 18);
 
-                boolean compatible = false;
-                String compatGunName = "";
-                if (item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.AMMO) {
-                    for (String gunId : heldGunIds) {
-                        String ammoForGun = TacZRegistryHelper.getAmmoForGun(gunId);
-                        if (ammoForGun.equals(item.id)) {
-                            compatible = true;
-                            compatGunName = gunId.contains(":") ? gunId.substring(gunId.indexOf(':') + 1).toUpperCase() : gunId.toUpperCase();
-                            break;
-                        }
-                    }
-                } else if (item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.ATTACHMENT) {
-                    // 正確な互換性チェック: AttachmentDatabase.isCompatible() で銃×アタッチメントを厳密判定
-                    for (String gunId : heldGunIds) {
-                        if (com.levanilla.rogue.core.registry.AttachmentDatabase.isCompatible(gunId, item.id)) {
-                            compatible = true;
-                            compatGunName = gunId.contains(":") ? gunId.substring(gunId.indexOf(':') + 1).toUpperCase() : gunId.toUpperCase();
-                            break;
-                        }
-                    }
-                }
+                ShopCompatibility compatibility = shopCompatibilityFor(item);
+                boolean compatible = compatibility.compatible();
+                String compatGunName = compatibility.gunName();
 
                 if (hovered) {
                     graphics.fill(listX, iy - 1, listX + itemWidth, iy + 15, 0x33FFFF00);
@@ -754,11 +1100,29 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
                     graphics.fill(listX, iy - 1, listX + itemWidth, iy + 15, 0x2200FF00);
                 }
 
-                boolean canAfford = gold >= item.price;
-                String catTag = "\u00A77[" + item.category.label.charAt(0) + "] ";
+                int actualPrice = item.price;
+                if (item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.SPECIAL) {
+                    int currentLevel = 0;
+                    if (item.id.equals("rogue:ammo_capacity_upgrade")) currentLevel = com.levanilla.rogue.core.RunManager.getClientAmmoCapacityLevel();
+                    else if (item.id.equals("rogue:inv_upgrade")) {
+                        if (player != null) currentLevel = player.getPersistentData().getInt("TacRogue_InvLevel");
+                    }
+                    else if (item.id.equals("rogue:stash_upgrade")) currentLevel = Math.max(0, com.levanilla.rogue.core.RunManager.getClientStashLines() - 2);
+                    else if (item.id.equals("rogue:melee_upgrade")) {
+                        if (player != null) currentLevel = player.getPersistentData().getInt("TacRogueMeleeLevel");
+                    }
+                    else if (item.id.equals("rogue:flashlight_upgrade")) currentLevel = com.levanilla.rogue.core.RunManager.getClientFlashlightLevel();
+                    else if (item.id.equals("rogue:random_perk")) {
+                        if (player != null) currentLevel = player.getPersistentData().getInt("RandomPerkBuys");
+                    }
+                    actualPrice = com.levanilla.rogue.core.PriceManager.getUpgradePrice(item.id, currentLevel);
+                }
+
+                boolean canAfford = gold >= actualPrice;
+                String catTag = "\u00A77[" + categoryInitial(item.category) + "] ";
                 String nameColor = compatible ? "\u00A7a" : (canAfford ? "\u00A7f" : "\u00A78");
                 String priceColor = canAfford ? "\u00A7e" : "\u00A7c";
-                String label = catTag + nameColor + item.displayName + " " + priceColor + "$" + item.price;
+                String label = catTag + nameColor + item.displayName + " " + priceColor + "$" + actualPrice;
                 if (compatible) label = "\u00A7a\u2714 " + label + " \u00A72[" + compatGunName + "]";
 
                 if (item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.AMMO) {
@@ -769,7 +1133,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
                     int magSize = TacZRegistryHelper.getMagazineSize(item.id);
                     String ammoType = TacZRegistryHelper.getAmmoForGun(item.id);
                     String ammoShort = ammoType.contains(":") ? ammoType.substring(ammoType.indexOf(':') + 1) : ammoType;
-                    label += " \u00A77[" + magSize + "rd/" + ammoShort + "]";
+                    label += " \u00A77[" + tr("gui.tac_rogue.shop_screen.mag_rounds", magSize) + "/" + ammoShort + "]";
                 }
 
                 graphics.pose().pushPose();
@@ -784,41 +1148,23 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
     private void renderFloorInfoTab(GuiGraphics graphics, int x, int y) {
         int rightX = x + 10;
         graphics.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.mission_intel"), rightX, y + 10, 0xFF00AAFF, false);
-        graphics.drawString(this.font, "\u00A77THEME: \u00A7f" + RunManager.getCurrentThemeName(), rightX + 5, y + 26, 0xFFFFFFFF, false);
-        graphics.drawString(this.font, "\u00A77OBJECTIVE: \u00A7eELIMINATE ALL TARGETS", rightX + 5, y + 38, 0xFFFFFFFF, false);
+        graphics.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.theme", RunManager.getCurrentThemeName()), rightX + 5, y + 26, 0xFFFFFFFF, false);
+        graphics.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.objective_eliminate"), rightX + 5, y + 38, 0xFFFFFFFF, false);
     }
 
     @Override
     protected void init() {
         super.init();
+        layoutRogueInventorySlots();
         int x = this.leftPos;
         int y = this.topPos;
         this.tabX = x - 100;
         this.tabY = y - 20;
 
-        boolean isLobbyInit = this.minecraft != null && this.minecraft.level != null
-            && this.minecraft.level.dimension().location().toString().equals("tac_rogue:lobby_dimension");
-
-        addTacticalButton(tabX - 6, tabY, 65, 15, Component.literal("INVENTORY"), b -> { activeTab = Tab.INVENTORY; this.init(this.minecraft, this.width, this.height); });
+        addTacticalButton(tabX - 6, tabY, 65, 15, Component.translatable("gui.tac_rogue.inventory.inventory"), b -> { activeTab = Tab.INVENTORY; this.init(this.minecraft, this.width, this.height); });
         addTacticalButton(tabX + 61, tabY, 50, 15, Component.translatable("gui.tac_rogue.inventory.status"), b -> { activeTab = Tab.STATUS; this.init(this.minecraft, this.width, this.height); });
         addTacticalButton(tabX + 113, tabY, 50, 15, Component.translatable("gui.tac_rogue.inventory.perks"), b -> { activeTab = Tab.PERKS; this.init(this.minecraft, this.width, this.height); });
         addTacticalButton(tabX + 165, tabY, 50, 15, Component.translatable("gui.tac_rogue.inventory.floor_info"), b -> { activeTab = Tab.FLOOR_INFO; this.init(this.minecraft, this.width, this.height); });
-        // ショップはロビーのみ
-        if (isLobbyInit) {
-            addTacticalButton(tabX + 217, tabY, 65, 15, Component.translatable("gui.tac_rogue.inventory.shop"), b -> {
-                activeTab = Tab.SHOP; shopPage = 0;
-                // Request gold sync
-                com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.sendToServer(
-                    new com.levanilla.rogue.networking.RogueActionMessage(
-                        com.levanilla.rogue.networking.RogueActionMessage.ActionType.SYNC_DATA));
-                this.init(this.minecraft, this.width, this.height);
-            });
-            // クエストタブもロビーのみ
-            addTacticalButton(tabX + 284, tabY, 55, 15, Component.literal("QUEST"), b -> {
-                activeTab = Tab.QUEST;
-                this.init(this.minecraft, this.width, this.height);
-            });
-        }
 
         if (activeTab == Tab.SHOP) {
             int panelLeft = x - 110;
@@ -828,8 +1174,8 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
             int listX = catPanelX + catPanelW + 4;
 
             // BUY/SELL toggle button — ヘッダー右端に配置
-            String modeText = sellMode ? "\u00A7a\u2190 BUY" : "\u00A7c\u2192 SELL";
-            addTacticalButton(panelRight - 55, y - 12, 48, 12, Component.literal(modeText), b -> {
+            Component modeText = Component.translatable(sellMode ? "gui.tac_rogue.shop_screen.mode_buy_arrow" : "gui.tac_rogue.shop_screen.mode_sell_arrow");
+            addTacticalButton(panelRight - 55, y - 12, 48, 12, modeText, b -> {
                 sellMode = !sellMode;
                 shopPage = 0;
                 this.init(this.minecraft, this.width, this.height);
@@ -849,7 +1195,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
                         if (sellPrice <= 0) continue;
 
                         final int slot = i;
-                        addTacticalButton(panelRight - 60, y + 18 + (slotIdx * 14), 48, 12, Component.literal("SELL"), b -> {
+                        addTacticalButton(panelRight - 60, y + 18 + (slotIdx * 14), 48, 12, Component.translatable("gui.tac_rogue.shop_screen.sell_short"), b -> {
                             com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.sendToServer(
                                 new com.levanilla.rogue.networking.RogueActionMessage(
                                     com.levanilla.rogue.networking.RogueActionMessage.ActionType.SELL_ITEM, String.valueOf(slot)));
@@ -865,30 +1211,29 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
                 int tabH = 14;
                 int catTabY = y + 5;
                 // ALL button
-                addTacticalButton(catPanelX + 2, catTabY, catPanelW - 4, tabH - 1, Component.literal("ALL"), b -> {
+                addTacticalButton(catPanelX + 2, catTabY, catPanelW - 4, tabH - 1, Component.translatable("gui.tac_rogue.shop_screen.all"), b -> {
                     shopCategoryFilter = null; shopPage = 0;
                     this.init(this.minecraft, this.width, this.height);
                 });
                 // Category buttons
                 for (int ci = 0; ci < cats.length; ci++) {
                     final com.levanilla.rogue.core.registry.ShopCatalog.Category cat = cats[ci];
-                    addTacticalButton(catPanelX + 2, catTabY + (ci + 1) * tabH, catPanelW - 4, tabH - 1, Component.literal(cat.label), b -> {
+                    addTacticalButton(catPanelX + 2, catTabY + (ci + 1) * tabH, catPanelW - 4, tabH - 1,
+                        Component.translatable("gui.tac_rogue.shop_screen.category." + cat.name().toLowerCase(java.util.Locale.ROOT)), b -> {
                         shopCategoryFilter = cat; shopPage = 0;
                         this.init(this.minecraft, this.width, this.height);
                     });
                 }
 
                 // BUY buttons for item list
-                List<com.levanilla.rogue.core.registry.ShopCatalog.ShopItem> items = shopCategoryFilter == null ?
-                    TacZRegistryHelper.getAllShopItems() :
-                    TacZRegistryHelper.getItemsByCategory(shopCategoryFilter);
+                List<com.levanilla.rogue.core.registry.ShopCatalog.ShopItem> items = getVisibleShopItems();
 
                 int startIndex = shopPage * ITEMS_PER_PAGE;
                 int listY = y + 8;  // renderShopTabと同一のlistY
                 for (int i = 0; i < ITEMS_PER_PAGE && (startIndex + i) < items.size(); i++) {
                     com.levanilla.rogue.core.registry.ShopCatalog.ShopItem item = items.get(startIndex + i);
                     String buyId = item.id;
-                    addTacticalButton(panelRight - 48, listY + (i * 18), 40, 14, Component.literal("BUY"), b -> {
+                    addTacticalButton(panelRight - 48, listY + (i * 18), 40, 14, Component.translatable("gui.tac_rogue.shop_screen.buy_short"), b -> {
                         com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.sendToServer(
                             new com.levanilla.rogue.networking.RogueActionMessage(
                                 com.levanilla.rogue.networking.RogueActionMessage.ActionType.BUY_ITEM, buyId));
@@ -897,8 +1242,8 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
 
                 // Pagination buttons
                 int maxPages = items.isEmpty() ? 0 : (items.size() - 1) / ITEMS_PER_PAGE;
-                if (shopPage > 0) addTacticalButton(listX, y + imageHeight + 10, 50, 15, Component.literal("< PREV"), b -> { shopPage--; this.init(this.minecraft, this.width, this.height); });
-                if (shopPage < maxPages) addTacticalButton(listX + 55, y + imageHeight + 10, 50, 15, Component.literal("NEXT >"), b -> { shopPage++; this.init(this.minecraft, this.width, this.height); });
+                if (shopPage > 0) addTacticalButton(listX, y + imageHeight + 10, 50, 15, Component.translatable("gui.tac_rogue.common.prev"), b -> { shopPage--; this.init(this.minecraft, this.width, this.height); });
+                if (shopPage < maxPages) addTacticalButton(listX + 55, y + imageHeight + 10, 50, 15, Component.translatable("gui.tac_rogue.common.next"), b -> { shopPage++; this.init(this.minecraft, this.width, this.height); });
             }
         }
 
@@ -913,28 +1258,45 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
             if (inLobby) {
                 // MISSION START button (INVENTORYタブ等でのみ表示)
                 addTacticalButton(x - 100, y + imageHeight + 10, 90, 20,
-                    Component.literal("§a[JOIN FLOOR]"), b -> {
+                    Component.translatable("gui.tac_rogue.inventory.join_floor"), b -> {
                         com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.sendToServer(
                             new com.levanilla.rogue.networking.RogueActionMessage(
-                                com.levanilla.rogue.networking.RogueActionMessage.ActionType.START_NEXT_FLOOR));
+                                com.levanilla.rogue.networking.RogueActionMessage.ActionType.START_NEXT_FLOOR,
+                                floorEntryMode()));
+                        this.onClose();
+                    });
+                addTacticalButton(x - 4, y + imageHeight + 10, 86, 20,
+                    Component.translatable(floorEntrySoloMode
+                        ? "gui.tac_rogue.floor_select.entry_solo"
+                        : "gui.tac_rogue.floor_select.entry_public"), b -> {
+                        floorEntrySoloMode = !floorEntrySoloMode;
+                        this.init(this.minecraft, this.width, this.height);
+                    });
+                addTacticalButton(x + 88, y + imageHeight + 10, 86, 20,
+                    Component.translatable("gui.tac_rogue.floor_select.start_waiting"), b -> {
+                        com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.sendToServer(
+                            new com.levanilla.rogue.networking.RogueActionMessage(
+                                com.levanilla.rogue.networking.RogueActionMessage.ActionType.START_WAITING_FLOOR));
                         this.onClose();
                     });
             } else if (RunManager.isFloorCleared()) {
                 // Floor cleared -> NEXT FLOOR
                 addTacticalButton(x - 100, y + imageHeight + 10, 90, 20,
-                    Component.literal("§a[NEXT FLOOR]"), b -> {
+                    Component.translatable("gui.tac_rogue.inventory.next_floor"), b -> {
                         com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.sendToServer(
                             new com.levanilla.rogue.networking.RogueActionMessage(
-                                com.levanilla.rogue.networking.RogueActionMessage.ActionType.START_NEXT_FLOOR));
+                                com.levanilla.rogue.networking.RogueActionMessage.ActionType.START_NEXT_FLOOR,
+                                floorEntryMode()));
                         this.onClose();
                     });
             } else if (RunManager.isRunActive()) {
                 // Dungeon & not cleared -> RETRY FLOOR
                 addTacticalButton(x - 100, y + imageHeight + 10, 90, 20,
-                    Component.literal("§e[RETRY FLOOR]"), b -> {
+                    Component.translatable("gui.tac_rogue.inventory.retry_floor"), b -> {
                         com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.sendToServer(
                             new com.levanilla.rogue.networking.RogueActionMessage(
-                                com.levanilla.rogue.networking.RogueActionMessage.ActionType.RETRY_FLOOR));
+                                com.levanilla.rogue.networking.RogueActionMessage.ActionType.RETRY_FLOOR,
+                                floorEntryMode()));
                         this.onClose();
                     });
             }
@@ -948,6 +1310,48 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
                     });
             }
         }
+    }
+
+    private void layoutRogueInventorySlots() {
+        if (this.menu == null || this.menu.slots.size() < 46) return;
+
+        // Hide crafting, armor, and offhand slots. The rogue inventory has its own combat layout.
+        for (int i = 0; i <= 8; i++) placeSlot(i, -1000, -1000);
+        placeSlot(45, -1000, -1000);
+
+        // Combat strip.
+        placeSlot(36, 14, 34); // player slot 0: gun 1
+        placeSlot(37, 36, 34); // player slot 1: gun 2
+        placeSlot(38, 64, 34); // player slot 2: melee
+
+        // Active items: hotbar 3-8 plus extended quick slots 9-11.
+        int[] itemMenuSlots = {39, 40, 41, 42, 43, 44, 9, 10, 11};
+        for (int i = 0; i < itemMenuSlots.length; i++) {
+            placeSlot(itemMenuSlots[i], 100 + (i % 3) * 20, 24 + (i / 3) * 20);
+        }
+
+        // Ammo slots: gun 1 reserve then gun 2 reserve.
+        for (int i = 0; i < 4; i++) {
+            placeSlot(12 + i, 174 + (i % 2) * 20, 24 + (i / 2) * 20);
+        }
+
+        // Backpack / expandable inventory: player slots 16-35.
+        for (int i = 16; i <= 35; i++) {
+            int offset = i - 16;
+            placeSlot(i, 14 + (offset % 10) * 20, 116 + (offset / 10) * 20);
+        }
+    }
+
+    private String floorEntryMode() {
+        return floorEntrySoloMode ? "solo" : "public";
+    }
+
+    private void placeSlot(int menuIndex, int x, int y) {
+        if (menuIndex < 0 || menuIndex >= this.menu.slots.size()) return;
+        net.minecraft.world.inventory.Slot slot = this.menu.slots.get(menuIndex);
+        com.levanilla.rogue.mixin.SlotAccessor accessor = (com.levanilla.rogue.mixin.SlotAccessor) slot;
+        accessor.tacRogue$setX(x);
+        accessor.tacRogue$setY(y);
     }
 
     private void addTacticalButton(int x, int y, int w, int h, Component text, net.minecraft.client.gui.components.Button.OnPress press) {
@@ -972,8 +1376,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
         if (activeTab == Tab.SHOP) {
-            List<com.levanilla.rogue.core.registry.ShopCatalog.ShopItem> items = shopCategoryFilter == null ?
-                TacZRegistryHelper.getAllShopItems() : TacZRegistryHelper.getItemsByCategory(shopCategoryFilter);
+            List<com.levanilla.rogue.core.registry.ShopCatalog.ShopItem> items = getVisibleShopItems();
             int maxPages = items.isEmpty() ? 0 : (items.size() - 1) / ITEMS_PER_PAGE;
             if (delta < 0 && shopPage < maxPages) { shopPage++; this.init(this.minecraft, this.width, this.height); return true; }
             if (delta > 0 && shopPage > 0) { shopPage--; this.init(this.minecraft, this.width, this.height); return true; }
@@ -986,7 +1389,19 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
             if (delta < 0) { questScrollOffset++; return true; }
             if (delta > 0 && questScrollOffset > 0) { questScrollOffset--; return true; }
         }
+        if (activeTab == Tab.STATUS) {
+            int step = 18;
+            statusScrollOffset += delta < 0 ? step : -step;
+            if (statusScrollOffset < 0) statusScrollOffset = 0;
+            return true;
+        }
         return super.mouseScrolled(mouseX, mouseY, delta);
+    }
+
+    @Override
+    protected void slotClicked(Slot slot, int slotId, int mouseButton, ClickType clickType) {
+        if (activeTab != Tab.INVENTORY) return;
+        super.slotClicked(slot, slotId, mouseButton, clickType);
     }
 
     @Override
@@ -997,9 +1412,18 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
 
         // Main inventory area background
         g.fill(bx, by, bx + imageWidth, by + imageHeight, 0x88001122);
+        g.fill(bx + 8, by + 18, bx + 88, by + 62, 0x33100000);
+        g.renderOutline(bx + 8, by + 18, 80, 44, 0x66AA5533);
+        g.fill(bx + 94, by + 18, bx + 164, by + 88, 0x33102010);
+        g.renderOutline(bx + 94, by + 18, 70, 70, 0x6644AA55);
+        g.fill(bx + 168, by + 18, bx + 218, by + 68, 0x33303010);
+        g.renderOutline(bx + 168, by + 18, 50, 50, 0x66AAAA44);
+        g.fill(bx + 8, by + 104, bx + 220, by + 160, 0x33202028);
+        g.renderOutline(bx + 8, by + 104, 212, 56, 0x66556688);
 
         // Draw slot backgrounds by type
         for (int i = 0; i < this.menu.slots.size(); i++) {
+            if (i <= 8 || i == 45) continue;
             net.minecraft.world.inventory.Slot slot = this.menu.slots.get(i);
             int sx = bx + slot.x - 1;
             int sy = by + slot.y - 1;
@@ -1015,28 +1439,22 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
                 // MELEE slot (hotbar 2)
                 bgColor = 0x552244FF;
                 label = "\u00A79M";
-            } else if (i >= 39 && i <= 44) {
-                // ITEM slots (hotbar 3-8)
-                bgColor = 0x5522FF22;
-            } else if (i >= 9 && i <= 12) {
-                // AMMO slots (inv 9-12)
-                boolean isGun2 = (i >= 11);
+            } else if ((i >= 39 && i <= 44) || (i >= 9 && i <= 11)) {
+                // ITEM slots (hotbar 3-8 + extended quick slots 9-11)
+                bgColor = i <= 11 ? 0x6633AA66 : 0x5522FF22;
+                if (i >= 9 && i <= 11) label = "\u00A7aE" + (i - 8);
+            } else if (i >= 12 && i <= 15) {
+                // AMMO slots (inv 12-15)
+                boolean isGun2 = (i >= 14);
                 bgColor = isGun2 ? 0x5500AAFF : 0x55FFFF00;
-                if (i == 9) label = "\u00A7eA1";
-                else if (i == 11) label = "\u00A7bA2";
-            } else if (i >= 13 && i <= 35) {
+                if (i == 12) label = "\u00A7eA1";
+                else if (i == 14) label = "\u00A7bA2";
+            } else if (i >= 16 && i <= 35) {
                 // Expandable inventory slots
                 net.minecraft.world.item.ItemStack stack = slot.getItem();
                 boolean isLocked = stack.is(net.minecraft.world.item.Items.BARRIER)
                     && stack.hasTag() && stack.getOrCreateTag().getBoolean("rogue_item_locked");
                 bgColor = isLocked ? 0x44330000 : 0x33FFFFFF;
-            } else if (i <= 8 || i == 45) {
-                // Crafting, armor, offhand → dim/hide
-                bgColor = 0x22111111;
-                g.fill(sx, sy, sx + 18, sy + 18, bgColor);
-                // Draw dark overlay to indicate disabled
-                g.fill(sx + 1, sy + 1, sx + 17, sy + 17, 0x66000000);
-                continue;
             } else {
                 bgColor = 0x22FFFFFF;
             }
@@ -1054,16 +1472,15 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
             }
         }
 
-        // Section labels above hotbar row
+        // Section labels
         g.pose().pushPose();
         g.pose().translate(0, 0, 300);
         g.pose().scale(0.6f, 0.6f, 1.0f);
         float invScale = 1.0f / 0.6f;
-        g.drawString(this.font, "\u00A7c\u25B6 GUN", (int)((bx + 8) * invScale), (int)((by + 133) * invScale), 0xAAFF4444, false);
-        g.drawString(this.font, "\u00A79\u25B6 MELEE", (int)((bx + 44) * invScale), (int)((by + 133) * invScale), 0xAA4488FF, false);
-        g.drawString(this.font, "\u00A7a\u25B6 ITEMS", (int)((bx + 62) * invScale), (int)((by + 133) * invScale), 0xAA22AA22, false);
-        g.drawString(this.font, "\u00A7e\u25B6 AMMO", (int)((bx + 8) * invScale), (int)((by + 75) * invScale), 0xAAAAA800, false);
-        g.drawString(this.font, "\u00A77\u25B6 EXPANDABLE", (int)((bx + 80) * invScale), (int)((by + 75) * invScale), 0xAA888888, false);
+        g.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.section.gun_melee"), (int)((bx + 12) * invScale), (int)((by + 22) * invScale), 0xAAFF7755, false);
+        g.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.section.items"), (int)((bx + 98) * invScale), (int)((by + 10) * invScale), 0xAA55DD77, false);
+        g.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.section.ammo"), (int)((bx + 172) * invScale), (int)((by + 10) * invScale), 0xAAAAA800, false);
+        g.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.section.backpack"), (int)((bx + 12) * invScale), (int)((by + 98) * invScale), 0xAAAAAAAA, false);
         g.pose().popPose();
     }
     @Override protected void renderLabels(GuiGraphics g, int x, int y) {}

@@ -67,12 +67,20 @@ public class CurrencyManager extends SavedData {
         return 0;
     }
 
-    /** Player にゴールドを加算する便利メソッド */
+    /** Player にゴールドを加算し、実収入として GOLD_EARN クエストを進める */
     public static void addGold(Player player, int amount) {
+        addGold(player, amount, true);
+    }
+
+    /** 返金/補填など、GOLD_EARN を進めないゴールド加算 */
+    public static void addGoldNoQuest(Player player, int amount) {
+        addGold(player, amount, false);
+    }
+
+    private static void addGold(Player player, int amount, boolean countsForQuest) {
         if (player.level() instanceof ServerLevel serverLevel) {
             get(serverLevel).addGold(player.getUUID(), amount);
-            // クエスト: GOLD_EARN 進捗更新
-            if (amount > 0 && player instanceof net.minecraft.server.level.ServerPlayer sp) {
+            if (countsForQuest && amount > 0 && player instanceof net.minecraft.server.level.ServerPlayer sp) {
                 QuestManager.advanceQuest(sp, QuestManager.QuestType.GOLD_EARN, amount);
             }
         }

@@ -1,14 +1,18 @@
 package com.levanilla.rogue.core;
 
 import com.levanilla.rogue.world.ThemeManager;
+import com.levanilla.rogue.core.service.FloorInstanceManager;
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.TicketType;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.network.chat.Component;
 
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -20,9 +24,8 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * マルチプレイヤールール:
  *  - ラン開始/進行はプレイヤーごとに独立。
- *  - 同じフロア番号のプレイヤーがいる場合、後発は先行プレイヤーの座標に合流。
- *  - 複数人が同フロアにいる場合、RETRY は再生成ではなくスポーン位置テレポート。
- *  - 各プレイヤーのダンジョン基準座標は floor * FLOOR_OFFSET_Z で分離。
+ *  - 同じフロア番号でも各プレイヤーのダンジョンは個別に生成する。
+ *  - 各プレイヤーのダンジョン基準座標は永続化したスロットから分離する。
  */
 public class RunManager {
 
@@ -31,6 +34,11 @@ public class RunManager {
 
     /** マルチプレイヤー座標分離: Z 軸オフセット (フロア番号 × この値) */
     public static final int FLOOR_OFFSET_Z = 500;
+    private static final int ORIGIN_SLOT_COUNT = 50_000;
+    private static final String ORIGIN_X_KEY = "TacRogueDungeonOriginX";
+    private static final String ORIGIN_Y_KEY = "TacRogueDungeonOriginY";
+    private static final String ORIGIN_Z_KEY = "TacRogueDungeonOriginZ";
+    private static final String PERK_TAGS_KEY = "TacRoguePerkTags";
 
     // レガシー互換 Theme enum
     public enum Theme {
@@ -51,6 +59,47 @@ public class RunManager {
         return playerData.get(uuid);
     }
 
+    public static ServerPlayer findPlayerForDungeonPosition(ServerLevel level, double x, double z) {
+        double maxDistance = Math.min(GameConstants.FLOOR_CLEAR_RADIUS, (FLOOR_OFFSET_Z * 0.5D) - 8.0D);
+        return findPlayerForDungeonPosition(level, x, z, maxDistance);
+    }
+
+    public static ServerPlayer findPlayerForDungeonPosition(ServerLevel level, double x, double z, double maxDistance) {
+        if (level == null || level.getServer() == null) return null;
+
+        ServerPlayer instanceParticipant = FloorInstanceManager.findNearestParticipantForPosition(level, x, z, maxDistance);
+        if (instanceParticipant != null) return instanceParticipant;
+
+        ServerPlayer bestPlayer = null;
+        double bestDistance = Double.MAX_VALUE;
+        double maxDistanceSqr = maxDistance * maxDistance;
+        for (ServerPlayer player : level.getServer().getPlayerList().getPlayers()) {
+            if (player.level() != level) continue;
+            PlayerRunData data = getDataOrNull(player.getUUID());
+            if (data == null || !data.isRunActive() || data.getDungeonOrigin() == null) continue;
+
+            BlockPos origin = data.getDungeonOrigin();
+            double dx = x - origin.getX();
+            double dz = z - origin.getZ();
+            double distanceSqr = dx * dx + dz * dz;
+            if (distanceSqr <= maxDistanceSqr && distanceSqr < bestDistance) {
+                bestDistance = distanceSqr;
+                bestPlayer = player;
+            }
+        }
+        return bestPlayer;
+    }
+
+    public static PlayerRunData findDataForDungeonPosition(ServerLevel level, double x, double z) {
+        ServerPlayer owner = findPlayerForDungeonPosition(level, x, z);
+        return owner == null ? null : getDataOrNull(owner.getUUID());
+    }
+
+    public static PlayerRunData findDataForDungeonPosition(ServerLevel level, double x, double z, double maxDistance) {
+        ServerPlayer owner = findPlayerForDungeonPosition(level, x, z, maxDistance);
+        return owner == null ? null : getDataOrNull(owner.getUUID());
+    }
+
     /** プレイヤーデータを削除（ログアウト時など） */
     public static void removeData(UUID uuid) {
         playerData.remove(uuid);
@@ -62,41 +111,32 @@ public class RunManager {
 
     // ===== クライアント側: 自プレイヤー同期データ =====
 
-    private static int clientFloor = 0;
-    private static int clientMaxReachedFloor = 0;
-    private static boolean clientRunActive = false;
-    private static boolean clientFloorCleared = false;
-    private static int clientStashLines = 2;
-    private static String clientThemeName = "RUINS - OVERGROWN";
-    private static int clientGold = 0;
-
-    public static void setClientStashLines(int lines) { clientStashLines = lines; }
-    public static int getClientStashLines() { return clientStashLines; }
-    public static void setClientGold(int g) { clientGold = g; }
-    public static int getClientGold() { return clientGold; }
+    public static void setClientStashLines(int lines) { ClientRunState.setStashLines(lines); }
+    public static int getClientStashLines() { return ClientRunState.getStashLines(); }
+    public static void setClientGold(int g) { ClientRunState.setGold(g); }
+    public static int getClientGold() { return ClientRunState.getGold(); }
+    public static int getClientAmmoCapacityLevel() { return ClientRunState.getAmmoCapacityLevel(); }
+    public static int getClientFlashlightLevel() { return ClientRunState.getFlashlightLevel(); }
 
     // ===== クライアント側アクセサ (HUD/GUI 用) =====
 
-    public static int getCurrentFloor() { return clientFloor; }
-    public static int getMaxReachedFloor() { return clientMaxReachedFloor; }
-    public static boolean isRunActive() { return clientRunActive; }
-    public static boolean isFloorCleared() { return clientFloorCleared; }
-    public static String getCurrentThemeName() { return clientThemeName; }
+    public static int getCurrentFloor() { return ClientRunState.getFloor(); }
+    public static int getMaxReachedFloor() { return ClientRunState.getMaxReachedFloor(); }
+    public static boolean isRunActive() { return ClientRunState.isRunActive(); }
+    public static boolean isFloorCleared() { return ClientRunState.isFloorCleared(); }
+    public static String getCurrentThemeName() { return ClientRunState.getThemeName(); }
 
     // レガシー互換
     public static Theme getCurrentTheme() {
-        return Theme.values()[Math.abs(clientFloor) % Theme.values().length];
+        return Theme.values()[Math.abs(ClientRunState.getFloor()) % Theme.values().length];
     }
 
     /** クライアント同期データ受信 */
     public static void setClientData(int floor, String theme, boolean active, int maxF) {
-        clientFloor = floor;
-        clientThemeName = theme;
-        clientRunActive = active;
-        clientMaxReachedFloor = maxF;
+        ClientRunState.setRunData(floor, theme, active, maxF);
     }
 
-    public static void setClientFloorCleared(boolean v) { clientFloorCleared = v; }
+    public static void setClientFloorCleared(boolean v) { ClientRunState.setFloorCleared(v); }
 
     // ===== サーバー側アクセサ (後方互換ラッパー — 全プレイヤーに対して操作) =====
 
@@ -120,6 +160,28 @@ public class RunManager {
         return 0;
     }
 
+    /** サーバー/クライアント共通の弾薬スタック上限レベルを取得する */
+    public static int getGlobalAmmoCapacityLevel() {
+        if (ClientRunState.getAmmoCapacityLevel() > 0) return ClientRunState.getAmmoCapacityLevel();
+        int maxLevel = 0;
+        for (PlayerRunData data : playerData.values()) {
+            if (data.getAmmoCapacityLevel() > maxLevel) {
+                maxLevel = data.getAmmoCapacityLevel();
+            }
+        }
+        return maxLevel;
+    }
+
+    public static int getAmmoStackLimit(ServerPlayer player, int baseSize) {
+        int capLevel = player == null ? 0 : getData(player).getAmmoCapacityLevel();
+        return Math.max(1, Math.round(baseSize * (1.0f + capLevel * 0.5f)));
+    }
+
+    public static int getAmmoReserveStackLimit(ServerPlayer player, int baseSize) {
+        int capLevel = player == null ? 0 : getData(player).getAmmoCapacityLevel();
+        return Math.max(1, Math.round(baseSize * (1.5f + capLevel * 0.5f)));
+    }
+
     // ===== 共通テレポートロジック =====
 
     public static void safeTeleport(ServerPlayer player, ServerLevel targetLevel, BlockPos spawnPos) {
@@ -136,10 +198,7 @@ public class RunManager {
         data.startRun();
         // フロアクリア判定の猶予タイマー設定（5秒=100tick）
         data.setFloorStartTick(player.server.getTickCount());
-        // 座標オフセット計算: 各プレイヤーの UUID ハッシュから一意なオフセットを決定
-        int playerSlot = Math.abs(player.getUUID().hashCode()) % 1000;
-        BlockPos origin = new BlockPos(playerSlot * FLOOR_OFFSET_Z, GameConstants.DUNGEON_BASE_Y, 0);
-        data.setDungeonOrigin(origin);
+        data.setDungeonOrigin(resolveDungeonOrigin(player));
         updateThemeName(data);
         syncPlayer(player);
     }
@@ -158,35 +217,33 @@ public class RunManager {
     /** 次の階層へ進む */
     public static void startNextFloor(ServerPlayer player) {
         PlayerRunData data = getData(player);
+        if (data.isFloorCleared() && data.getCurrentFloor() + 1 < data.getMaxReachedFloor()) {
+            // Revisited floors should continue from the newest unlocked route, not from the replayed floor.
+            data.setCurrentFloor(data.getMaxReachedFloor() - 1);
+        }
         data.advanceFloor();
+        data.rerollFloorSeedSalt(player.server.getTickCount());
         // フロアクリア判定の猶予タイマー設定
         data.setFloorStartTick(player.server.getTickCount());
         updateThemeName(data);
 
         ServerLevel rogueLevel = player.server.getLevel(CommonEventHandler.ROGUE_DIM);
         if (rogueLevel != null) {
-            // 同フロアに既にいるプレイヤーを検索
-            ServerPlayer existingPlayer = findPlayerOnFloor(player.server, data.getCurrentFloor(), player.getUUID());
-
-            BlockPos spawnPos;
-            if (existingPlayer != null) {
-                // 先行プレイヤーの座標へ直接テレポートするのは危険なので、フロアの初期地点の上空にテレポート
-                spawnPos = data.getDungeonOrigin().above(2);
-            } else {
-                // 新規生成の前に確実に前回のエンティティを消去する
-                com.levanilla.rogue.core.service.FloorService.clearDungeonEntities(rogueLevel, data.getDungeonOrigin());
-                // 新規生成
-                spawnPos = com.levanilla.rogue.world.MapGenerator.generateRoom(
-                    rogueLevel, data.getDungeonOrigin(), null, data.getCurrentFloor(), data.getRunSeed());
-            }
+            com.levanilla.rogue.core.service.FloorService.clearDungeonEntities(rogueLevel, data.getDungeonOrigin());
+            BlockPos spawnPos = com.levanilla.rogue.world.MapGenerator.generateRoom(
+                rogueLevel, data.getDungeonOrigin(), null, data.getCurrentFloor(), data.getRunSeed(), data.getFloorSeedSalt());
 
             safeTeleport(player, rogueLevel, spawnPos);
             syncPlayer(player);
 
             long seed = player.server.getWorldData().worldGenOptions().seed();
             ThemeManager.ThemeInstance theme = ThemeManager.getThemeForFloor(data.getCurrentFloor(), seed);
-            player.sendSystemMessage(Component.translatable(
-                "message.tac_rogue.floor_enter", data.getCurrentFloor(), theme.displayName));
+            com.levanilla.rogue.networking.PopupNotificationMessage.send(
+                player,
+                com.levanilla.rogue.networking.PopupNotificationMessage.PopupType.SYSTEM,
+                Component.translatable("popup.tac_rogue.floor.title", data.getCurrentFloor()),
+                Component.translatable("message.tac_rogue.floor_enter", data.getCurrentFloor(), theme.displayName)
+            );
         }
     }
 
@@ -197,20 +254,14 @@ public class RunManager {
         data.setRunActive(true);
         data.setFloorCleared(false);
         data.setFloorStartTick(player.server.getTickCount());
-        data.setRunSeed(System.nanoTime()); // 新しいフロアシード
+        data.rerollFloorSeedSalt(player.server.getTickCount());
         updateThemeName(data);
 
         ServerLevel rogueLevel = player.server.getLevel(CommonEventHandler.ROGUE_DIM);
         if (rogueLevel != null) {
-            ServerPlayer existingPlayer = findPlayerOnFloor(player.server, data.getCurrentFloor(), player.getUUID());
-            BlockPos spawnPos;
-            if (existingPlayer != null) {
-                spawnPos = data.getDungeonOrigin().above(2);
-            } else {
-                com.levanilla.rogue.core.service.FloorService.clearDungeonEntities(rogueLevel, data.getDungeonOrigin());
-                spawnPos = com.levanilla.rogue.world.MapGenerator.generateRoom(
-                    rogueLevel, data.getDungeonOrigin(), null, data.getCurrentFloor(), data.getRunSeed());
-            }
+            com.levanilla.rogue.core.service.FloorService.clearDungeonEntities(rogueLevel, data.getDungeonOrigin());
+            BlockPos spawnPos = com.levanilla.rogue.world.MapGenerator.generateRoom(
+                rogueLevel, data.getDungeonOrigin(), null, data.getCurrentFloor(), data.getRunSeed(), data.getFloorSeedSalt());
             safeTeleport(player, rogueLevel, spawnPos);
             syncPlayer(player);
 
@@ -224,6 +275,7 @@ public class RunManager {
     public static void returnToLobby(ServerPlayer player) {
         ServerLevel lobbyLevel = player.server.getLevel(CommonEventHandler.LOBBY_DIM);
         if (lobbyLevel != null) {
+            FloorInstanceManager.leaveInstance(player, false);
             PlayerRunData data = getData(player);
             data.setRunActive(false);
             player.teleportTo(lobbyLevel, 0.5, 201, 0.5, 0, 0);
@@ -234,8 +286,7 @@ public class RunManager {
     // ===== 同フロア検索 =====
 
     /**
-     * 指定フロアに既にいるプレイヤーを検索する（自分自身は除外）。
-     * 同フロア合流ロジック: 先行プレイヤーの位置をスポーン先として使用。
+     * 旧合流ロジック用の検索。現在は個別生成のため呼び出さない。
      */
     private static ServerPlayer findPlayerOnFloor(net.minecraft.server.MinecraftServer server, int floor, UUID excludeUUID) {
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
@@ -249,12 +300,47 @@ public class RunManager {
     }
 
     /**
-     * 同じフロアに他プレイヤーがいるか判定する。
-     * trueの場合、RETRY は再生成ではなくスポーンテレポートのみ。
+     * 現在はプレイヤーごとに個別領域を再生成するため、常に false。
      */
     public static boolean hasOtherPlayersOnSameFloor(ServerPlayer player) {
-        PlayerRunData data = getData(player);
-        return findPlayerOnFloor(player.server, data.getCurrentFloor(), player.getUUID()) != null;
+        return false;
+    }
+
+    private static BlockPos resolveDungeonOrigin(ServerPlayer player) {
+        CompoundTag pData = player.getPersistentData();
+        if (pData.contains(ORIGIN_X_KEY) && pData.contains(ORIGIN_Y_KEY) && pData.contains(ORIGIN_Z_KEY)) {
+            return new BlockPos(pData.getInt(ORIGIN_X_KEY), pData.getInt(ORIGIN_Y_KEY), pData.getInt(ORIGIN_Z_KEY));
+        }
+
+        Set<Integer> usedSlots = new HashSet<>();
+        for (ServerPlayer other : player.server.getPlayerList().getPlayers()) {
+            if (other.getUUID().equals(player.getUUID())) continue;
+            PlayerRunData otherData = getDataOrNull(other.getUUID());
+            if (otherData != null && otherData.getDungeonOrigin() != null) {
+                usedSlots.add(Math.floorDiv(otherData.getDungeonOrigin().getX(), FLOOR_OFFSET_Z));
+            }
+        }
+
+        UUID uuid = player.getUUID();
+        int slot = Math.floorMod((int)(uuid.getMostSignificantBits() ^ uuid.getLeastSignificantBits()), ORIGIN_SLOT_COUNT);
+        for (int i = 0; i < ORIGIN_SLOT_COUNT && usedSlots.contains(slot); i++) {
+            slot = (slot + 1) % ORIGIN_SLOT_COUNT;
+        }
+
+        BlockPos origin = new BlockPos(slot * FLOOR_OFFSET_Z, GameConstants.DUNGEON_BASE_Y, 0);
+        storeDungeonOrigin(player, origin);
+        return origin;
+    }
+
+    public static BlockPos getPrivateDungeonOrigin(ServerPlayer player) {
+        return resolveDungeonOrigin(player);
+    }
+
+    private static void storeDungeonOrigin(ServerPlayer player, BlockPos origin) {
+        CompoundTag pData = player.getPersistentData();
+        pData.putInt(ORIGIN_X_KEY, origin.getX());
+        pData.putInt(ORIGIN_Y_KEY, origin.getY());
+        pData.putInt(ORIGIN_Z_KEY, origin.getZ());
     }
 
     // ===== テーマ管理 =====
@@ -269,6 +355,10 @@ public class RunManager {
         data.setTheme(Theme.values()[data.getCurrentFloor() % Theme.values().length]);
     }
 
+    public static void refreshThemeName(PlayerRunData data) {
+        updateThemeName(data);
+    }
+
     // ===== 永続化 (NBT Save/Load) =====
 
     public static void saveToPlayerNbt(ServerPlayer player) {
@@ -276,6 +366,7 @@ public class RunManager {
         if (data != null) {
             player.getPersistentData().put("TacRogueRunData", data.saveToNbt());
         }
+        savePerkTags(player);
     }
 
     public static void loadFromPlayerNbt(ServerPlayer player) {
@@ -283,6 +374,38 @@ public class RunManager {
         if (pData.contains("TacRogueRunData")) {
             PlayerRunData data = getData(player);
             data.loadFromNbt(pData.getCompound("TacRogueRunData"));
+            if (data.getDungeonOrigin() != null
+                && !pData.contains(ORIGIN_X_KEY)
+                && !pData.contains(ORIGIN_Y_KEY)
+                && !pData.contains(ORIGIN_Z_KEY)) {
+                storeDungeonOrigin(player, data.getDungeonOrigin());
+            }
+        }
+        if (pData.contains("TacRogueQuestData") && !pData.getBoolean("TacRogueQuestDataMigrated")) {
+            com.levanilla.rogue.core.QuestManager.migrateLegacyProgress(player, pData.getCompound("TacRogueQuestData"));
+            pData.putBoolean("TacRogueQuestDataMigrated", true);
+        }
+        restorePerkTags(player);
+    }
+
+    public static void savePerkTags(ServerPlayer player) {
+        net.minecraft.nbt.ListTag tags = new net.minecraft.nbt.ListTag();
+        for (String tag : player.getTags()) {
+            if (tag.startsWith("perk:")) {
+                tags.add(net.minecraft.nbt.StringTag.valueOf(tag));
+            }
+        }
+        player.getPersistentData().put(PERK_TAGS_KEY, tags);
+    }
+
+    public static void restorePerkTags(ServerPlayer player) {
+        net.minecraft.nbt.CompoundTag data = player.getPersistentData();
+        if (!data.contains(PERK_TAGS_KEY)) return;
+        if (player.getTags().stream().anyMatch(tag -> tag.startsWith("perk:"))) return;
+        net.minecraft.nbt.ListTag tags = data.getList(PERK_TAGS_KEY, net.minecraft.nbt.Tag.TAG_STRING);
+        for (int i = 0; i < tags.size(); i++) {
+            String tag = tags.getString(i);
+            if (tag.startsWith("perk:")) player.addTag(tag);
         }
     }
 
@@ -290,14 +413,24 @@ public class RunManager {
 
     /** 特定プレイヤーにそのプレイヤーのデータを同期する */
     public static void syncPlayer(ServerPlayer player) {
+        restorePerkTags(player);
         saveToPlayerNbt(player); // 念のため毎同期時にNBTへ保存
 
         PlayerRunData data = getData(player);
-        String syncData = data.getCurrentFloor() + ":" + data.getThemeName() + ":"
-            + data.isRunActive() + ":" + data.isFloorCleared() + ":" + data.getMaxReachedFloor();
+        String syncData = String.format("%d:%s:%b:%b:%d:%d",
+                data.getCurrentFloor(), data.getThemeName(), data.isRunActive(), data.isFloorCleared(), data.getMaxReachedFloor(), data.getAmmoCapacityLevel());
         com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
             net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
             new com.levanilla.rogue.networking.SyncDataMessage(syncData)
+        );
+
+        int invLevel = player.getPersistentData().getInt("TacRogue_InvLevel");
+        int meleeLevel = player.getPersistentData().getInt("TacRogueMeleeLevel");
+        int randomPerkBuys = player.getPersistentData().getInt("RandomPerkBuys");
+        int flashlightLevel = player.getPersistentData().getInt("TacRogueFlashlightLevel");
+        com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
+            net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+            new com.levanilla.rogue.networking.SyncDataMessage("meta:" + invLevel + ":" + meleeLevel + ":" + randomPerkBuys + ":" + flashlightLevel)
         );
 
         // ゴールド同期
@@ -330,105 +463,8 @@ public class RunManager {
 
     /** クライアント側のデータ受信ハンドラ */
     public static void onSync(String data) {
-        try {
-            if (data.startsWith("perks:")) {
-                String[] tags = data.substring(6).split(",");
-                net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(net.minecraftforge.api.distmarker.Dist.CLIENT, () -> () -> {
-                    net.minecraft.client.player.LocalPlayer clientPlayer = net.minecraft.client.Minecraft.getInstance().player;
-                    if (clientPlayer != null) {
-                        clientPlayer.getTags().removeIf(t -> t.startsWith("perk:"));
-                        for (String t : tags) {
-                            if (!t.isEmpty()) clientPlayer.addTag(t);
-                        }
-                    }
-                });
-                return;
-            }
-
-            if (data.startsWith("dmg:")) {
-                String[] parts = data.substring(4).split(":");
-                if (parts.length >= 5) {
-                    float damage = Float.parseFloat(parts[0]);
-                    double x = Double.parseDouble(parts[1]);
-                    double y = Double.parseDouble(parts[2]);
-                    double z = Double.parseDouble(parts[3]);
-                    boolean isCritical = Boolean.parseBoolean(parts[4]);
-                    boolean isShotgun = parts.length >= 6 && Boolean.parseBoolean(parts[5]);
-                    if (isShotgun) {
-                        com.levanilla.rogue.client.ClientEventHandler.addShotgunDamageIndicator(x, y, z, damage, isCritical);
-                    } else {
-                        com.levanilla.rogue.client.ClientEventHandler.addDamageIndicator(x, y, z, damage, isCritical);
-                    }
-                }
-                return;
-            }
-
-            if (data.startsWith("drop:")) {
-                String[] parts = data.substring(5).split(":");
-                if (parts.length >= 4) {
-                    com.levanilla.rogue.client.ClientEventHandler.addDropIndicator(
-                        Double.parseDouble(parts[1]), Double.parseDouble(parts[2]), Double.parseDouble(parts[3]), parts[0]);
-                }
-                return;
-            }
-
-            if (data.startsWith("gold:")) {
-                clientGold = Integer.parseInt(data.substring(5));
-                return;
-            }
-
-            if (data.startsWith("quest_data:")) {
-                String payload = data.substring(11); // chapter|quest1,quest2,...
-                String[] chapterAndQuests = payload.split("\\|", 2);
-                int chapter = Integer.parseInt(chapterAndQuests[0]);
-                java.util.List<String[]> questList = new java.util.ArrayList<>();
-                if (chapterAndQuests.length > 1 && !chapterAndQuests[1].isEmpty()) {
-                    String[] questEntries = chapterAndQuests[1].split(",");
-                    for (String entry : questEntries) {
-                        if (entry.isEmpty()) continue;
-                        String[] fields = entry.split(";");
-                        if (fields.length >= 6) {
-                            questList.add(fields);
-                        }
-                    }
-                }
-                com.levanilla.rogue.client.RogueInventoryScreen.syncQuestData(chapter, questList);
-                return;
-            }
-
-            if (data.equals("open_quest_tab")) {
-                net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(net.minecraftforge.api.distmarker.Dist.CLIENT, () -> () -> {
-                    com.levanilla.rogue.client.ClientEventHandler.openInventoryWithTab(
-                        com.levanilla.rogue.client.RogueInventoryScreen.Tab.QUEST);
-                });
-                return;
-            }
-
-            if (data.startsWith("perk_init:")) { com.levanilla.rogue.client.PerkManager.openInitialPerkScreen(); return; }
-            if (data.startsWith("perk_boss:")) { com.levanilla.rogue.client.PerkManager.openBossPerkScreen(); return; }
-            if (data.startsWith("perk_normal:")) { com.levanilla.rogue.client.PerkManager.openPerkScreen(); return; }
-            
-            if (data.startsWith("open_floor_selection:")) {
-                String[] split = data.substring(21).split(":");
-                int maxF = Integer.parseInt(split[0]);
-                long seed = split.length > 1 ? Long.parseLong(split[1]) : 0L;
-                net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(net.minecraftforge.api.distmarker.Dist.CLIENT, () -> () -> {
-                    com.levanilla.rogue.client.ClientEventHandler.openFloorSelectionScreen(maxF, seed);
-                });
-                return;
-            }
-
-            String[] parts = data.split(":", 5);
-            if (parts.length >= 3) {
-                int maxF = parts.length >= 5 ? Integer.parseInt(parts[4]) : 0;
-                setClientData(Integer.parseInt(parts[0]), parts[1], Boolean.parseBoolean(parts[2]), maxF);
-                if (parts.length >= 4) {
-                    clientFloorCleared = Boolean.parseBoolean(parts[3]);
-                }
-            }
-        } catch (Exception e) { /* ignore parse errors */ }
+        ClientSyncHandler.onSync(data);
     }
-
     public static boolean isBossFloor() {
         return ThemeManager.isBossFloor(getCurrentFloor());
     }

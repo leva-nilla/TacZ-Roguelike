@@ -16,6 +16,8 @@ public final class LeaWindsCompat {
     private static boolean adsForceFirstPerson = false;
 
     private static boolean leawindCrosshairDisabled = false;
+    private static long renderFrameSerial = 0L;
+    private static AimTargetCache renderAimCache = null;
 
     public static boolean isLeawindAvailable() {
         if (leawindAvailable == null) {
@@ -45,6 +47,11 @@ public final class LeaWindsCompat {
 
     public static boolean isAdsForceFirstPerson() { return adsForceFirstPerson; }
 
+    public static void beginRenderFrame() {
+        renderFrameSerial++;
+        renderAimCache = null;
+    }
+
     public static void toggleAdsForceFirstPerson() {
         adsForceFirstPerson = !adsForceFirstPerson;
         Minecraft mc = Minecraft.getInstance();
@@ -54,14 +61,113 @@ public final class LeaWindsCompat {
         }
     }
 
+    public static net.minecraft.world.phys.Vec3 resolveThirdPersonAimTarget(Minecraft mc, double range) {
+        if (mc == null || mc.player == null || mc.level == null || mc.gameRenderer == null) return null;
+
+        net.minecraft.world.phys.HitResult leaWindsHit = getLeaWindsHitResult();
+        if (leaWindsHit != null && leaWindsHit.getType() != net.minecraft.world.phys.HitResult.Type.MISS) {
+            return resolvePlayerShotTarget(mc, leaWindsHit.getLocation(), range);
+        }
+
+        net.minecraft.client.Camera camera = mc.gameRenderer.getMainCamera();
+        net.minecraft.world.phys.Vec3 start = camera.getPosition();
+        net.minecraft.world.phys.Vec3 look = net.minecraft.world.phys.Vec3.directionFromRotation(camera.getXRot(), camera.getYRot());
+        net.minecraft.world.phys.Vec3 cameraTarget = traceAimTarget(mc, start, look, range);
+        return resolvePlayerShotTarget(mc, cameraTarget, range);
+    }
+
+    public static net.minecraft.world.phys.Vec3 resolveThirdPersonAimTargetForRender(Minecraft mc, double range) {
+        if (mc == null || mc.player == null || mc.level == null || mc.gameRenderer == null) return null;
+        AimTargetCache cached = renderAimCache;
+        if (cached != null
+            && cached.frameSerial == renderFrameSerial
+            && cached.player == mc.player
+            && Double.compare(cached.range, range) == 0) {
+            return cached.target;
+        }
+        net.minecraft.world.phys.Vec3 target = resolveThirdPersonAimTarget(mc, range);
+        renderAimCache = new AimTargetCache(renderFrameSerial, mc.player, range, target);
+        return target;
+    }
+
+    private record AimTargetCache(long frameSerial, net.minecraft.client.player.LocalPlayer player,
+                                  double range, net.minecraft.world.phys.Vec3 target) {}
+
+    private static net.minecraft.world.phys.HitResult getLeaWindsHitResult() {
+        try {
+            Class<?> tpClass = Class.forName("com.github.leawind.thirdperson.ThirdPerson");
+            if (!(boolean) tpClass.getMethod("isAvailable").invoke(null)) return null;
+            Object cameraAgent = tpClass.getField("CAMERA_AGENT").get(null);
+            Object hitResult = cameraAgent.getClass().getMethod("getHitResult").invoke(cameraAgent);
+            return hitResult instanceof net.minecraft.world.phys.HitResult hr ? hr : null;
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private static net.minecraft.world.phys.Vec3 traceAimTarget(Minecraft mc, net.minecraft.world.phys.Vec3 start,
+                                                               net.minecraft.world.phys.Vec3 look, double range) {
+        net.minecraft.world.phys.Vec3 end = start.add(look.scale(range));
+        net.minecraft.world.phys.HitResult blockHit = mc.level.clip(new net.minecraft.world.level.ClipContext(
+            start, end,
+            net.minecraft.world.level.ClipContext.Block.COLLIDER,
+            net.minecraft.world.level.ClipContext.Fluid.NONE,
+            mc.player));
+
+        net.minecraft.world.phys.Vec3 target = blockHit.getType() == net.minecraft.world.phys.HitResult.Type.MISS
+            ? end
+            : blockHit.getLocation();
+
+        net.minecraft.world.phys.AABB box = new net.minecraft.world.phys.AABB(
+            Math.min(start.x, end.x), Math.min(start.y, end.y), Math.min(start.z, end.z),
+            Math.max(start.x, end.x), Math.max(start.y, end.y), Math.max(start.z, end.z)
+        ).inflate(1.0D);
+        net.minecraft.world.phys.EntityHitResult entityHit =
+            net.minecraft.world.entity.projectile.ProjectileUtil.getEntityHitResult(
+                mc.player,
+                start,
+                end,
+                box,
+                entity -> entity != mc.player && !entity.isSpectator() && entity.isPickable(),
+                range * range);
+
+        if (entityHit != null && start.distanceToSqr(entityHit.getLocation()) < start.distanceToSqr(target)) {
+            target = entityHit.getLocation();
+        }
+        return target;
+    }
+
+    private static net.minecraft.world.phys.Vec3 resolvePlayerShotTarget(Minecraft mc,
+                                                                         net.minecraft.world.phys.Vec3 cameraTarget,
+                                                                         double range) {
+        if (cameraTarget == null || mc.player == null) return cameraTarget;
+        net.minecraft.world.phys.Vec3 eye = mc.player.getEyePosition(1.0f);
+        net.minecraft.world.phys.Vec3 toTarget = cameraTarget.subtract(eye);
+        if (toTarget.lengthSqr() < 1.0E-6D) {
+            net.minecraft.client.Camera camera = mc.gameRenderer.getMainCamera();
+            toTarget = net.minecraft.world.phys.Vec3.directionFromRotation(camera.getXRot(), camera.getYRot());
+        }
+        net.minecraft.world.phys.Vec3 shotLook = toTarget.normalize();
+        double shotRange = Math.max(range, Math.sqrt(toTarget.lengthSqr()) + 2.0D);
+        return traceAimTarget(mc, eye, shotLook, shotRange);
+    }
+
     private static net.minecraft.client.CameraType previousCameraType = null;
     private static boolean wasForcedFirstPerson = false;
-    private static float lastRecoilPitch = 0f;
-    private static float lastRecoilYaw = 0f;
+    private static final long AIM_SYNC_SHOT_GRACE_MS = 280L;
 
     /** 三人称視点での銃エイム同期 */
     @SuppressWarnings("resource")
     public static void syncThirdPersonGunAim() {
+        syncThirdPersonGunAim(false);
+    }
+
+    public static void syncThirdPersonGunAimForShot() {
+        syncThirdPersonGunAim(true);
+    }
+
+    @SuppressWarnings("resource")
+    private static void syncThirdPersonGunAim(boolean forceForShot) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null) return;
 
@@ -123,34 +229,28 @@ public final class LeaWindsCompat {
             if (!holdingGun && !holdingMelee) return;
             if (!inThirdPerson && !wasForcedFirstPerson) return; // 三人称のときのみ回転操作
 
-            // === 反動(Recoil)の適用 ===
-            TacZReflection.init();
-            float[] offsets = TacZReflection.getCurrentRecoilOffsets();
-            float recoilPitch = offsets[0]; 
-            float recoilYaw = offsets[1];
-            
-            // 1チック前との差分(Delta)を計算し、仮想マウス入力としてターン(視点移動)処理へ注入
-            float deltaPitch = recoilPitch - lastRecoilPitch;
-            float deltaYaw = recoilYaw - lastRecoilYaw;
-            lastRecoilPitch = recoilPitch;
-            lastRecoilYaw = recoilYaw;
-            
-            if (deltaPitch != 0 || deltaYaw != 0) {
-                // 三人称時は反動が小さく感じられやすいため、1.5倍にして反動を強調する
-                float recoilMultiplier = 1.5f;
-                // mc.player.turn() は内部で setYRot, setXRot を呼び、Leawinds がそれをフックしてカメラを回す
-                // ※上を向くにはピッチをマイナスにする必要があるため符号反転
-                mc.player.turn(-deltaYaw * recoilMultiplier, -deltaPitch * recoilMultiplier);
+            if (holdingGun) {
+                if (forceForShot) {
+                    sendAimRotationPacket(mc);
+                }
+                return;
             }
 
-            // === 三人称のまま: キャラをカメラの照準方向に向ける ===
-            Object cameraAgent = tpClass.getField("CAMERA_AGENT").get(null);
-            Object hitResult = cameraAgent.getClass().getMethod("getHitResult").invoke(cameraAgent);
+            if (!forceForShot && holdingGun && LeaWindsRecoilController.isRecoilActive()) {
+                RecoilDebugLogger.logAimSync("AIM_SYNC_SKIPPED_RECOIL");
+                return;
+            }
+            if (!forceForShot && holdingGun && isWithinRecentTacZShotGrace()) {
+                RecoilDebugLogger.logAimSync("AIM_SYNC_SKIPPED_SHOT_GRACE");
+                return;
+            }
 
-            if (hitResult instanceof net.minecraft.world.phys.HitResult hr
-                    && hr.getType() != net.minecraft.world.phys.HitResult.Type.MISS) {
+            RecoilDebugLogger.logAimSync("AIM_SYNC_MELEE_BEFORE");
+
+            // === 三人称のまま: キャラをカメラの照準方向に向ける ===
+            net.minecraft.world.phys.Vec3 target = resolveThirdPersonAimTarget(mc, 96.0D);
+            if (target != null) {
                 net.minecraft.world.phys.Vec3 eyePos = mc.player.getEyePosition(1.0f);
-                net.minecraft.world.phys.Vec3 target = hr.getLocation();
                 double dx = target.x - eyePos.x;
                 double dy = target.y - eyePos.y;
                 double dz = target.z - eyePos.z;
@@ -170,11 +270,42 @@ public final class LeaWindsCompat {
                 mc.player.setYRot(camera.getYRot());
                 mc.player.setXRot(camera.getXRot());
             }
-            mc.player.yRotO = mc.player.getYRot();
-            mc.player.xRotO = mc.player.getXRot();
+
+            RecoilDebugLogger.logAimSync("AIM_SYNC_MELEE_AFTER");
 
         } catch (Exception ignored) {
             // LeaWinds / TacZ が無い場合は何もしない
         }
+    }
+
+    private static boolean isWithinRecentTacZShotGrace() {
+        TacZReflection.init();
+        long ts = TacZReflection.getShootTimeStamp();
+        return ts > 0L && System.currentTimeMillis() - ts <= AIM_SYNC_SHOT_GRACE_MS;
+    }
+
+    private static void sendAimRotationPacket(Minecraft mc) {
+        if (mc.getConnection() == null || mc.player == null) return;
+        net.minecraft.world.phys.Vec3 target = resolveThirdPersonAimTarget(mc, 96.0D);
+        if (target == null) return;
+
+        net.minecraft.world.phys.Vec3 eyePos = mc.player.getEyePosition(1.0f);
+        double dx = target.x - eyePos.x;
+        double dy = target.y - eyePos.y;
+        double dz = target.z - eyePos.z;
+        double horizDist = Math.sqrt(dx * dx + dz * dz);
+        if (horizDist < 0.001D) return;
+
+        float yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        float pitch = (float) -Math.toDegrees(Math.atan2(dy, horizDist));
+        pitch = net.minecraft.util.Mth.clamp(pitch, -90.0f, 90.0f);
+
+        RecoilDebugLogger.logAimSync("AIM_ROT_PACKET_BEFORE");
+        mc.getConnection().send(new net.minecraft.network.protocol.game.ServerboundMovePlayerPacket.Rot(
+            yaw,
+            pitch,
+            mc.player.onGround()
+        ));
+        RecoilDebugLogger.logAimSync("AIM_ROT_PACKET_SENT");
     }
 }

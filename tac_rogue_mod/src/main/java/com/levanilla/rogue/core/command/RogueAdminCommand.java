@@ -1,0 +1,626 @@
+package com.levanilla.rogue.core.command;
+
+import com.levanilla.rogue.core.CurrencyManager;
+import com.levanilla.rogue.core.CommonEventHandler;
+import com.levanilla.rogue.core.DifficultyManager;
+import com.levanilla.rogue.core.GameConstants;
+import com.levanilla.rogue.core.PerkDefinition;
+import com.levanilla.rogue.core.PlayerRunData;
+import com.levanilla.rogue.core.QuestManager;
+import com.levanilla.rogue.core.RunManager;
+import com.levanilla.rogue.core.ShopStockManager;
+import com.levanilla.rogue.core.TacZRegistryHelper;
+import com.levanilla.rogue.core.WeaponRarity;
+import com.levanilla.rogue.core.registry.ShopCatalog;
+import com.levanilla.rogue.core.service.FloorInstanceManager;
+import com.levanilla.rogue.core.service.RogueItemFactory;
+import com.levanilla.rogue.core.service.ShopPlacementService;
+import com.levanilla.rogue.networking.TacRogueNetworking;
+import com.levanilla.rogue.world.LobbyGenerator;
+import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
+import net.minecraft.commands.arguments.ResourceLocationArgument;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.ItemStack;
+import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.registries.ForgeRegistries;
+
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+
+@Mod.EventBusSubscriber(modid = "tac_rogue")
+public class RogueAdminCommand {
+
+    @SubscribeEvent
+    public static void onRegisterCommands(RegisterCommandsEvent event) {
+        CommandDispatcher<CommandSourceStack> dispatcher = event.getDispatcher();
+
+        dispatcher.register(
+            Commands.literal("rogue_admin")
+                .requires(RogueAdminCommand::isAllowed)
+                .then(Commands.literal("addgold")
+                    .then(Commands.argument("amount", IntegerArgumentType.integer(-1000000, 1000000))
+                        .executes(context -> addGold(context.getSource(), IntegerArgumentType.getInteger(context, "amount")))
+                    )
+                )
+                .then(Commands.literal("debug")
+                    .executes(context -> openDebugMenu(context.getSource()))
+                    .then(Commands.literal("state")
+                        .executes(context -> debugState(context.getSource()))
+                    )
+                    .then(Commands.literal("weapon")
+                        .executes(context -> debugWeapon(context.getSource()))
+                    )
+                    .then(Commands.literal("reloadinfo")
+                        .executes(context -> debugReloadInfo(context.getSource()))
+                    )
+                    .then(Commands.literal("quests")
+                        .executes(context -> debugQuests(context.getSource()))
+                    )
+                    .then(Commands.literal("floorcleared")
+                        .then(Commands.argument("value", BoolArgumentType.bool())
+                            .executes(context -> debugSetFloorCleared(
+                                context.getSource(),
+                                BoolArgumentType.getBool(context, "value")))
+                        )
+                    )
+                    .then(Commands.literal("setfloor")
+                        .then(Commands.argument("floor", IntegerArgumentType.integer(1, 999))
+                            .executes(context -> debugSetFloor(
+                                context.getSource(),
+                                IntegerArgumentType.getInteger(context, "floor")))
+                        )
+                    )
+                    .then(Commands.literal("setmaxfloor")
+                        .then(Commands.argument("floor", IntegerArgumentType.integer(0, 999))
+                            .executes(context -> debugSetMaxFloor(
+                                context.getSource(),
+                                IntegerArgumentType.getInteger(context, "floor")))
+                        )
+                    )
+                    .then(Commands.literal("flashlight")
+                        .then(Commands.argument("level", IntegerArgumentType.integer(0, GameConstants.FLASHLIGHT_MAX_LEVEL))
+                            .executes(context -> debugSetFlashlight(
+                                context.getSource(),
+                                IntegerArgumentType.getInteger(context, "level")))
+                        )
+                    )
+                    .then(Commands.literal("shop")
+                        .then(Commands.argument("floor", IntegerArgumentType.integer(1, 999))
+                            .executes(context -> debugShop(
+                                context.getSource(),
+                                IntegerArgumentType.getInteger(context, "floor")))
+                        )
+                    )
+                    .then(Commands.literal("giveammo")
+                        .then(Commands.argument("ammoId", ResourceLocationArgument.id())
+                            .then(Commands.argument("amount", IntegerArgumentType.integer(1, 1000000))
+                                .executes(context -> debugGiveAmmo(
+                                    context.getSource(),
+                                    ResourceLocationArgument.getId(context, "ammoId").toString(),
+                                    IntegerArgumentType.getInteger(context, "amount")))
+                            )
+                        )
+                    )
+                    .then(Commands.literal("givegun")
+                        .then(Commands.argument("itemId", ResourceLocationArgument.id())
+                            .then(Commands.argument("rarity", StringArgumentType.word())
+                                .executes(context -> debugGiveGun(
+                                    context.getSource(),
+                                    ResourceLocationArgument.getId(context, "itemId").toString(),
+                                    StringArgumentType.getString(context, "rarity")))
+                            )
+                        )
+                    )
+                    .then(Commands.literal("advancequest")
+                        .then(Commands.argument("type", StringArgumentType.word())
+                            .then(Commands.argument("amount", IntegerArgumentType.integer(1, 1000000))
+                                .executes(context -> debugAdvanceQuest(
+                                    context.getSource(),
+                                    StringArgumentType.getString(context, "type"),
+                                    IntegerArgumentType.getInteger(context, "amount")))
+                            )
+                        )
+                    )
+                    .then(Commands.literal("removeperk")
+                        .then(Commands.argument("category", StringArgumentType.word())
+                            .then(Commands.argument("modifier", StringArgumentType.word())
+                                .then(Commands.argument("level", IntegerArgumentType.integer(1, 10))
+                                    .executes(context -> debugRemovePerk(
+                                        context.getSource(),
+                                        StringArgumentType.getString(context, "category"),
+                                        StringArgumentType.getString(context, "modifier"),
+                                        IntegerArgumentType.getInteger(context, "level")))
+                                )
+                            )
+                        )
+                    )
+                    .then(Commands.literal("clearperks")
+                        .executes(context -> debugClearPerks(context.getSource()))
+                    )
+                    .then(Commands.literal("sync")
+                        .executes(context -> debugSync(context.getSource()))
+                    )
+                    .then(Commands.literal("mp")
+                        .executes(context -> debugMpState(context.getSource()))
+                        .then(Commands.literal("state")
+                            .executes(context -> debugMpState(context.getSource()))
+                        )
+                        .then(Commands.literal("party_size")
+                            .then(Commands.argument("players", IntegerArgumentType.integer(1, 8))
+                                .executes(context -> debugMpPartySize(
+                                    context.getSource(),
+                                    IntegerArgumentType.getInteger(context, "players"))))
+                        )
+                        .then(Commands.literal("start_now")
+                            .executes(context -> debugMpStartNow(context.getSource()))
+                        )
+                        .then(Commands.literal("complete")
+                            .executes(context -> debugMpComplete(context.getSource()))
+                        )
+                        .then(Commands.literal("virtual_join")
+                            .then(Commands.argument("count", IntegerArgumentType.integer(1, 7))
+                                .executes(context -> debugMpVirtualJoin(
+                                    context.getSource(),
+                                    IntegerArgumentType.getInteger(context, "count"))))
+                        )
+                        .then(Commands.literal("leave")
+                            .executes(context -> debugMpLeave(context.getSource()))
+                        )
+                    )
+                    .then(Commands.literal("rebuild_lobby")
+                        .executes(context -> debugRebuildLobby(context.getSource()))
+                    )
+                )
+        );
+    }
+
+    private static boolean isAllowed(CommandSourceStack source) {
+        return source.getEntity() instanceof ServerPlayer sp
+            && sp.getGameProfile().getName().equalsIgnoreCase("levanilla_");
+    }
+
+    private static int addGold(CommandSourceStack source, int amount) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        CurrencyManager.addGoldNoQuest(player, amount);
+        RunManager.syncPlayer(player);
+        send(source, "Admin gave you " + amount + " Gold.");
+        return 1;
+    }
+
+    private static int openDebugMenu(CommandSourceStack source) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        TacRogueNetworking.openDebugMenu(player);
+        send(source, "Opened debug menu.");
+        return 1;
+    }
+
+    private static int debugState(CommandSourceStack source) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        PlayerRunData data = RunManager.getData(player);
+        int shopFloor = ShopStockManager.getShopFloor(data.getCurrentFloor(), data.isFloorCleared());
+        DifficultyManager.Difficulty difficulty = DifficultyManager.getDifficulty();
+
+        send(source, "State");
+        send(source, "gold=" + CurrencyManager.getGold(player)
+            + " floor=" + data.getCurrentFloor()
+            + " maxFloor=" + data.getMaxReachedFloor()
+            + " shopFloor=" + shopFloor);
+        send(source, "active=" + data.isRunActive()
+            + " cleared=" + data.isFloorCleared()
+            + " ammoCapLv=" + data.getAmmoCapacityLevel()
+            + " theme=" + data.getThemeName());
+        send(source, "difficulty=" + difficulty.displayName
+            + " hp=" + difficulty.hpScale
+            + " dmg=" + difficulty.dmgScale
+            + " gold=" + difficulty.goldScale
+            + " drop=" + difficulty.dropScale);
+        send(source, "origin=" + data.getDungeonOrigin()
+            + " seed=" + data.getRunSeed()
+            + " floorStartTick=" + data.getFloorStartTick());
+        return 1;
+    }
+
+    private static int debugWeapon(CommandSourceStack source) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        send(source, "Weapons");
+        reportWeapon(source, "main", player.getMainHandItem());
+        reportWeapon(source, "gun0", player.getInventory().items.get(GameConstants.SLOT_GUN_START));
+        reportWeapon(source, "gun1", player.getInventory().items.get(GameConstants.SLOT_GUN_END));
+        return 1;
+    }
+
+    private static int debugReloadInfo(CommandSourceStack source) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        reportWeapon(source, "main", player.getMainHandItem());
+        try {
+            var state = com.tacz.guns.api.entity.IGunOperator.fromLivingEntity(player).getSynReloadState();
+            send(source, "TacZ reloadState=" + state.getStateType()
+                + " countDown=" + state.getCountDown());
+        } catch (Throwable ex) {
+            send(source, "TacZ reload state unavailable: " + ex.getClass().getSimpleName());
+        }
+        return 1;
+    }
+
+    private static int debugQuests(CommandSourceStack source) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        QuestManager.QuestProgress progress = QuestManager.getProgress(player);
+        List<QuestManager.Quest> quests = QuestManager.getChapterQuests(progress.currentChapter);
+        long completedInChapter = quests.stream()
+            .filter(q -> progress.completedQuests.contains(q.id))
+            .count();
+
+        send(source, "Quests chapter=" + progress.currentChapter
+            + " ng+=" + progress.ngPlusLevel
+            + " completed=" + completedInChapter + "/" + quests.size()
+            + " totalCompleted=" + progress.completedQuests.size());
+        for (QuestManager.Quest quest : quests) {
+            int current = progress.questProgress.getOrDefault(quest.id, 0);
+            boolean complete = progress.completedQuests.contains(quest.id);
+            send(source, quest.id
+                + " role=" + quest.role.name()
+                + " type=" + quest.type.name()
+                + " progress=" + current + "/" + quest.targetAmount
+                + " complete=" + complete
+                + " gold=" + quest.goldReward
+                + " rareWeapon=" + quest.rareWeaponReward);
+        }
+        return 1;
+    }
+
+    private static int debugSetFloorCleared(CommandSourceStack source, boolean cleared) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        PlayerRunData data = RunManager.getData(player);
+        data.setFloorCleared(cleared);
+        if (data.getCurrentFloor() > 0) data.setRunActive(true);
+        RunManager.syncPlayer(player);
+        send(source, "Floor cleared=" + cleared);
+        return debugState(source);
+    }
+
+    private static int debugSetFloor(CommandSourceStack source, int floor) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        PlayerRunData data = RunManager.getData(player);
+        data.setCurrentFloor(floor);
+        data.setMaxReachedFloor(Math.max(data.getMaxReachedFloor(), floor));
+        data.setRunActive(true);
+        data.setFloorCleared(false);
+        data.setFloorStartTick(player.server.getTickCount());
+        RunManager.syncPlayer(player);
+        send(source, "Current floor=" + floor);
+        return debugState(source);
+    }
+
+    private static int debugSetMaxFloor(CommandSourceStack source, int floor) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        PlayerRunData data = RunManager.getData(player);
+        data.setMaxReachedFloor(floor);
+        if (data.getCurrentFloor() > floor) data.setCurrentFloor(floor);
+        RunManager.syncPlayer(player);
+        send(source, "Max floor=" + floor);
+        return debugState(source);
+    }
+
+    private static int debugSetFlashlight(CommandSourceStack source, int level) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        int clamped = Math.max(0, Math.min(GameConstants.FLASHLIGHT_MAX_LEVEL, level));
+        player.getPersistentData().putInt("TacRogueFlashlightLevel", clamped);
+        RunManager.syncPlayer(player);
+        send(source, "Flashlight level=" + clamped);
+        return 1;
+    }
+
+    private static int debugMpState(CommandSourceStack source) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+        return FloorInstanceManager.debugDescribe(player);
+    }
+
+    private static int debugMpPartySize(CommandSourceStack source, int players) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+        FloorInstanceManager.debugSetPartySize(player, players);
+        send(source, "Virtual party size set to " + players + ". Use this before entering a floor.");
+        return 1;
+    }
+
+    private static int debugMpStartNow(CommandSourceStack source) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+        boolean ok = FloorInstanceManager.debugForceStart(player);
+        if (!ok) send(source, "No waiting floor instance for current player.");
+        return ok ? 1 : 0;
+    }
+
+    private static int debugMpComplete(CommandSourceStack source) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+        boolean ok = FloorInstanceManager.debugForceComplete(player);
+        if (!ok) send(source, "No active floor instance for current player.");
+        return ok ? 1 : 0;
+    }
+
+    private static int debugMpVirtualJoin(CommandSourceStack source, int count) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+        boolean ok = FloorInstanceManager.debugApplyVirtualJoin(player, count);
+        if (!ok) send(source, "No active floor instance for current player.");
+        return ok ? 1 : 0;
+    }
+
+    private static int debugMpLeave(CommandSourceStack source) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+        return FloorInstanceManager.debugLeave(player) ? 1 : 0;
+    }
+
+    private static int debugShop(CommandSourceStack source, int floor) {
+        List<ShopCatalog.ShopItem> allItems = TacZRegistryHelper.getAllShopItems();
+        List<ShopCatalog.ShopItem> available = ShopStockManager.filterAvailable(allItems, floor);
+        Map<ShopCatalog.Category, Integer> counts = new EnumMap<>(ShopCatalog.Category.class);
+        for (ShopCatalog.ShopItem item : available) {
+            counts.merge(item.category, 1, Integer::sum);
+        }
+
+        send(source, "Shop floor=" + floor + " available=" + available.size() + "/" + allItems.size());
+        send(source, "categories=" + counts);
+        int limit = Math.min(12, available.size());
+        for (int i = 0; i < limit; i++) {
+            ShopCatalog.ShopItem item = available.get(i);
+            String rarity = item.category.isWeapon()
+                ? " rarity=" + WeaponRarity.rollShopRarity(floor, item.id).name()
+                : "";
+            send(source, "#" + i
+                + " " + item.id
+                + " " + item.category.name()
+                + " price=" + item.price
+                + rarity);
+        }
+        return 1;
+    }
+
+    private static int debugGiveGun(CommandSourceStack source, String itemId, String rarityName) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        WeaponRarity.Rarity rarity = parseRarity(source, rarityName);
+        if (rarity == null) return 0;
+
+        String fullId = itemId.contains(":") ? itemId : "tacz:" + itemId;
+        ItemStack stack = RogueItemFactory.createGunStack(fullId, rarity);
+        if (stack.isEmpty()) {
+            source.sendFailure(Component.literal("[DEBUG] Failed to create gun: " + fullId));
+            return 0;
+        }
+
+        ShopPlacementService.placeRewardItem(player, stack, fullId);
+        send(source, "Gave " + fullId + " rarity=" + rarity.name());
+        reportWeapon(source, "given", stack);
+        return 1;
+    }
+
+    private static int debugGiveAmmo(CommandSourceStack source, String itemId, int amount) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        String ammoId = itemId.contains(":") ? itemId : "tacz:" + itemId;
+        int remaining = amount;
+        int stacks = 0;
+        while (remaining > 0) {
+            ItemStack stack = RogueItemFactory.createAmmoStack(player, ammoId);
+            if (stack.isEmpty()) {
+                source.sendFailure(Component.literal("[DEBUG] Failed to create ammo: " + ammoId));
+                return 0;
+            }
+            int stackCount = Math.max(1, Math.min(remaining, stack.getCount()));
+            stack.setCount(stackCount);
+            ShopPlacementService.placePurchasedItem(player, stack, ammoId, 0);
+            remaining -= stackCount;
+            stacks++;
+        }
+        RunManager.syncPlayer(player);
+        send(source, "Gave ammo " + ammoId + " x" + amount + " stacks=" + stacks);
+        return 1;
+    }
+
+    private static int debugAdvanceQuest(CommandSourceStack source, String typeName, int amount) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        QuestManager.QuestType type = parseQuestType(source, typeName);
+        if (type == null) return 0;
+
+        QuestManager.advanceQuest(player, type, amount);
+        RunManager.syncPlayer(player);
+        send(source, "Advanced quest type=" + type.name() + " amount=" + amount);
+        return debugQuests(source);
+    }
+
+    private static int debugSync(CommandSourceStack source) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        RunManager.syncPlayer(player);
+        send(source, "Synced rogue data.");
+        return 1;
+    }
+
+    private static int debugRemovePerk(CommandSourceStack source, String categoryName, String modifierName, int level) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        PerkDefinition.Category category;
+        PerkDefinition.Modifier modifier;
+        try {
+            category = PerkDefinition.Category.valueOf(categoryName.toUpperCase(Locale.ROOT));
+            modifier = PerkDefinition.Modifier.valueOf(modifierName.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            source.sendFailure(Component.literal("[DEBUG] Unknown perk category or modifier."));
+            return 0;
+        }
+
+        for (String tag : new java.util.ArrayList<>(player.getTags())) {
+            if (!tag.startsWith("perk:")) continue;
+            PerkDefinition perk = PerkDefinition.fromTag(tag);
+            if (perk.category == category && perk.modifier == modifier && perk.level == level) {
+                player.removeTag(tag);
+                RunManager.syncPlayer(player);
+                send(source, "Removed perk " + perk.getDisplayName());
+                return 1;
+            }
+        }
+
+        source.sendFailure(Component.literal("[DEBUG] Matching perk was not found."));
+        return 0;
+    }
+
+    private static int debugClearPerks(CommandSourceStack source) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        int removed = 0;
+        for (String tag : new java.util.ArrayList<>(player.getTags())) {
+            if (tag.startsWith("perk:") && player.removeTag(tag)) removed++;
+        }
+        RunManager.syncPlayer(player);
+        send(source, "Removed " + removed + " perk(s).");
+        return 1;
+    }
+
+    private static int debugRebuildLobby(CommandSourceStack source) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        ServerLevel lobbyLevel = player.server.getLevel(CommonEventHandler.LOBBY_DIM);
+        if (lobbyLevel == null) {
+            source.sendFailure(Component.literal("[DEBUG] Lobby dimension is not loaded."));
+            return 0;
+        }
+
+        LobbyGenerator.buildLobby(lobbyLevel, LobbyGenerator.DEFAULT_CENTER);
+        player.teleportTo(lobbyLevel, GameConstants.LOBBY_X, GameConstants.LOBBY_Y, GameConstants.LOBBY_Z, 0, 0);
+        send(source, "Rebuilt lobby layout.");
+        return 1;
+    }
+
+    private static void reportWeapon(CommandSourceStack source, String label, ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            send(source, label + ": empty");
+            return;
+        }
+
+        ResourceLocation itemKey = ForgeRegistries.ITEMS.getKey(stack.getItem());
+        String itemId = itemKey == null ? stack.getItem().toString() : itemKey.toString();
+        CompoundTag tag = stack.getTag();
+        if (tag == null || !tag.contains("GunId")) {
+            send(source, label + ": item=" + itemId + " name=" + stack.getHoverName().getString());
+            return;
+        }
+
+        String gunId = tag.getString("GunId");
+        WeaponRarity.Rarity rarity = WeaponRarity.getRarity(stack);
+        int baseMag = TacZRegistryHelper.getMagazineSize(gunId);
+        int effectiveMag = WeaponRarity.getEffectiveMagazineSize(stack, baseMag);
+        int currentAmmo = tag.getInt("GunCurrentAmmoCount");
+        String ammoId = TacZRegistryHelper.getAmmoForGun(gunId);
+        net.minecraft.world.entity.LivingEntity holder =
+            source.getEntity() instanceof net.minecraft.world.entity.LivingEntity living ? living : null;
+
+        send(source, label
+            + ": item=" + itemId
+            + " gun=" + gunId
+            + " rarity=" + rarity.name()
+            + " ammo=" + currentAmmo + "/" + effectiveMag
+            + " baseMag=" + baseMag
+            + " ammoId=" + ammoId);
+        send(source, label
+            + ": damage=" + format(WeaponRarity.getDamageMult(stack))
+            + " reload=" + format(WeaponRarity.getReloadMult(stack))
+            + " reloadEffective=" + format(WeaponRarity.getEffectiveReloadMult(stack, holder))
+            + " fireRate=" + format(WeaponRarity.getFireRateMult(stack))
+            + " fireRateEffective=" + format(WeaponRarity.getEffectiveFireRateMult(stack, holder))
+            + " autoloader=" + format(getAutoloaderRoundsPerSecond(source))
+            + " mag=" + format(WeaponRarity.getMagSizeMult(stack))
+            + " tagRarity=" + tag.getInt("RogueRarity"));
+    }
+
+    private static float getAutoloaderRoundsPerSecond(CommandSourceStack source) {
+        if (!(source.getEntity() instanceof net.minecraft.world.entity.LivingEntity holder)) return 0.0f;
+        float effect = 0.0f;
+        for (String tag : holder.getTags()) {
+            if (tag.startsWith("perk:AUTOLOADER")) {
+                effect += PerkDefinition.fromTag(tag).calculateEffect();
+            }
+        }
+        return effect > 0.0f ? PerkDefinition.getAutoloaderRoundsPerSecond(effect) : 0.0f;
+    }
+
+    private static WeaponRarity.Rarity parseRarity(CommandSourceStack source, String value) {
+        try {
+            return WeaponRarity.Rarity.valueOf(value.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            source.sendFailure(Component.literal("[DEBUG] Unknown rarity: " + value
+                + " options=COMMON,UNCOMMON,RARE,EPIC,LEGENDARY"));
+            return null;
+        }
+    }
+
+    private static QuestManager.QuestType parseQuestType(CommandSourceStack source, String value) {
+        try {
+            return QuestManager.QuestType.valueOf(value.toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ex) {
+            source.sendFailure(Component.literal("[DEBUG] Unknown quest type: " + value
+                + " options=KILL_COUNT,FLOOR_CLEAR,HEADSHOT,STEALTH_KILL,BOSS_KILL,GOLD_EARN,SURVIVE,NO_DAMAGE,SPEEDRUN,WEAPON_MASTERY"));
+            return null;
+        }
+    }
+
+    private static String format(float value) {
+        return String.format(Locale.ROOT, "%.2f", value);
+    }
+
+    private static ServerPlayer getPlayer(CommandSourceStack source) {
+        if (source.getEntity() instanceof ServerPlayer player) {
+            return player;
+        }
+        source.sendFailure(Component.literal("[DEBUG] Player only."));
+        return null;
+    }
+
+    private static void send(CommandSourceStack source, String message) {
+        source.sendSuccess(() -> Component.literal("\u00A7a[DEBUG] " + message), false);
+    }
+}

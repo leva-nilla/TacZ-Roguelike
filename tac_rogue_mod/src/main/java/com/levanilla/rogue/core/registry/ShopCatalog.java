@@ -22,6 +22,7 @@ public final class ShopCatalog {
         LMG("LMG", 0xFFFFAA00),
         EXPLOSIVE("EXPLOSIVE", 0xFFFF4400),
         MELEE("MELEE", 0xFFFF3333),
+        TACTICAL("TACTICAL", 0xFFFF8800),
         ATTACHMENT("ATTACHMENT", 0xFF8800FF),
         AMMO("AMMO", 0xFF888888),
         SPECIAL("SPECIAL", 0xFFFFFF00);
@@ -33,7 +34,7 @@ public final class ShopCatalog {
         public boolean isWeapon() {
             return this == PISTOL || this == RIFLE || this == SMG
                 || this == SHOTGUN || this == SNIPER || this == LMG
-                || this == EXPLOSIVE || this == MELEE;
+                || this == EXPLOSIVE || this == MELEE || this == TACTICAL;
         }
     }
 
@@ -131,24 +132,42 @@ public final class ShopCatalog {
         return items;
     }
 
+    /**
+     * 近接武器: lrtactical API から動的取得。
+     * lrtactical 未インストール時は空リスト。
+     */
     public static List<ShopItem> getBuiltinMelee() {
-        List<ShopItem> items = new ArrayList<>();
-        items.add(new ShopItem("lrtactical:baseball_bat", "BASEBALL BAT", 500, Category.MELEE));
-        items.add(new ShopItem("lrtactical:dagger", "DAGGER", 1000, Category.MELEE));
-        items.add(new ShopItem("lrtactical:karambit", "KARAMBIT", 2000, Category.MELEE));
-        return items;
+        return LrTacticalRegistry.getAllMeleeWeapons();
+    }
+
+    /**
+     * 投擲武器: lrtactical API から動的取得。
+     * lrtactical 未インストール時は空リスト。
+     */
+    public static List<ShopItem> getBuiltinTactical() {
+        return LrTacticalRegistry.getAllThrowables();
     }
 
     public static List<ShopItem> getBuiltinSpecial() {
         List<ShopItem> items = new ArrayList<>();
         items.add(new ShopItem("rogue:inv_upgrade", "\u2191 INVENTORY +2 SLOTS", 3000, Category.SPECIAL));
         items.add(new ShopItem("rogue:stash_upgrade", "\u2191 STASH +1 ROW", 3000, Category.SPECIAL));
+        items.add(new ShopItem("rogue:ammo_capacity_upgrade", "\u2191 AMMO POUCH Lvl UP", 2000, Category.SPECIAL));
+        items.add(new ShopItem("rogue:melee_upgrade", "\u2191 MELEE WEAPON Lvl UP", 1500, Category.SPECIAL));
+        items.add(new ShopItem("rogue:flashlight_upgrade", "\u2191 FLASHLIGHT Lvl UP", 900, Category.SPECIAL));
         // --- Recovery Items ---
         items.add(new ShopItem("rogue:medkit", "\u2726 MEDKIT", 300, Category.SPECIAL));
         items.add(new ShopItem("rogue:field_ration", "\u2726 FIELD RATION x3", 100, Category.SPECIAL));
         items.add(new ShopItem("rogue:stamina_shot", "\u2726 STAMINA SHOT", 250, Category.SPECIAL));
         // --- Tactical Items ---
         items.add(new ShopItem("minecraft:snowball", "SNOWBALL x16", 150, Category.SPECIAL));
+        // --- New Consumables ---
+        items.add(new ShopItem("rogue:bandage", "\u2726 BANDAGE", 150, Category.SPECIAL));
+        items.add(new ShopItem("rogue:armor_plate", "\u2726 ARMOR PLATE", 400, Category.SPECIAL));
+        items.add(new ShopItem("rogue:adrenaline", "\u2726 ADRENALINE SYRINGE", 500, Category.SPECIAL));
+        items.add(new ShopItem("rogue:emp_device", "\u2726 EMP DEVICE", 350, Category.SPECIAL));
+        // --- Random Perk ---
+        items.add(new ShopItem("rogue:random_perk", "\u2605 RANDOM PERK", 1500, Category.SPECIAL));
         return items;
     }
 

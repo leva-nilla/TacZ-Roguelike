@@ -22,38 +22,71 @@ public final class FloorService {
      * 「次のフロアへ / 再挑戦 / 初回開始」の振り分けロジック。
      */
     public static void handleStartNextFloor(ServerPlayer player) {
+        handleStartNextFloor(player, FloorInstanceManager.EntryMode.SOLO);
+    }
+
+    public static void handleStartNextFloor(ServerPlayer player, FloorInstanceManager.EntryMode mode) {
+        if (FloorInstanceManager.requestStartWaitingInstance(player)) {
+            return;
+        }
+
         PlayerRunData data = RunManager.getData(player);
 
         if (!data.isRunActive() && !data.isFloorCleared() && data.getCurrentFloor() <= 0) {
             // 初回：ラン開始
-            startNewRun(player);
+            startNewRun(player, mode);
         } else if (data.isFloorCleared()) {
             // フロアクリア済み → 次フロアへ
-            RunManager.startNextFloor(player);
+            int targetFloor = Math.max(data.getCurrentFloor() + 1, data.getMaxReachedFloor());
+            data.setCurrentFloor(targetFloor);
+            data.setFloorCleared(false);
+            data.setRunActive(false);
+            data.rerollFloorSeedSalt(player.server.getTickCount());
+            RunManager.refreshThemeName(data);
+            parkInRogueStagingWhileRegenerating(player, data.getDungeonOrigin());
+            FloorInstanceManager.enterFloor(player, targetFloor, mode);
         } else {
             // フロア未クリア → リトライ
-            retryCurrentFloor(player);
+            retryCurrentFloor(player, mode);
         }
     }
 
     /**
      * 明示的なリトライ要求。
-     * マルチプレイヤー: 同フロアに他プレイヤーがいる場合は再生成せずスポーンテレポートのみ。
+     * プレイヤーごとに独立した生成領域を持つため、常に自分の領域を再生成する。
      */
     public static void handleRetryFloor(ServerPlayer player) {
+        handleRetryFloor(player, FloorInstanceManager.EntryMode.SOLO);
+    }
+
+    public static void handleRetryFloor(ServerPlayer player, FloorInstanceManager.EntryMode mode) {
         PlayerRunData data = RunManager.getData(player);
         player.sendSystemMessage(Component.literal(
             "\u00a7e[RETRY] Retrying floor " + data.getCurrentFloor()));
         data.setFloorCleared(false);
-        data.setRunActive(true);
-        retryCurrentFloor(player);
+        data.setRunActive(false);
+        retryCurrentFloor(player, mode);
     }
 
     /** 過去のフロアに飛んで再試行する（金策用） */
     public static void handleGotoFloor(ServerPlayer player, int targetFloor) {
+        handleGotoFloor(player, targetFloor, FloorInstanceManager.EntryMode.SOLO);
+    }
+
+    public static void handleGotoFloor(ServerPlayer player, int targetFloor, FloorInstanceManager.EntryMode mode) {
         PlayerRunData data = RunManager.getData(player);
-        if (targetFloor > 0 && targetFloor <= data.getMaxReachedFloor()) {
-            RunManager.gotoFloor(player, targetFloor);
+        if (targetFloor > 0 && targetFloor <= Math.max(1, data.getMaxReachedFloor())) {
+            if (data.getCurrentFloor() <= 0) {
+                RunManager.startRun(player);
+                CurrencyManager.addGoldNoQuest(player, GameConstants.INITIAL_GOLD);
+            }
+            data.setCurrentFloor(targetFloor);
+            data.setFloorCleared(false);
+            data.setRunActive(false);
+            data.rerollFloorSeedSalt(player.server.getTickCount());
+            RunManager.refreshThemeName(data);
+            parkInRogueStagingWhileRegenerating(player, data.getDungeonOrigin());
+            FloorInstanceManager.enterFloor(player, targetFloor, mode);
         } else {
             player.sendSystemMessage(Component.literal("§c[ERROR] Invalid floor selection: " + targetFloor));
         }
@@ -61,51 +94,71 @@ public final class FloorService {
 
     // ===== 内部ロジック =====
 
-    private static void startNewRun(ServerPlayer player) {
+    private static void startNewRun(ServerPlayer player, FloorInstanceManager.EntryMode mode) {
         RunManager.startRun(player);
         PlayerRunData data = RunManager.getData(player);
+        CurrencyManager.addGoldNoQuest(player, GameConstants.INITIAL_GOLD);
+        data.setRunActive(false);
+        FloorInstanceManager.enterFloor(player, data.getCurrentFloor(), mode);
+        RunManager.syncPlayer(player);
+    }
+
+    private static void retryCurrentFloor(ServerPlayer player, FloorInstanceManager.EntryMode mode) {
+        PlayerRunData data = RunManager.getData(player);
+        data.rerollFloorSeedSalt(player.server.getTickCount());
+        data.setFloorCleared(false);
+        data.setRunActive(false);
+        parkInRogueStagingWhileRegenerating(player, data.getDungeonOrigin());
+        FloorInstanceManager.enterFloor(player, Math.max(1, data.getCurrentFloor()), mode);
+        player.sendSystemMessage(Component.literal(
+            "§e[RETRY] FLOOR " + data.getCurrentFloor() + " — regeneration queued"));
+    }
+
+    private static void parkInRogueStagingWhileRegenerating(ServerPlayer player, BlockPos origin) {
+        if (player == null || player.server == null || player.level().dimension() != ROGUE_DIM) return;
         ServerLevel rogueLevel = player.server.getLevel(ROGUE_DIM);
-        if (rogueLevel != null) {
-            clearDungeonEntities(rogueLevel, data.getDungeonOrigin());
-            BlockPos spawnPos = MapGenerator.generateRoom(
-                rogueLevel, data.getDungeonOrigin(), null, data.getCurrentFloor(), data.getRunSeed());
-            RunManager.safeTeleport(player, rogueLevel, spawnPos);
-            RunManager.syncPlayer(player);
-            CurrencyManager.addGold(player, GameConstants.INITIAL_GOLD);
-            RunManager.syncPlayer(player);
+        if (rogueLevel == null || origin == null) return;
+        BlockPos center = retryStagingCenter(origin);
+        buildRetryStaging(rogueLevel, center);
+        RunManager.safeTeleport(player, rogueLevel, center);
+    }
+
+    public static void clearRetryStaging(ServerLevel level, BlockPos origin) {
+        if (level == null || origin == null) return;
+        BlockPos center = retryStagingCenter(origin);
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                for (int dy = -1; dy <= 3; dy++) {
+                    BlockPos pos = center.offset(dx, dy, dz);
+                    if (level.getBlockState(pos).is(net.minecraft.world.level.block.Blocks.BARRIER)
+                        || level.getBlockState(pos).is(net.minecraft.world.level.block.Blocks.LIGHT)
+                        || level.getBlockState(pos).is(net.minecraft.world.level.block.Blocks.BLACK_CONCRETE)) {
+                        level.setBlock(pos, net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(), 2 | 16);
+                    }
+                }
+            }
         }
     }
 
-    private static void retryCurrentFloor(ServerPlayer player) {
-        PlayerRunData data = RunManager.getData(player);
-        ServerLevel rogueLevel = player.server.getLevel(ROGUE_DIM);
-        if (rogueLevel != null) {
-            // マルチプレイヤー: 同フロアに他プレイヤーがいる場合は再生成しない
-            if (RunManager.hasOtherPlayersOnSameFloor(player)) {
-                // スポーン位置にテレポートするだけ
-                BlockPos origin = data.getDungeonOrigin();
-                BlockPos spawnPos = origin.above(2);
-                RunManager.safeTeleport(player, rogueLevel, spawnPos);
-                data.setFloorCleared(false);
-                data.setRunActive(true);
-                data.setFloorStartTick(player.server.getTickCount());
-                RunManager.syncPlayer(player);
-                player.sendSystemMessage(Component.literal(
-                    "§e[RETRY] Teleported to spawn — other players on this floor"));
-            } else {
-                clearDungeonEntities(rogueLevel, data.getDungeonOrigin());
+    private static BlockPos retryStagingCenter(BlockPos origin) {
+        return new BlockPos(origin.getX(), origin.getY() + 28, origin.getZ());
+    }
 
-                BlockPos spawnPos = MapGenerator.generateRoom(
-                    rogueLevel, data.getDungeonOrigin(), null, data.getCurrentFloor(), data.getRunSeed());
-                RunManager.safeTeleport(player, rogueLevel, spawnPos);
-                data.setFloorCleared(false);
-                data.setRunActive(true);
-                data.setFloorStartTick(player.server.getTickCount());
-                RunManager.syncPlayer(player);
-                player.sendSystemMessage(Component.literal(
-                    "§e[RETRY] FLOOR " + data.getCurrentFloor() + " — 再生成完了"));
+    private static void buildRetryStaging(ServerLevel level, BlockPos center) {
+        for (int dx = -2; dx <= 2; dx++) {
+            for (int dz = -2; dz <= 2; dz++) {
+                for (int dy = -1; dy <= 3; dy++) {
+                    boolean shell = dx == -2 || dx == 2 || dz == -2 || dz == 2 || dy == -1 || dy == 3;
+                    level.setBlock(center.offset(dx, dy, dz),
+                        shell
+                            ? net.minecraft.world.level.block.Blocks.BLACK_CONCRETE.defaultBlockState()
+                            : net.minecraft.world.level.block.Blocks.AIR.defaultBlockState(),
+                        2 | 16);
+                }
             }
         }
+        level.setBlock(center.offset(0, 2, 0),
+            net.minecraft.world.level.block.Blocks.LIGHT.defaultBlockState(), 2 | 16);
     }
 
     public static void clearDungeonEntities(ServerLevel rogueLevel, BlockPos origin) {
@@ -125,6 +178,12 @@ public final class FloorService {
             if (!(e instanceof net.minecraft.world.entity.player.Player)) {
                 e.remove(Entity.RemovalReason.DISCARDED);
             }
+        }
+
+        java.util.List<net.minecraft.world.entity.item.ItemEntity> looseItems = rogueLevel.getEntitiesOfClass(
+            net.minecraft.world.entity.item.ItemEntity.class, killArea);
+        for (net.minecraft.world.entity.item.ItemEntity item : looseItems) {
+            item.remove(Entity.RemovalReason.DISCARDED);
         }
 
         // 追加安全策: tac_rogue_spawned タグ付きの全エンティティも消去

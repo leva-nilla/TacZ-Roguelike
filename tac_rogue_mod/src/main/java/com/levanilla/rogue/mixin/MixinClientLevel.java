@@ -19,6 +19,7 @@ public class MixinClientLevel {
 
     @Inject(method = "getRawBrightness", at = @At("RETURN"), cancellable = true)
     private void tac_rogue$addDynamicLight(BlockPos pos, int darkness, CallbackInfoReturnable<Integer> cir) {
+        if (!DynamicLightManager.hasActiveLights()) return;
         int dynamicLight = DynamicLightManager.getDynamicLightAt(pos);
         if (dynamicLight > 0) {
             int vanilla = cir.getReturnValue();

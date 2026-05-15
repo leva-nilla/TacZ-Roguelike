@@ -1,7 +1,7 @@
 {
     "formatVersion": 1,
     "game": "minecraft",
-    "versionId": "0.2.0-beta",
+    "versionId": "0.6.0",
     "name": "TacZ Roguelike",
     "summary": "Fast-paced tactical rougelike shooter built on TacZ.",
     "files": [
@@ -13,12 +13,12 @@
             },
             "env": {
                 "client": "required",
-                "server": "required"
+                "server": "unsupported"
             },
             "downloads": [
                 "https://cdn.modrinth.com/data/3sjzyvGR/versions/6ksT8CWg/ModernUI-Forge-1.20.1-3.12.0.1-universal.jar"
             ],
-            "fileSize": 24987000
+            "fileSize": 25104473
         },
         {
             "path": "mods/tacz-1.20.1-1.1.7-hotfix2.jar",
@@ -28,12 +28,12 @@
             },
             "env": {
                 "client": "required",
-                "server": "required"
+                "server": "unsupported"
             },
             "downloads": [
                 "https://cdn.modrinth.com/data/SzzJttH8/versions/3NpuJ7TJ/tacz-1.20.1-1.1.7-hotfix2.jar"
             ],
-            "fileSize": 52428800
+            "fileSize": 52426062
         },
         {
             "path": "mods/leawind_third_person-v2.2.0-mc1.20-1.20.1-forge.jar",
@@ -336,6 +336,21 @@
             "fileSize": 1181413
         },
         {
+            "path": "mods/BetterF3-7.0.2-Forge-1.20.1.jar",
+            "hashes": {
+                "sha1": "b65cba59e87dc6c6d1aa9c47f09b9996b4e5075d",
+                "sha512": "e88ce04d601a5953de909edaabb49dad9eea2c3a9ccccb1247fd041554b30794d4d4c315be065c90b1017cbd798199e644fe8d905125f4c431ddb8eaf170dd15"
+            },
+            "env": {
+                "client": "required",
+                "server": "optional"
+            },
+            "downloads": [
+                "https://cdn.modrinth.com/data/8shC1gFX/versions/xo6HmgWj/BetterF3-7.0.2-Forge-1.20.1.jar"
+            ],
+            "fileSize": 468517
+        },
+        {
             "path": "mods/Patchouli-1.20.1-85-FORGE.jar",
             "hashes": {
                 "sha1": "d4614507d6e4c7cb464bba5eca891978272062ef",
@@ -559,6 +574,36 @@
                 "https://cdn.modrinth.com/data/X4uLYuhT/versions/6ksck19n/Elite%20X%20Quality%20Guns%20Forge%20v5.0%20-%201.20.1.jar"
             ],
             "fileSize": 60660877
+        },
+        {
+            "path": "mods/biggerstacks-1.20.1-2026.02.27-all.jar",
+            "hashes": {
+                "sha1": "27baa2ef4866a4d4848a13534b65fe5bcd29eaf4",
+                "sha512": "85c509391abd2cfd7566e24a1b6aeb0eb1b32d5f2d7953ddd4e3a0538945bea0860670fceb5146010a6f1844b9be7ed0f1bbf2541a4b61b8b4c1fea1b71de3fb"
+            },
+            "env": {
+                "client": "required",
+                "server": "required"
+            },
+            "downloads": [
+                "https://cdn.modrinth.com/data/hcK0pdrI/versions/lnxVTpkZ/biggerstacks-1.20.1-2026.02.27-all.jar"
+            ],
+            "fileSize": 1275007
+        },
+        {
+            "path": "mods/apocalypticarsenal-1.0.1.jar",
+            "hashes": {
+                "sha1": "40f0651e7da145857ade6aca25051a7058c4dfc7",
+                "sha512": "94fad82fd2b526d940814671432167a35e0e4b54c6b6e1d43e01b16c3d63161b0ec5a78ce70632877df64bb241d18e1078a4add43b0f295c21763bb77d8b535b"
+            },
+            "env": {
+                "client": "required",
+                "server": "required"
+            },
+            "downloads": [
+                "https://cdn.modrinth.com/data/yiMHYcdp/versions/ElX8SaYH/apocalypticarsenal-1.0.1.jar"
+            ],
+            "fileSize": 3080423
         }
     ],
     "dependencies": {

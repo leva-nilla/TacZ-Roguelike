@@ -26,6 +26,6 @@ description="${mod_description}"
 [[dependencies.tac_rogue]]
     modId="tacz"
     mandatory=true
-    versionRange="[1.0.3,)"
+    versionRange="[1.1.7-hotfix2,1.1.8)"
     ordering="NONE"
     side="BOTH"

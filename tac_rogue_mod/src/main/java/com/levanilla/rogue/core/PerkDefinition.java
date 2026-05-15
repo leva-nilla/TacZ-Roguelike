@@ -2,11 +2,11 @@ package com.levanilla.rogue.core;
 
 /**
  * パークの「設計図」を保持するデータクラス。
- * カテゴリ(25) × 修飾子(11) × レベル(1-10) = 2,750 種類のプロシージャル生成パーク。
+ * カテゴリ(27) × 修飾子(11) × レベル(1-10) = 2,970 種類のプロシージャル生成パーク。
  */
 public class PerkDefinition {
 
-    /** パークの効果カテゴリ (25 種) */
+    /** パークの効果カテゴリ (27 種) */
     public enum Category {
         VITALITY("Vitality", "perk.tac_rogue.cat.vitality", 0xFF00FF88),
         REGENERATION("Regeneration", "perk.tac_rogue.cat.regeneration", 0xFF00FF00),
@@ -15,7 +15,9 @@ public class PerkDefinition {
         STAMINA("Stamina", "perk.tac_rogue.cat.stamina", 0xFF00DDFF),
         DAMAGE("Damage", "perk.tac_rogue.cat.damage", 0xFFFF4444),
         GUN_PROFICIENCY("Gun Proficiency", "perk.tac_rogue.cat.gun_proficiency", 0xFFFFAA00),
-        RELOAD_SPEED("Autoloader", "perk.tac_rogue.cat.reload_speed", 0xFFFFCC00),
+        FIRE_RATE("Fire Rate", "perk.tac_rogue.cat.fire_rate", 0xFFFF7744),
+        RELOAD_SPEED("Reload Speed", "perk.tac_rogue.cat.reload_speed", 0xFFFFCC00),
+        AUTOLOADER("Autoloader", "perk.tac_rogue.cat.autoloader", 0xFF66EEFF),
         AMMO_EFFICIENCY("Ammo Saver", "perk.tac_rogue.cat.ammo_efficiency", 0xFFDDDD00),
         SCAVENGER("Scavenger", "perk.tac_rogue.cat.scavenger", 0xFF88FF88),
         GOLD_RUSH("Gold Rush", "perk.tac_rogue.cat.gold_rush", 0xFFFFD700),
@@ -106,10 +108,23 @@ public class PerkDefinition {
         String valueStr;
         if (category == Category.REGENERATION || category == Category.VAMPIRE || category == Category.BLOODLUST || category == Category.QUICK_FIX) {
             valueStr = String.format("%.1f", effect / 10.0f);
+        } else if (category == Category.AUTOLOADER) {
+            valueStr = String.format("%.1f", getAutoloaderRoundsPerSecond(effect));
         } else {
             valueStr = String.valueOf((int) effect);
         }
         return net.minecraft.network.chat.Component.translatable(category.descriptionKey, valueStr);
+    }
+
+    public static float getAutoloaderRoundsPerSecond(float effect) {
+        return Math.max(1.0f, effect / 10.0f);
+    }
+
+    public net.minecraft.network.chat.Component getModifierDescriptionComponent() {
+        if (modifier.tradeoff == null || modifier.tradeoff.isEmpty()) {
+            return net.minecraft.network.chat.Component.translatable("perk.tac_rogue.mod.none");
+        }
+        return net.minecraft.network.chat.Component.translatable(modifier.tradeoff);
     }
 
     /** 文字列として説明を返す（ログ等のフォールバック用） */
@@ -119,11 +134,26 @@ public class PerkDefinition {
 
     /** レア度に応じた色コード */
     public int getRarityColor() {
-        if (modifier.tier == 5) return modifier.color;
-        if (modifier.tier == 4) return modifier.color;
-        if (modifier == Modifier.BLESSED || modifier == Modifier.RADIANT) return modifier.color;
-        if (modifier == Modifier.REINFORCED) return modifier.color;
+        // MAINT-2: 全パスが modifier.color を返していたので簡略化
         return modifier.color;
+    }
+
+    /**
+     * PERF-2: パーク効果合算の共通ユーティリティ。
+     * CombatEventHandler と TacZEventHandler の両方で使用される。
+     * @param player 対象プレイヤー
+     * @param perkPrefix パークタグのプレフィックス（例: "perk:DAMAGE"）
+     * @return 全該当パークの効果値合計
+     */
+    public static float sumEffect(net.minecraft.server.level.ServerPlayer player, String perkPrefix) {
+        float total = 0;
+        for (String tag : player.getTags()) {
+            if (tag.startsWith(perkPrefix)) {
+                PerkDefinition perk = PerkDefinition.fromTag(tag);
+                total += perk.calculateEffect();
+            }
+        }
+        return total;
     }
 
     /** シリアライズ用のタグ文字列 (プレイヤーの Tag として保存) */

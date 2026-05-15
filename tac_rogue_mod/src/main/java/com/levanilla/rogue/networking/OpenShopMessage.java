@@ -16,7 +16,7 @@ public class OpenShopMessage {
     public static void handle(OpenShopMessage msg, Supplier<NetworkEvent.Context> ctx) {
         ctx.get().enqueueWork(() -> {
             net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(net.minecraftforge.api.distmarker.Dist.CLIENT, () -> () -> {
-                com.levanilla.rogue.client.ClientEventHandler.openInventoryWithTab(com.levanilla.rogue.client.RogueInventoryScreen.Tab.SHOP);
+                net.minecraft.client.Minecraft.getInstance().setScreen(new com.levanilla.rogue.client.ShopScreen());
             });
         });
         ctx.get().setPacketHandled(true);

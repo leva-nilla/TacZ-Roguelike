@@ -22,9 +22,12 @@ public class PerkScreen extends Screen {
 
     private final List<PerkDefinition> choices;
     private final boolean isBoss;
+    private int layoutCardWidth = 168;
+    private int layoutCardHeight = 210;
+    private int layoutGap = 8;
 
     public PerkScreen(boolean isBoss) {
-        super(Component.literal("SELECT ADAPTATION"));
+        super(Component.translatable("gui.tac_rogue.perk_screen.title.select"));
         this.isBoss = isBoss;
 
         // 既存のパークタグを収集
@@ -33,34 +36,56 @@ public class PerkScreen extends Screen {
         net.minecraft.client.player.LocalPlayer localPlayer = mc.player;
         if (localPlayer != null) {
             for (String tag : localPlayer.getTags()) {
-                if (tag.startsWith("perk:")) existing.add(tag);
+                if (tag.startsWith("perk:")) {
+                    existing.add(PerkDefinition.fromTag(tag).toTag());
+                }
             }
         }
 
         // パーク候補を生成
         int floor = RunManager.getCurrentFloor();
-        this.choices = PerkGenerator.generateChoices(floor, isBoss, existing);
+        int overclockedCount = 0;
+        if (localPlayer != null) {
+            for (String tag : localPlayer.getTags()) {
+                if (tag.contains(":OVERCLOCKED:")) {
+                    overclockedCount++;
+                }
+            }
+        }
+        this.choices = PerkGenerator.generateChoices(floor, isBoss, existing, overclockedCount);
     }
 
     /** 初期パーク選択用のコンストラクタ */
     public PerkScreen() {
-        super(Component.literal("INITIAL LOADOUT ADAPTATION"));
+        super(Component.translatable("gui.tac_rogue.perk_screen.title.initial"));
         this.isBoss = false;
         this.choices = PerkGenerator.generateInitialChoices();
     }
 
+    /**
+     * サーバーから受け取ったパーク候補で画面を構築するコンストラクタ（推奨ルート）。
+     * SEC-1対策: 候補はサーバー側で生成・セッション登録済み。
+     */
+    public PerkScreen(List<PerkDefinition> serverChoices, boolean isBoss) {
+        super(Component.translatable(isBoss ? "gui.tac_rogue.perk_screen.title.boss" : "gui.tac_rogue.perk_screen.title.mission"));
+        this.isBoss = isBoss;
+        this.choices = serverChoices;
+    }
+
     @Override
     protected void init() {
-        int cardWidth = 140;
-        int cardHeight = 180;  // 増加: 説明文+修飾子+トレードオフテキスト分の余裕を確保
-        int gap = 8;
-        int totalWidth = cardWidth * 3 + gap * 2;
+        int availableW = Math.max(300, this.width - 36);
+        int cardWidth = Math.min(178, Math.max(132, (availableW - layoutGap * 2) / 3));
+        int cardHeight = Math.min(240, Math.max(200, this.height - 92));
+        layoutCardWidth = cardWidth;
+        layoutCardHeight = cardHeight;
+        int totalWidth = cardWidth * 3 + layoutGap * 2;
         int startX = (this.width - totalWidth) / 2;
-        int startY = (this.height - cardHeight) / 2;
+        int startY = Math.max(42, (this.height - cardHeight) / 2 - 4);
 
         for (int i = 0; i < choices.size() && i < 3; i++) {
             PerkDefinition perk = choices.get(i);
-            int x = startX + i * (cardWidth + gap);
+            int x = startX + i * (cardWidth + layoutGap);
             int y = startY;
 
             this.addRenderableWidget(new PerkCardButton(x, y, cardWidth, cardHeight, perk, b -> {
@@ -69,6 +94,18 @@ public class PerkScreen extends Screen {
                 this.onClose();
             }));
         }
+
+        // REROLL ボタン
+        int btnW = 100;
+        int btnH = 20;
+        int bx = this.width / 2 - btnW / 2;
+        int by = Math.min(this.height - 24, startY + cardHeight + 12);
+        this.addRenderableWidget(net.minecraft.client.gui.components.Button.builder(
+            Component.translatable("gui.tac_rogue.perk_screen.reroll", com.levanilla.rogue.core.GameConstants.PERK_REROLL_COST),
+            b -> {
+                TacRogueNetworking.CHANNEL.sendToServer(new com.levanilla.rogue.networking.RogueActionMessage(com.levanilla.rogue.networking.RogueActionMessage.ActionType.REROLL_PERK));
+            }
+        ).bounds(bx, by, btnW, btnH).build());
     }
 
     @Override
@@ -76,18 +113,18 @@ public class PerkScreen extends Screen {
         this.renderBackground(graphics);
 
         // 背景パネル
-        int panelW = 440;
-        int panelH = 220;
+        int panelW = Math.min(this.width - 20, layoutCardWidth * 3 + layoutGap * 2 + 36);
+        int panelH = Math.min(this.height - 18, layoutCardHeight + 72);
         int px = (this.width - panelW) / 2;
-        int py = (this.height - panelH) / 2 - 30;
+        int py = Math.max(8, (this.height - panelH) / 2 - 10);
         graphics.fill(px - 10, py - 30, px + panelW + 10, py + panelH + 30, 0xBB001122);
         graphics.renderOutline(px - 10, py - 30, panelW + 20, panelH + 60, 0xAA00AAFF);
 
         // タイトル
-        String title = isBoss ? "§e§lBOSS REWARD — SELECT ELITE ADAPTATION" : "§bMISSION UPDATE — SELECT ADAPTATION";
+        Component title = Component.translatable(isBoss ? "gui.tac_rogue.perk_screen.title.boss" : "gui.tac_rogue.perk_screen.title.mission");
         graphics.drawCenteredString(this.font, title, this.width / 2, py - 20, 0xFFFFFFFF);
 
-        String subtitle = "§7Choose one enhancement to apply";
+        Component subtitle = Component.translatable("gui.tac_rogue.perk_screen.subtitle");
         graphics.drawCenteredString(this.font, subtitle, this.width / 2, py - 8, 0xFF888888);
 
         super.render(graphics, mouseX, mouseY, partialTick);
@@ -128,20 +165,16 @@ public class PerkScreen extends Screen {
             textY += 14;
 
             // 効果説明（tradeoffを除いた純粋な効果文のみ）
-            float effect = perk.calculateEffect();
-            String valueStr;
-            if (perk.category == PerkDefinition.Category.REGENERATION || perk.category == PerkDefinition.Category.VAMPIRE) {
-                valueStr = String.format("%.1f", effect / 10.0f);
-            } else {
-                valueStr = String.valueOf((int) effect);
-            }
-            net.minecraft.network.chat.Component pureDesc =
-                net.minecraft.network.chat.Component.translatable(perk.category.descriptionKey, valueStr);
+            net.minecraft.network.chat.Component pureDesc = perk.getDescriptionComponent();
             java.util.List<net.minecraft.util.FormattedCharSequence> wrappedDesc =
                 mc.font.split(pureDesc, this.width - 10);
+            int descLines = 0;
+            int maxDescLines = perk.modifier == PerkDefinition.Modifier.NONE ? 7 : 4;
             for (net.minecraft.util.FormattedCharSequence line : wrappedDesc) {
+                if (descLines >= maxDescLines || textY + 10 >= this.getY() + this.height - 78) break;
                 graphics.drawString(mc.font, line, textX, textY, 0xFFCCCCCC, false);
                 textY += 10;
+                descLines++;
             }
             textY += 6;
 
@@ -149,27 +182,49 @@ public class PerkScreen extends Screen {
             if (perk.modifier != PerkDefinition.Modifier.NONE) {
                 graphics.drawString(mc.font, "§7[" + perk.modifier.prefix + "]", textX, textY, perk.modifier.color, false);
                 textY += 12;
-                // 警告テキスト（tradeoff）を独立した赤行で表示
+                graphics.drawString(mc.font, Component.translatable("gui.tac_rogue.perk_screen.power", String.format(java.util.Locale.ROOT, "%.1f", perk.modifier.multiplier)),
+                    textX, textY, perk.modifier.color, false);
+                textY += 12;
                 if (!perk.modifier.tradeoff.isEmpty()) {
-                    net.minecraft.network.chat.Component tradeoffComp =
-                        net.minecraft.network.chat.Component.literal("§c⚠ ").append(
-                            net.minecraft.network.chat.Component.translatable(perk.modifier.tradeoff));
+                    net.minecraft.network.chat.Component tradeoffComp = perk.getModifierDescriptionComponent();
                     java.util.List<net.minecraft.util.FormattedCharSequence> wrapped =
-                        mc.font.split(tradeoffComp, this.width - 10);
+                        splitJapaneseFriendly(mc, tradeoffComp, this.width - 34);
+                    int lines = 0;
+                    int maxLines = Math.max(1, (this.getY() + this.height - 22 - textY) / 10);
                     for (net.minecraft.util.FormattedCharSequence line : wrapped) {
                         if (textY + 10 < this.getY() + this.height - 18) {
-                            graphics.drawString(mc.font, line, textX, textY, 0xFFFF4444, false);
+                            graphics.drawString(mc.font, line, textX, textY, perk.modifier.color, false);
                             textY += 10;
+                            lines++;
+                            if (lines >= maxLines) break;
                         }
+                    }
+                    if (this.isHoveredOrFocused() && lines < wrapped.size()) {
+                        graphics.renderComponentTooltip(mc.font,
+                            java.util.List.of(perk.getDescriptionComponent(), tradeoffComp), mouseX, mouseY);
                     }
                 }
             }
 
             // ホバー時の選択指示
             if (this.isHoveredOrFocused()) {
-                graphics.drawCenteredString(mc.font, "§a▶ CLICK TO SELECT",
+                graphics.drawCenteredString(mc.font, Component.translatable("gui.tac_rogue.perk_screen.click_select"),
                     this.getX() + this.width / 2, this.getY() + this.height - 14, 0xFF00FF00);
             }
+        }
+
+        private java.util.List<net.minecraft.util.FormattedCharSequence> splitJapaneseFriendly(
+                Minecraft mc, Component component, int width) {
+            java.util.List<net.minecraft.util.FormattedCharSequence> lines = new java.util.ArrayList<>();
+            String text = component.getString()
+                .replace("。", "。\n")
+                .replace(". ", ".\n")
+                .replace("; ", ";\n");
+            for (String paragraph : text.split("\\n")) {
+                if (paragraph.isBlank()) continue;
+                lines.addAll(mc.font.split(Component.literal(paragraph), width));
+            }
+            return lines;
         }
     }
 }

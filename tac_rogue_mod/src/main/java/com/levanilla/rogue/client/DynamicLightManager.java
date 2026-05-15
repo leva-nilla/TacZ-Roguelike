@@ -71,8 +71,8 @@ public final class DynamicLightManager {
         }
 
         // ローグダンジョン内でのみ動作
-        String dimNs = mc.player.level().dimension().location().getNamespace();
-        if (!"tac_rogue".equals(dimNs)) {
+        net.minecraft.resources.ResourceLocation dimension = mc.player.level().dimension().location();
+        if (!"tac_rogue".equals(dimension.getNamespace()) || !"rogue_dimension".equals(dimension.getPath())) {
             if (!lightPositions.isEmpty()) lightPositions.clear();
             return;
         }
@@ -91,9 +91,13 @@ public final class DynamicLightManager {
         // ビーム計算
         Map<BlockPos, Integer> newPositions = new HashMap<>();
 
-        // ClipContext (RayTrace) プレイヤーの目からBEAM_LENGTH先まで
+        int upgradeLevel = com.levanilla.rogue.core.ClientRunState.getFlashlightLevel();
+        int beamLength = BEAM_LENGTH + upgradeLevel * 2;
+        double maxSpread = SPREAD + upgradeLevel * 0.35D;
+
+        // ClipContext (RayTrace) プレイヤーの目からbeamLength先まで
         net.minecraft.world.level.ClipContext context = new net.minecraft.world.level.ClipContext(
-            eyePos, eyePos.add(lookDir.scale(BEAM_LENGTH)),
+            eyePos, eyePos.add(lookDir.scale(beamLength)),
             net.minecraft.world.level.ClipContext.Block.COLLIDER,
             net.minecraft.world.level.ClipContext.Fluid.NONE,
             mc.player
@@ -107,7 +111,7 @@ public final class DynamicLightManager {
             hitVec = hitVec.subtract(lookDir.scale(0.1));
         }
 
-        int lightLevel = GameConstants.FLASHLIGHT_LIGHT_LEVEL;
+        int lightLevel = Math.min(15, GameConstants.FLASHLIGHT_LIGHT_LEVEL + upgradeLevel / 2);
 
         // 右・上方向ベクトルの計算 (拡散用)
         Vec3 rightDir = new Vec3(-lookDir.z, 0, lookDir.x).normalize();
@@ -122,7 +126,7 @@ public final class DynamicLightManager {
 
         // 2. 距離に応じた拡散光の計算
         double distToHit = eyePos.distanceTo(hitVec);
-        double spread = Math.min(SPREAD, distToHit * 0.35); // 遠いほど広がる (最大 SPREAD)
+        double spread = Math.min(maxSpread, distToHit * 0.35); // 遠いほど広がる
 
         if (spread > 0.5) {
             // 壁に丸く当たるように上下左右に配置
@@ -172,6 +176,10 @@ public final class DynamicLightManager {
     public static int getDynamicLightAt(BlockPos pos) {
         Integer level = lightPositions.get(pos);
         return level != null ? level : 0;
+    }
+
+    public static boolean hasActiveLights() {
+        return !lightPositions.isEmpty();
     }
 
     /** クリーンアップ */

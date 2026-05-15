@@ -20,9 +20,10 @@ public class FloorSelectionScreen extends Screen {
     private final int imageHeight = 166;
     private int leftPos;
     private int topPos;
+    private boolean soloMode = true;
 
     public FloorSelectionScreen(int maxFloor, long worldSeed) {
-        super(Component.literal("Floor Selection"));
+        super(Component.translatable("gui.tac_rogue.floor_select.title"));
         this.maxFloor = maxFloor;
         this.worldSeed = worldSeed;
     }
@@ -34,9 +35,19 @@ public class FloorSelectionScreen extends Screen {
         this.topPos = (this.height - this.imageHeight) / 2;
 
         int listX = this.leftPos - 100;
-        int listY = this.topPos - 20;
+        int listY = this.topPos + 8;
         int listW = this.imageWidth + 200;
-        int listH = this.imageHeight + 40;
+        int listH = this.imageHeight + 12;
+
+        this.addRenderableWidget(net.minecraft.client.gui.components.Button.builder(
+            Component.translatable("gui.tac_rogue.floor_select.entry_solo"),
+            b -> {
+                soloMode = !soloMode;
+                b.setMessage(Component.translatable(soloMode
+                    ? "gui.tac_rogue.floor_select.entry_solo"
+                    : "gui.tac_rogue.floor_select.entry_public"));
+            }
+        ).bounds(this.leftPos - 100, this.topPos - 24, 112, 20).build());
 
         // Initialize the custom selection list for scrollable functionality
         this.floorList = new FloorSelectionList(this.minecraft, listW, listH, listY, listY + listH, 25);
@@ -68,11 +79,11 @@ public class FloorSelectionScreen extends Screen {
         for (int i = -30; i < imageHeight + 30; i += 20) graphics.fill(x - 105, y + i, x + imageWidth + 105, y + i + 1, 0x2200AAFF);
 
         // Title text
-        graphics.drawCenteredString(this.font, "§b[ REPLAY SECURED FLOORS ]", this.width / 2, this.topPos - 30, 0xFFFFFF);
+        graphics.drawCenteredString(this.font, Component.translatable("gui.tac_rogue.floor_select.replay_title"), this.width / 2, this.topPos - 30, 0xFFFFFF);
 
         if (maxFloor <= 0) {
-            graphics.drawCenteredString(this.font, "§cNo secured floors available.", this.width / 2, this.topPos + 30, 0xFFFFFF);
-            graphics.drawCenteredString(this.font, "Clear a floor to unlock replay.", this.width / 2, this.topPos + 45, 0xAAAAAA);
+            graphics.drawCenteredString(this.font, Component.translatable("gui.tac_rogue.floor_select.no_floors"), this.width / 2, this.topPos + 30, 0xFFFFFF);
+            graphics.drawCenteredString(this.font, Component.translatable("gui.tac_rogue.floor_select.unlock_hint"), this.width / 2, this.topPos + 45, 0xAAAAAA);
         }
 
         // Render the scrollable list on top
@@ -123,12 +134,14 @@ public class FloorSelectionScreen extends Screen {
                 graphics.fill(left, top, left + width, top + height - 2, bgColor);
 
                 // Floor text
-                String floorText = "§eFloor " + floor;
-                graphics.drawString(FloorSelectionScreen.this.font, floorText, left + 10, top + 5, 0xFFFFFF, true);
+                graphics.drawString(FloorSelectionScreen.this.font,
+                    Component.translatable("gui.tac_rogue.floor_select.floor", floor), left + 10, top + 5, 0xFFFFFF, true);
 
                 // Theme / Info text
                 int isBoss = ThemeManager.isBossFloor(floor) ? 0xFF5555 : 0xAAAAAA;
-                String infoText = (ThemeManager.isBossFloor(floor) ? "§c[BOSS] " : "") + themeName;
+                Component infoText = ThemeManager.isBossFloor(floor)
+                    ? Component.translatable("gui.tac_rogue.floor_select.boss_theme", themeName)
+                    : Component.literal(themeName);
                 graphics.drawString(FloorSelectionScreen.this.font, infoText, left + 60, top + 5, isBoss, true);
             }
 
@@ -136,7 +149,8 @@ public class FloorSelectionScreen extends Screen {
             public boolean mouseClicked(double mouseX, double mouseY, int button) {
                 if (button == 0) { // Left click
                     // Send packet to server
-                    TacRogueNetworking.CHANNEL.sendToServer(new RogueActionMessage(RogueActionMessage.ActionType.GOTO_FLOOR, String.valueOf(this.floor)));
+                    String mode = FloorSelectionScreen.this.soloMode ? "solo" : "public";
+                    TacRogueNetworking.CHANNEL.sendToServer(new RogueActionMessage(RogueActionMessage.ActionType.GOTO_FLOOR, this.floor + ":" + mode));
                     // Close the UI immediately
                     Minecraft.getInstance().setScreen(null);
                     return true;
@@ -146,7 +160,7 @@ public class FloorSelectionScreen extends Screen {
             
             @Override
             public Component getNarration() {
-                return Component.literal("Floor " + floor);
+                return Component.translatable("gui.tac_rogue.floor_select.floor", floor);
             }
         }
     }

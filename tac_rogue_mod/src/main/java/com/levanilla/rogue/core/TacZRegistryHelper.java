@@ -32,6 +32,7 @@ public class TacZRegistryHelper {
         SNIPER("SNIPER", 0xFFFF0066),
         LMG("LMG", 0xFFFFAA00),
         MELEE("MELEE", 0xFFFF3333),
+        TACTICAL("TACTICAL", 0xFFFF8800),
         ATTACHMENT("ATTACHMENT", 0xFF8800FF),
         AMMO("AMMO", 0xFF888888),
         SPECIAL("SPECIAL", 0xFFFFFF00);
@@ -42,7 +43,7 @@ public class TacZRegistryHelper {
 
         public boolean isWeapon() {
             return this == PISTOL || this == RIFLE || this == SMG
-                || this == SHOTGUN || this == SNIPER || this == LMG;
+                || this == SHOTGUN || this == SNIPER || this == LMG || this == TACTICAL;
         }
 
         public static ShopCategory fromInternal(ShopCatalog.Category cat) {
@@ -52,6 +53,8 @@ public class TacZRegistryHelper {
 
     // ===== ショップアイテムキャッシュ =====
     private static List<ShopCatalog.ShopItem> cachedShopItems = null;
+    private static final Map<ShopCatalog.Category, List<ShopCatalog.ShopItem>> cachedItemsByCategory =
+        new EnumMap<>(ShopCatalog.Category.class);
 
     /**
      * 全ショップアイテムを取得。
@@ -122,14 +125,15 @@ public class TacZRegistryHelper {
             items.addAll(ShopCatalog.getBuiltinAmmo());
         }
 
-        // 近接武器 + 特殊 (常にビルトイン) ===
+        // 近接武器 + 投擲武器 + 特殊 (lrtactical API 動的取得) ===
         items.addAll(ShopCatalog.getBuiltinMelee());
+        items.addAll(ShopCatalog.getBuiltinTactical());
         items.addAll(ShopCatalog.getBuiltinSpecial());
 
         // A-Z順にソートする前に、GameConstantsの倍率を適用する
         for (ShopCatalog.ShopItem item : items) {
             float mult = 1.0f;
-            if (item.category.isWeapon() || item.category == ShopCatalog.Category.MELEE) {
+            if (item.category.isWeapon() || item.category == ShopCatalog.Category.MELEE || item.category == ShopCatalog.Category.TACTICAL) {
                 mult = com.levanilla.rogue.core.GameConstants.PRICE_MULT_WEAPON;
             } else if (item.category == ShopCatalog.Category.ATTACHMENT) {
                 mult = com.levanilla.rogue.core.GameConstants.PRICE_MULT_ATTACHMENT;
@@ -157,10 +161,14 @@ public class TacZRegistryHelper {
 
     /** カテゴリでフィルタリング */
     public static List<ShopCatalog.ShopItem> getItemsByCategory(ShopCatalog.Category category) {
+        List<ShopCatalog.ShopItem> cached = cachedItemsByCategory.get(category);
+        if (cached != null) return cached;
+
         List<ShopCatalog.ShopItem> result = new ArrayList<>();
         for (ShopCatalog.ShopItem item : getAllShopItems()) {
             if (item.category == category) result.add(item);
         }
+        cachedItemsByCategory.put(category, result);
         return result;
     }
 
@@ -171,8 +179,20 @@ public class TacZRegistryHelper {
 
     /** キャッシュリセット */
     public static void clearCache() {
+        clearRegistryCache();
+        clearShopItemCache();
+    }
+
+    /** TacZ/LrTactical API 由来の構造キャッシュを破棄 */
+    public static void clearRegistryCache() {
         TacZGunRegistry.clearCache();
+        com.levanilla.rogue.core.registry.LrTacticalRegistry.clearCache();
+    }
+
+    /** ショップ表示名・カテゴリ別リストのキャッシュを破棄 */
+    public static void clearShopItemCache() {
         cachedShopItems = null;
+        cachedItemsByCategory.clear();
     }
 
     // ===== 委譲メソッド (後方互換 — TacZGunRegistry ベース) =====

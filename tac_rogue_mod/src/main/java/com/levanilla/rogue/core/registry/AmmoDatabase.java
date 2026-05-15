@@ -108,31 +108,21 @@ public final class AmmoDatabase {
         MAG_SIZE_MAP.put("tacz:rpg7", 1); MAG_SIZE_MAP.put("tacz:m320", 1);
     }
 
-    // ========== 弾薬スタックサイズ ==========
+    // ========== 弾薬スタックサイズ (TacZ APIから動的取得) ==========
 
-    private static final Map<String, Integer> AMMO_STACK_MAP = new HashMap<>();
-    static {
-        AMMO_STACK_MAP.put("tacz:9mm", 120);
-        AMMO_STACK_MAP.put("tacz:45acp", 100);
-        AMMO_STACK_MAP.put("tacz:50ae", 56);
-        AMMO_STACK_MAP.put("tacz:556x45", 120);
-        AMMO_STACK_MAP.put("tacz:762x39", 120);
-        AMMO_STACK_MAP.put("tacz:762x54", 60);
-        AMMO_STACK_MAP.put("tacz:545x39", 120);
-        AMMO_STACK_MAP.put("tacz:338", 40);
-        AMMO_STACK_MAP.put("tacz:12g", 24);
-        AMMO_STACK_MAP.put("tacz:50bmg", 40);
-        AMMO_STACK_MAP.put("tacz:46x30", 100);
-        AMMO_STACK_MAP.put("tacz:57x28", 100);
-        AMMO_STACK_MAP.put("tacz:308", 60);
-        AMMO_STACK_MAP.put("tacz:30_06", 40);
-        AMMO_STACK_MAP.put("tacz:357mag", 48);
-        AMMO_STACK_MAP.put("tacz:45_70", 24);
-        AMMO_STACK_MAP.put("tacz:58x42", 120);
-        AMMO_STACK_MAP.put("tacz:68x51fury", 80);
-        AMMO_STACK_MAP.put("tacz:762x25", 100);
-        AMMO_STACK_MAP.put("tacz:rpg_rocket", 8);
-        AMMO_STACK_MAP.put("tacz:40mm", 8);
+    /**
+     * 弾薬IDに対するスタックサイズをTacZのレジストリから動的に取得する。
+     * TacZの CommonAmmoIndex.getStackSize() が正式な基礎値。
+     */
+    public static int getAmmoStackSize(String ammoId) {
+        try {
+            net.minecraft.resources.ResourceLocation rl = new net.minecraft.resources.ResourceLocation(ammoId);
+            return com.tacz.guns.api.TimelessAPI.getCommonAmmoIndex(rl)
+                .map(com.tacz.guns.resource.index.CommonAmmoIndex::getStackSize)
+                .orElse(64);
+        } catch (Exception e) {
+            return 64;
+        }
     }
 
     // ========== アクセサ ==========
@@ -145,10 +135,5 @@ public final class AmmoDatabase {
     /** 銃のマガジンサイズを返す（不明は10） */
     public static int getMagazineSize(String gunId) {
         return MAG_SIZE_MAP.getOrDefault(gunId, 10);
-    }
-
-    /** 弾薬IDに対するスタックサイズを返す */
-    public static int getAmmoStackSize(String ammoId) {
-        return AMMO_STACK_MAP.getOrDefault(ammoId, 64);
     }
 }

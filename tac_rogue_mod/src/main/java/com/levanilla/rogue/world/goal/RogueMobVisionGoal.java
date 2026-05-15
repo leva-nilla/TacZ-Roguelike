@@ -1,5 +1,8 @@
 package com.levanilla.rogue.world.goal;
 
+import com.levanilla.rogue.core.RunManager;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.goal.target.TargetGoal;
@@ -37,6 +40,11 @@ public class RogueMobVisionGoal extends TargetGoal {
 
     @Override
     public boolean canUse() {
+        if (isBossMob()) {
+            targetPlayer = findNearestBossPlayer();
+            return targetPlayer != null;
+        }
+
         // 既にターゲットがいる場合はこのゴールの canUse で再評価しない（canContinueToUse が管理）
         Player current = (mob.getTarget() instanceof Player p) ? p : null;
         if (current != null && !current.isDeadOrDying() && mob.distanceTo(current) < CHASE_RANGE) {
@@ -58,6 +66,8 @@ public class RogueMobVisionGoal extends TargetGoal {
     @Override
     public boolean canContinueToUse() {
         if (targetPlayer == null || targetPlayer.isDeadOrDying()) return false;
+        if (isBossMob()) return !targetPlayer.isSpectator();
+
         // 追跡維持距離内ならターゲット継続（LOS不要だが時間制限あり）
         if (mob.distanceTo(targetPlayer) < CHASE_RANGE) {
             if (!mob.hasLineOfSight(targetPlayer)) {
@@ -97,6 +107,31 @@ public class RogueMobVisionGoal extends TargetGoal {
             e -> e instanceof Player p && !p.isSpectator() && !p.isDeadOrDying() && isInFovAndLOS(p)
         );
         return (found instanceof Player p) ? p : null;
+    }
+
+    private boolean isBossMob() {
+        return mob.getTags().contains("rogue:boss");
+    }
+
+    private Player findNearestBossPlayer() {
+        if (mob.level() instanceof ServerLevel serverLevel) {
+            ServerPlayer owner = RunManager.findPlayerForDungeonPosition(serverLevel, mob.getX(), mob.getZ(), 300.0D);
+            if (owner != null && owner.isAlive() && !owner.isSpectator()) {
+                return owner;
+            }
+        }
+
+        Player nearest = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (Player player : mob.level().players()) {
+            if (!player.isAlive() || player.isSpectator()) continue;
+            double distance = mob.distanceToSqr(player);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                nearest = player;
+            }
+        }
+        return nearest;
     }
 
     /**
