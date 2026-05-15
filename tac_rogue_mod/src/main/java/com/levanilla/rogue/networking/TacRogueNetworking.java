@@ -166,6 +166,12 @@ public class TacRogueNetworking {
                 .decoder(NpcInteractMessage::decode)
                 .consumerMainThread(NpcInteractMessage::handle)
                 .add();
+
+        CHANNEL.messageBuilder(AdsInputMessage.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(AdsInputMessage::encode)
+                .decoder(AdsInputMessage::decode)
+                .consumerMainThread(AdsInputMessage::handle)
+                .add();
     }
 
     /**

@@ -23,15 +23,18 @@ public final class PlayerPerkTickService {
         private static final PerkSnapshot EMPTY = new PerkSnapshot(
             new float[PerkDefinition.Category.values().length],
             new int[PerkDefinition.Modifier.values().length],
+            new int[PerkDefinition.CursedPenaltyTarget.values().length],
             0);
 
         private final float[] categoryEffects;
         private final int[] modifierCounts;
+        private final int[] cursedPenaltyCounts;
         private final int perkCount;
 
-        private PerkSnapshot(float[] categoryEffects, int[] modifierCounts, int perkCount) {
+        private PerkSnapshot(float[] categoryEffects, int[] modifierCounts, int[] cursedPenaltyCounts, int perkCount) {
             this.categoryEffects = categoryEffects;
             this.modifierCounts = modifierCounts;
+            this.cursedPenaltyCounts = cursedPenaltyCounts;
             this.perkCount = perkCount;
         }
 
@@ -41,6 +44,10 @@ public final class PlayerPerkTickService {
 
         public int modifierCount(PerkDefinition.Modifier modifier) {
             return modifierCounts[modifier.ordinal()];
+        }
+
+        public int cursedPenaltyCount(PerkDefinition.CursedPenaltyTarget target) {
+            return cursedPenaltyCounts[target.ordinal()];
         }
 
         public int perkCount() {
@@ -92,6 +99,7 @@ public final class PlayerPerkTickService {
     private static PerkSnapshot buildSnapshot(ServerPlayer player) {
         float[] categoryEffects = new float[PerkDefinition.Category.values().length];
         int[] modifierCounts = new int[PerkDefinition.Modifier.values().length];
+        int[] cursedPenaltyCounts = new int[PerkDefinition.CursedPenaltyTarget.values().length];
         int perkCount = 0;
 
         for (String tag : player.getTags()) {
@@ -99,10 +107,14 @@ public final class PlayerPerkTickService {
             PerkDefinition perk = PerkDefinition.fromTag(tag);
             categoryEffects[perk.category.ordinal()] += perk.calculateEffect();
             modifierCounts[perk.modifier.ordinal()]++;
+            if (perk.modifier == PerkDefinition.Modifier.CURSED) {
+                PerkDefinition.CursedPenaltyTarget target = PerkDefinition.resolveCursedPenaltyTarget(player.getUUID(), tag);
+                cursedPenaltyCounts[target.ordinal()]++;
+            }
             perkCount++;
         }
 
-        return perkCount == 0 ? PerkSnapshot.EMPTY : new PerkSnapshot(categoryEffects, modifierCounts, perkCount);
+        return perkCount == 0 ? PerkSnapshot.EMPTY : new PerkSnapshot(categoryEffects, modifierCounts, cursedPenaltyCounts, perkCount);
     }
 
     /**
@@ -118,25 +130,16 @@ public final class PlayerPerkTickService {
         float armorEffect = perks.effect(PerkDefinition.Category.ARMOR);
         float velocityEffect = perks.effect(PerkDefinition.Category.VELOCITY);
         float staminaEffect = perks.effect(PerkDefinition.Category.STAMINA);
-        int cursedCount = perks.modifierCount(PerkDefinition.Modifier.CURSED);
         int overclockedCount = perks.modifierCount(PerkDefinition.Modifier.OVERCLOCKED);
         int fracturedCount = perks.modifierCount(PerkDefinition.Modifier.FRACTURED);
         int primalCount = perks.modifierCount(PerkDefinition.Modifier.PRIMAL);
 
         // === 修飾子トレードオフの適用 ===
-        // CURSED: ランダムで1つのステータスを-10% (各CURSED perkごと)
-        if (cursedCount > 0) {
-            java.util.Random cursedRng = new java.util.Random(player.getUUID().hashCode());
-            for (int c = 0; c < cursedCount; c++) {
-                int target = cursedRng.nextInt(4);
-                switch (target) {
-                    case 0 -> vitalityEffect -= 10.0f; // HP -10%
-                    case 1 -> armorEffect -= 5.0f;     // Armor -5
-                    case 2 -> velocityEffect -= 10.0f; // Speed -10%
-                    case 3 -> staminaEffect -= 10.0f;  // Stamina -10%
-                }
-            }
-        }
+        // CURSED: each cursed perk rolls and stores a deterministic penalty target from its full perk tag.
+        vitalityEffect -= perks.cursedPenaltyCount(PerkDefinition.CursedPenaltyTarget.VITALITY) * 10.0f;
+        armorEffect -= perks.cursedPenaltyCount(PerkDefinition.CursedPenaltyTarget.ARMOR) * 10.0f;
+        velocityEffect -= perks.cursedPenaltyCount(PerkDefinition.CursedPenaltyTarget.VELOCITY) * 10.0f;
+        staminaEffect -= perks.cursedPenaltyCount(PerkDefinition.CursedPenaltyTarget.STAMINA) * 10.0f;
         // FRACTURED: 移動速度 -10% per perk
         velocityEffect -= fracturedCount * 10.0f;
         

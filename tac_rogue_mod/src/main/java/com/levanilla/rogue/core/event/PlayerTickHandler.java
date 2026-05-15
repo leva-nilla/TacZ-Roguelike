@@ -32,6 +32,9 @@ public class PlayerTickHandler {
         if (event.phase != TickEvent.Phase.END || !(event.player instanceof ServerPlayer player)) return;
 
         PlayerPerkTickService.PerkSnapshot perks = PlayerPerkTickService.getSnapshot(player);
+        if (perks.modifierCount(PerkDefinition.Modifier.TITANIC) > 0 && player.isSprinting()) {
+            player.setSprinting(false);
+        }
 
         // スタミナの自然回復/消費処理
         float adrenalineBonus = getAdrenalineBonus(perks);

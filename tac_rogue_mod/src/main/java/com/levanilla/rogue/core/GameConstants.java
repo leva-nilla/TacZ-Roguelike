@@ -192,8 +192,8 @@ public final class GameConstants {
     public static final int STAMINA_ADS_EXHAUST_GRACE_TICKS = 60;
     /** スタミナ切れADS継続時の移動速度ペナルティ */
     public static final double STAMINA_ADS_EXHAUST_SPEED_PENALTY = -0.35D;
-    /** スタミナ切れADS継続時の継続自傷ダメージ（HP/秒） */
-    public static final float STAMINA_ADS_EXHAUST_DAMAGE_PER_SECOND = 1.0f;
+    /** スタミナ切れADS継続時の継続自傷ダメージ（最大HPに対する割合/秒） */
+    public static final float STAMINA_ADS_EXHAUST_DAMAGE_PER_SECOND = 0.01f;
     /** スニーク中のADSスタミナ消費倍率 */
     public static final float STAMINA_ADS_SNEAK_MULT = 0.80f;
     /** 伏せ中のADSスタミナ消費倍率 */

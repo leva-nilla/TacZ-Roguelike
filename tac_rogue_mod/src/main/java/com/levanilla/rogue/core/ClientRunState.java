@@ -11,6 +11,8 @@ public final class ClientRunState {
     private static int gold = 0;
     private static int ammoCapacityLevel = 0;
     private static int flashlightLevel = 0;
+    private static float healthRatioOverride = Float.NaN;
+    private static long healthRatioOverrideUntilMs = 0L;
 
     private ClientRunState() {}
 
@@ -36,6 +38,23 @@ public final class ClientRunState {
 
     public static int getFlashlightLevel() {
         return flashlightLevel;
+    }
+
+    public static void setHealthOverride(float health, float maxHealth, long durationMs) {
+        healthRatioOverride = maxHealth > 0.0f
+            ? Math.max(0.0f, Math.min(1.0f, health / maxHealth))
+            : Float.NaN;
+        healthRatioOverrideUntilMs = System.currentTimeMillis() + Math.max(0L, durationMs);
+    }
+
+    public static float getHealthRatioOverride() {
+        if (Float.isNaN(healthRatioOverride)) return Float.NaN;
+        if (System.currentTimeMillis() > healthRatioOverrideUntilMs) {
+            healthRatioOverride = Float.NaN;
+            healthRatioOverrideUntilMs = 0L;
+            return Float.NaN;
+        }
+        return healthRatioOverride;
     }
 
     public static int getFloor() {

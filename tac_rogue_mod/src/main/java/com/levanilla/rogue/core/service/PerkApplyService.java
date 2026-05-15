@@ -38,10 +38,17 @@ public final class PerkApplyService {
         RogueActionMessage.clearPerkChoices(player.getUUID());
         int serial = player.getPersistentData().getInt("TacRoguePerkSerial") + 1;
         player.getPersistentData().putInt("TacRoguePerkSerial", serial);
-        player.addTag(perkTag + ":#" + serial);
+        String storedTag = perkTag + ":#" + serial;
+        player.addTag(storedTag);
         RunManager.savePerkTags(player);
+        net.minecraft.network.chat.MutableComponent acquired =
+            Component.literal(perk.getDisplayName() + " \u00A77- " + perk.getDescription());
+        if (perk.modifier == PerkDefinition.Modifier.CURSED) {
+            acquired.append(Component.literal(" \u00A78/ \u00A7c"));
+            acquired.append(PerkDefinition.getCursedPenaltyDescription(player.getUUID(), storedTag));
+        }
         player.sendSystemMessage(Component.translatable(
-            "message.tac_rogue.perk_acquired", perk.getDisplayName() + " \u00A77- " + perk.getDescription()));
+            "message.tac_rogue.perk_acquired", acquired));
         RunManager.syncPlayer(player);
         return true;
     }

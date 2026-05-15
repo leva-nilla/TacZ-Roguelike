@@ -7,6 +7,10 @@ import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.network.protocol.game.ClientboundSetHealthPacket;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -19,11 +23,13 @@ import java.util.UUID;
  * クライアント側: clientStamina / clientMaxStamina で同期値を表示用に保持。
  */
 public class StaminaManager {
+    private static final Logger LOGGER = LoggerFactory.getLogger(StaminaManager.class);
     private static final String BASE_MAX_STAMINA_KEY = "TacRogueBaseMaxStamina";
     private static final String CURRENT_STAMINA_KEY = "TacRogueCurrentStamina";
     private static final String MAX_STAMINA_KEY = "TacRogueMaxStamina";
     private static final String EXHAUSTED_KEY = "TacRogueStaminaExhausted";
     private static final String ADS_EXHAUST_PENALTY_KEY = "TacRogueAdsExhaustPenalty";
+    private static final String ADS_EXHAUST_DAMAGE_EVENT_KEY = "TacRogueAdsExhaustDamageEvent";
     private static final UUID ADS_EXHAUST_SPEED_UUID = UUID.fromString("64e17476-1f8f-42f5-92d1-c0214de97b1e");
     private static final Map<UUID, Float> PLAYER_STAMINA = new HashMap<>();
     private static final Map<UUID, Float> PLAYER_MAX_STAMINA = new HashMap<>();
@@ -31,6 +37,12 @@ public class StaminaManager {
     private static final Map<UUID, Boolean> PLAYER_EXHAUSTED = new HashMap<>();
     private static final Map<UUID, Integer> ADS_EXHAUST_TICKS = new HashMap<>();
     private static final Map<UUID, Long> ADS_EXHAUST_LAST_DAMAGE_TICK = new HashMap<>();
+    private static final Map<UUID, Boolean> CLIENT_ADS_INPUT = new HashMap<>();
+    private static final Map<UUID, Long> CLIENT_ADS_INPUT_TICK = new HashMap<>();
+    private static final Map<UUID, Float> ADS_FORCED_HEALTH = new HashMap<>();
+    private static final Map<UUID, Long> ADS_FORCED_HEALTH_UNTIL = new HashMap<>();
+    private static final Map<UUID, Long> ADS_DEBUG_TRACE_UNTIL = new HashMap<>();
+    private static final Map<UUID, Long> ADS_DEBUG_TRACE_LAST_TICK = new HashMap<>();
 
     // === サーバー側: 前回同期値（差分同期用） ===
     private static final Map<UUID, Float> lastSyncedStamina = new HashMap<>();
@@ -158,68 +170,40 @@ public class StaminaManager {
         boolean exhausted = isExhausted(player);
         boolean aiming = isAimingGun(player);
 
-        if (current > 0.0f) {
-            resetAdsExhaustion(player);
+        if (exhausted && player.isSprinting()) {
+            player.setSprinting(false);
         }
 
-        if (exhausted) {
-            if (player.isSprinting()) player.setSprinting(false);
-            if (aiming) {
-                if (current > 0.0f) {
-                    resetAdsExhaustion(player);
-                    current = Math.max(0.0f, current - getAdsStaminaCost(player));
-                    if (current > 0.0f) {
-                        resetAdsExhaustion(player);
-                    }
-                } else {
-                    current = 0.0f;
-                    int overTicks = ADS_EXHAUST_TICKS.merge(id, 1, Integer::sum);
-                    if (overTicks >= GameConstants.STAMINA_ADS_EXHAUST_GRACE_TICKS) {
-                        applyAdsExhaustPenalty(player);
-                        damageAdsExhaustedPlayer(player, current);
-                    }
-                }
-            } else {
-                resetAdsExhaustion(player);
-                current = Math.min(max, current + (GameConstants.STAMINA_REGEN_RATE * regenMultiplier));
-            }
-        } else {
-            resetAdsExhaustion(player);
-            if (player.isSprinting()) {
-                drain += GameConstants.STAMINA_CONSUME_RATE;
-            }
-
-            if (aiming) {
-                drain += getAdsStaminaCost(player);
-            }
-
-            if (drain > 0.0f) {
-                current = Math.max(0, current - drain);
-                if (current <= 0) {
-                    setExhausted(player, true);
-                    player.setSprinting(false);
-                }
-            } else {
-                current = Math.min(max, current + (GameConstants.STAMINA_REGEN_RATE * regenMultiplier));
-            }
+        if (!exhausted && player.isSprinting()) {
+            drain += GameConstants.STAMINA_CONSUME_RATE;
         }
+        if (aiming) {
+            drain += getAdsStaminaCost(player);
+        }
+
+        if (drain > 0.0f && current > 0.0f) {
+            current = Math.max(0.0f, current - drain);
+        } else if (drain <= 0.0f) {
+            current = Math.min(max, current + (GameConstants.STAMINA_REGEN_RATE * regenMultiplier));
+        }
+
         updateExhaustedState(player, current, max);
-        if (current > 0.0f) {
-            resetAdsExhaustion(player);
-        }
         exhausted = isExhausted(player);
         if (exhausted && player.isSprinting()) player.setSprinting(false);
+        updateAdsOveruseState(player, aiming, current);
+        enforceAdsFatigueHealth(player);
+        tickAdsDebugTrace(player, aiming, current);
 
         PLAYER_STAMINA.put(id, current);
         if (player.tickCount % 20 == 0) {
             saveToPersistentData(player);
         }
         
-        // Sync hunger visually while keeping vanilla sprint unlocked when rogue stamina remains.
+        // Sync hunger visually without ever reaching vanilla starvation.
         // foodLevel 18+ triggers vanilla natural regen, so the display is still capped at 17.
-        int displayFood = exhausted ? 0 : current > 0.0f
+        int displayFood = exhausted ? 1 : current > 0.0f
             ? Math.max(GameConstants.SPRINT_RESTORE_FOOD, Math.min(17, (int)((current / max) * 20.0f)))
-            : 0;
+            : 1;
         player.getFoodData().setFoodLevel(displayFood);
         player.getFoodData().setSaturation(0.0f);
         if (exhausted && player.isSprinting()) player.setSprinting(false);
@@ -271,6 +255,31 @@ public class StaminaManager {
         return exhausted;
     }
 
+    public static boolean isAdsExhaustDamage(Player player) {
+        return player.getPersistentData().getBoolean(ADS_EXHAUST_DAMAGE_EVENT_KEY);
+    }
+
+    public static void setClientAdsInput(Player player, boolean aiming) {
+        UUID id = player.getUUID();
+        CLIENT_ADS_INPUT.put(id, aiming);
+        CLIENT_ADS_INPUT_TICK.put(id, player.level().getGameTime());
+        if (isAdsTraceActive(player)) {
+            LOGGER.info("[TacRogue][ADS-trace] input player={} tick={} aiming={} heldGun={} hp={}/{} stamina={}/{} adsTicks={}",
+                player.getGameProfile().getName(),
+                player.level().getGameTime(),
+                aiming,
+                safeMainHandHoldGun(player),
+                String.format(java.util.Locale.ROOT, "%.3f", player.getHealth()),
+                String.format(java.util.Locale.ROOT, "%.3f", player.getMaxHealth()),
+                String.format(java.util.Locale.ROOT, "%.3f", getStamina(player)),
+                String.format(java.util.Locale.ROOT, "%.3f", getMaxStamina(player)),
+                ADS_EXHAUST_TICKS.getOrDefault(id, 0));
+        }
+        if (!aiming) {
+            resetAdsExhaustion(player);
+        }
+    }
+
     private static void updateExhaustedState(Player player, float current, float max) {
         if (current <= 0.0f) {
             setExhausted(player, true);
@@ -311,13 +320,35 @@ public class StaminaManager {
     }
 
     private static void resetAdsExhaustion(Player player) {
-        ADS_EXHAUST_TICKS.remove(player.getUUID());
+        UUID id = player.getUUID();
+        ADS_EXHAUST_TICKS.remove(id);
+        ADS_FORCED_HEALTH.remove(id);
+        ADS_FORCED_HEALTH_UNTIL.remove(id);
         clearAdsExhaustPenalty(player);
     }
 
+    private static void updateAdsOveruseState(Player player, boolean aiming, float finalStamina) {
+        if (!aiming || finalStamina > 0.0f) {
+            resetAdsExhaustion(player);
+            return;
+        }
+
+        int overTicks = ADS_EXHAUST_TICKS.merge(player.getUUID(), 1, Integer::sum);
+        if (overTicks >= GameConstants.STAMINA_ADS_EXHAUST_GRACE_TICKS) {
+            applyAdsExhaustPenalty(player);
+            damageAdsExhaustedPlayer(player, finalStamina);
+        } else if (overTicks == 1 || overTicks % 20 == 0) {
+            logAdsFatigue(player, "grace", finalStamina, 0.0f, player.getHealth(), player.getHealth(), overTicks);
+        }
+    }
+
     private static void damageAdsExhaustedPlayer(Player player, float currentStamina) {
-        if (player.level().isClientSide || player.isCreative() || player.isSpectator()) return;
-        if (currentStamina > 0.0f || getStamina(player) > 0.0f) {
+        if (player.level().isClientSide || player.isSpectator()) {
+            logAdsFatigue(player, "skip_side_or_spectator", currentStamina, 0.0f, player.getHealth(), player.getHealth(), getAdsOverTicks(player));
+            return;
+        }
+        if (currentStamina > 0.0f) {
+            logAdsFatigue(player, "skip_stamina_recovered", currentStamina, 0.0f, player.getHealth(), player.getHealth(), getAdsOverTicks(player));
             resetAdsExhaustion(player);
             return;
         }
@@ -325,17 +356,221 @@ public class StaminaManager {
         UUID id = player.getUUID();
         long now = player.level().getGameTime();
         long last = ADS_EXHAUST_LAST_DAMAGE_TICK.getOrDefault(id, Long.MIN_VALUE);
-        if (now - last < 20L) return;
+        if (last != Long.MIN_VALUE && now - last < 20L) {
+            return;
+        }
 
         ADS_EXHAUST_LAST_DAMAGE_TICK.put(id, now);
-        player.hurt(player.damageSources().generic(), GameConstants.STAMINA_ADS_EXHAUST_DAMAGE_PER_SECOND);
+        float damage = Math.max(0.0f, player.getMaxHealth() * GameConstants.STAMINA_ADS_EXHAUST_DAMAGE_PER_SECOND);
+        float beforeHealth = player.getHealth();
+        applyDirectAdsFatigueDamage(player, beforeHealth, damage);
+    }
+
+    private static void applyDirectAdsFatigueDamage(Player player, float beforeHealth, float damage) {
+        UUID id = player.getUUID();
+        float baseline = Math.min(beforeHealth, ADS_FORCED_HEALTH.getOrDefault(id, beforeHealth));
+        float nextHealth = Math.max(1.0f, baseline - damage);
+        if (nextHealth < beforeHealth) {
+            ADS_FORCED_HEALTH.put(id, nextHealth);
+            ADS_FORCED_HEALTH_UNTIL.put(id, player.level().getGameTime() + 30L);
+            applyForcedHealth(player, nextHealth, true);
+            logAdsFatigue(player, "apply", getStamina(player), damage, beforeHealth, nextHealth, getAdsOverTicks(player));
+        } else {
+            logAdsFatigue(player, "floor_or_no_delta", getStamina(player), damage, beforeHealth, nextHealth, getAdsOverTicks(player));
+        }
+    }
+
+    private static void enforceAdsFatigueHealth(Player player) {
+        UUID id = player.getUUID();
+        Float forced = ADS_FORCED_HEALTH.get(id);
+        if (forced == null) return;
+        long until = ADS_FORCED_HEALTH_UNTIL.getOrDefault(id, 0L);
+        if (player.level().getGameTime() > until) {
+            ADS_FORCED_HEALTH.remove(id);
+            ADS_FORCED_HEALTH_UNTIL.remove(id);
+            return;
+        }
+        if (player.getHealth() > forced) {
+            applyForcedHealth(player, forced, false);
+            logAdsFatigue(player, "enforce", getStamina(player), 0.0f, player.getHealth(), forced, getAdsOverTicks(player));
+        }
+    }
+
+    private static void applyForcedHealth(Player player, float health, boolean playEffect) {
+        float clamped = Math.max(1.0f, Math.min(player.getMaxHealth(), health));
+        player.invulnerableTime = 0;
+        player.setHealth(clamped);
+        player.hurtMarked = true;
+        if (playEffect) {
+            player.level().broadcastEntityEvent(player, (byte) 2);
+        }
+        if (player instanceof ServerPlayer serverPlayer) {
+            com.levanilla.rogue.core.event.CombatEventHandler.markPlayerDamaged(serverPlayer);
+            serverPlayer.connection.send(new ClientboundSetHealthPacket(
+                serverPlayer.getHealth(),
+                serverPlayer.getFoodData().getFoodLevel(),
+                serverPlayer.getFoodData().getSaturationLevel()));
+            com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
+                net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> serverPlayer),
+                new com.levanilla.rogue.networking.SyncDataMessage(String.format(java.util.Locale.ROOT,
+                    "health:%.4f:%.4f:1600", serverPlayer.getHealth(), serverPlayer.getMaxHealth()))
+            );
+        }
+    }
+
+    public static String debugStatus(Player player) {
+        UUID id = player.getUUID();
+        return String.format(java.util.Locale.ROOT,
+            "hp=%.3f/%.3f stamina=%.3f/%.3f exhausted=%s adsTicks=%d forcedHp=%s forcedUntil=%d aiming=%s clientAds=%s food=%d",
+            player.getHealth(),
+            player.getMaxHealth(),
+            getStamina(player),
+            getMaxStamina(player),
+            isExhausted(player),
+            ADS_EXHAUST_TICKS.getOrDefault(id, 0),
+            ADS_FORCED_HEALTH.containsKey(id) ? String.format(java.util.Locale.ROOT, "%.3f", ADS_FORCED_HEALTH.get(id)) : "none",
+            ADS_FORCED_HEALTH_UNTIL.getOrDefault(id, 0L),
+            isAimingGun(player),
+            hasFreshClientAdsInput(player),
+            player.getFoodData().getFoodLevel());
+    }
+
+    public static void startAdsDebugTrace(ServerPlayer player, int seconds) {
+        int clampedSeconds = Math.max(5, Math.min(120, seconds));
+        UUID id = player.getUUID();
+        ADS_DEBUG_TRACE_UNTIL.put(id, player.level().getGameTime() + clampedSeconds * 20L);
+        ADS_DEBUG_TRACE_LAST_TICK.remove(id);
+        LOGGER.info("[TacRogue][ADS-trace] start player={} seconds={} tick={} status={}",
+            player.getGameProfile().getName(),
+            clampedSeconds,
+            player.level().getGameTime(),
+            debugStatus(player));
+        player.displayClientMessage(net.minecraft.network.chat.Component.literal(
+            "§a[ADS TRACE] §f" + clampedSeconds + "s tracking started. Close chat and hold ADS."), false);
+    }
+
+    private static void tickAdsDebugTrace(Player player, boolean aiming, float finalStamina) {
+        if (!(player instanceof ServerPlayer serverPlayer)) return;
+        UUID id = player.getUUID();
+        Long until = ADS_DEBUG_TRACE_UNTIL.get(id);
+        if (until == null) return;
+
+        long now = player.level().getGameTime();
+        if (now > until) {
+            ADS_DEBUG_TRACE_UNTIL.remove(id);
+            ADS_DEBUG_TRACE_LAST_TICK.remove(id);
+            LOGGER.info("[TacRogue][ADS-trace] end player={} tick={} status={}",
+                player.getGameProfile().getName(),
+                now,
+                debugStatus(player));
+            serverPlayer.displayClientMessage(net.minecraft.network.chat.Component.literal("§7[ADS TRACE] ended"), false);
+            return;
+        }
+
+        long last = ADS_DEBUG_TRACE_LAST_TICK.getOrDefault(id, Long.MIN_VALUE);
+        if (now - last < 10L) return;
+        ADS_DEBUG_TRACE_LAST_TICK.put(id, now);
+
+        Float forced = ADS_FORCED_HEALTH.get(id);
+        String forcedText = forced == null ? "-" : String.format(java.util.Locale.ROOT, "%.2f", forced);
+        String phase = finalStamina > 0.0f ? "drain"
+            : aiming && getAdsOverTicks(player) >= GameConstants.STAMINA_ADS_EXHAUST_GRACE_TICKS ? "damage"
+            : aiming ? "grace"
+            : "idle";
+        String text = String.format(java.util.Locale.ROOT,
+            "§b[ADS] §f%s aim=%s client=%s hp=%.2f/%.2f sta=%.2f/%.2f ex=%s ticks=%d forced=%s food=%d",
+            phase,
+            aiming,
+            hasFreshClientAdsInput(player),
+            player.getHealth(),
+            player.getMaxHealth(),
+            finalStamina,
+            getMaxStamina(player),
+            isExhausted(player),
+            getAdsOverTicks(player),
+            forcedText,
+            player.getFoodData().getFoodLevel());
+        serverPlayer.displayClientMessage(net.minecraft.network.chat.Component.literal(text), true);
+        LOGGER.info("[TacRogue][ADS-trace] tick player={} tick={} phase={} aim={} clientAds={} heldGun={} hp={}/{} stamina={}/{} exhausted={} adsTicks={} forced={} forcedUntil={} food={} creative={} spectator={}",
+            player.getGameProfile().getName(),
+            now,
+            phase,
+            aiming,
+            hasFreshClientAdsInput(player),
+            safeMainHandHoldGun(player),
+            String.format(java.util.Locale.ROOT, "%.3f", player.getHealth()),
+            String.format(java.util.Locale.ROOT, "%.3f", player.getMaxHealth()),
+            String.format(java.util.Locale.ROOT, "%.3f", finalStamina),
+            String.format(java.util.Locale.ROOT, "%.3f", getMaxStamina(player)),
+            isExhausted(player),
+            getAdsOverTicks(player),
+            forcedText,
+            ADS_FORCED_HEALTH_UNTIL.getOrDefault(id, 0L),
+            player.getFoodData().getFoodLevel(),
+            player.isCreative(),
+            player.isSpectator());
+    }
+
+    private static int getAdsOverTicks(Player player) {
+        return ADS_EXHAUST_TICKS.getOrDefault(player.getUUID(), 0);
+    }
+
+    private static boolean isAdsTraceActive(Player player) {
+        Long until = ADS_DEBUG_TRACE_UNTIL.get(player.getUUID());
+        return until != null && player.level().getGameTime() <= until;
+    }
+
+    private static boolean safeMainHandHoldGun(Player player) {
+        try {
+            return IGun.mainHandHoldGun(player);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static void logAdsFatigue(Player player, String phase, float stamina, float damage,
+                                      float beforeHealth, float afterHealth, int adsTicks) {
+        if (!RogueConfig.debugLogs() && !isAdsTraceActive(player)) return;
+        LOGGER.info("[TacRogue][ADS-fatigue] phase={} player={} dim={} hp={}/{} -> {} damage={} stamina={}/{} exhausted={} adsTicks={} forced={} food={} creative={} spectator={}",
+            phase,
+            player.getGameProfile().getName(),
+            player.level().dimension().location(),
+            String.format(java.util.Locale.ROOT, "%.3f", beforeHealth),
+            String.format(java.util.Locale.ROOT, "%.3f", player.getMaxHealth()),
+            String.format(java.util.Locale.ROOT, "%.3f", afterHealth),
+            String.format(java.util.Locale.ROOT, "%.3f", damage),
+            String.format(java.util.Locale.ROOT, "%.3f", stamina),
+            String.format(java.util.Locale.ROOT, "%.3f", getMaxStamina(player)),
+            isExhausted(player),
+            adsTicks,
+            ADS_FORCED_HEALTH.containsKey(player.getUUID()) ? String.format(java.util.Locale.ROOT, "%.3f", ADS_FORCED_HEALTH.get(player.getUUID())) : "none",
+            player.getFoodData().getFoodLevel(),
+            player.isCreative(),
+            player.isSpectator());
     }
 
     private static boolean isAimingGun(Player player) {
+        if (hasFreshClientAdsInput(player)) return true;
         try {
             if (!IGun.mainHandHoldGun(player)) return false;
             IGunOperator operator = IGunOperator.fromLivingEntity(player);
             return operator != null && (operator.getSynIsAiming() || operator.getSynAimingProgress() > 0.05f);
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static boolean hasFreshClientAdsInput(Player player) {
+        UUID id = player.getUUID();
+        if (!Boolean.TRUE.equals(CLIENT_ADS_INPUT.get(id))) return false;
+        long tick = CLIENT_ADS_INPUT_TICK.getOrDefault(id, Long.MIN_VALUE);
+        if (player.level().getGameTime() - tick > 8L) {
+            CLIENT_ADS_INPUT.remove(id);
+            CLIENT_ADS_INPUT_TICK.remove(id);
+            return false;
+        }
+        try {
+            return IGun.mainHandHoldGun(player);
         } catch (Throwable ignored) {
             return false;
         }
@@ -373,6 +608,12 @@ public class StaminaManager {
         PLAYER_EXHAUSTED.clear();
         ADS_EXHAUST_TICKS.clear();
         ADS_EXHAUST_LAST_DAMAGE_TICK.clear();
+        CLIENT_ADS_INPUT.clear();
+        CLIENT_ADS_INPUT_TICK.clear();
+        ADS_FORCED_HEALTH.clear();
+        ADS_FORCED_HEALTH_UNTIL.clear();
+        ADS_DEBUG_TRACE_UNTIL.clear();
+        ADS_DEBUG_TRACE_LAST_TICK.clear();
         lastSyncedStamina.clear();
         lastSyncedMaxStamina.clear();
         lastSyncedExhausted.clear();

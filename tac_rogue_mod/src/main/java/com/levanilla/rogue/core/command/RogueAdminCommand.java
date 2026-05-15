@@ -9,6 +9,7 @@ import com.levanilla.rogue.core.PlayerRunData;
 import com.levanilla.rogue.core.QuestManager;
 import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.core.ShopStockManager;
+import com.levanilla.rogue.core.StaminaManager;
 import com.levanilla.rogue.core.TacZRegistryHelper;
 import com.levanilla.rogue.core.WeaponRarity;
 import com.levanilla.rogue.core.registry.ShopCatalog;
@@ -65,6 +66,17 @@ public class RogueAdminCommand {
                     )
                     .then(Commands.literal("reloadinfo")
                         .executes(context -> debugReloadInfo(context.getSource()))
+                    )
+                    .then(Commands.literal("stamina")
+                        .executes(context -> debugStamina(context.getSource()))
+                    )
+                    .then(Commands.literal("stamina_trace")
+                        .executes(context -> debugStaminaTrace(context.getSource(), 20))
+                        .then(Commands.argument("seconds", IntegerArgumentType.integer(5, 120))
+                            .executes(context -> debugStaminaTrace(
+                                context.getSource(),
+                                IntegerArgumentType.getInteger(context, "seconds")))
+                        )
                     )
                     .then(Commands.literal("quests")
                         .executes(context -> debugQuests(context.getSource()))
@@ -236,6 +248,25 @@ public class RogueAdminCommand {
         send(source, "origin=" + data.getDungeonOrigin()
             + " seed=" + data.getRunSeed()
             + " floorStartTick=" + data.getFloorStartTick());
+        send(source, "stamina=" + StaminaManager.debugStatus(player));
+        return 1;
+    }
+
+    private static int debugStamina(CommandSourceStack source) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        send(source, "Stamina / ADS fatigue");
+        send(source, StaminaManager.debugStatus(player));
+        return 1;
+    }
+
+    private static int debugStaminaTrace(CommandSourceStack source, int seconds) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        StaminaManager.startAdsDebugTrace(player, seconds);
+        send(source, "ADS stamina trace started for " + seconds + "s.");
         return 1;
     }
 

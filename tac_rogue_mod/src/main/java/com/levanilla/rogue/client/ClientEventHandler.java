@@ -10,6 +10,7 @@ import com.levanilla.rogue.client.renderer.TacRogueNpcRenderer;
 import com.levanilla.rogue.core.ModEntities;
 import com.levanilla.rogue.core.WeaponRarity;
 import com.levanilla.rogue.core.RunManager;
+import com.tacz.guns.api.item.IGun;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -36,6 +37,8 @@ public class ClientEventHandler {
     private static boolean lastSneakDown = false;
     private static boolean lastSneakKeyDown = false;
     private static boolean lastCrawlDown = false;
+    private static boolean lastAdsInputSent = false;
+    private static int lastAdsInputPacketTick = -20;
     private static boolean pendingWelcomeScreen = false;
     private static int pendingWelcomeTicks = 0;
 
@@ -400,6 +403,7 @@ public class ClientEventHandler {
 
             Minecraft mc = Minecraft.getInstance();
             handlePendingWelcomeScreen(mc);
+            syncAdsInput(mc);
             handleRogueSneakToggle(mc);
             KeyComboManager.tick(mc);
             if (LeaWindsCompat.isLeawindAvailable()) {
@@ -419,6 +423,26 @@ public class ClientEventHandler {
                 LeaWindsCompat.toggleAdsForceFirstPerson();
             }
         }
+    }
+
+    private static void syncAdsInput(Minecraft mc) {
+        boolean aiming = false;
+        if (mc.player != null && mc.level != null && mc.screen == null) {
+            try {
+                aiming = mc.options.keyUse.isDown() && IGun.mainHandHoldGun(mc.player);
+            } catch (Throwable ignored) {
+                aiming = false;
+            }
+        }
+
+        boolean changed = aiming != lastAdsInputSent;
+        boolean keepAlive = aiming && mc.player != null && mc.player.tickCount - lastAdsInputPacketTick >= 4;
+        if (!changed && !keepAlive) return;
+
+        lastAdsInputSent = aiming;
+        lastAdsInputPacketTick = mc.player != null ? mc.player.tickCount : lastAdsInputPacketTick;
+        com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.sendToServer(
+            new com.levanilla.rogue.networking.AdsInputMessage(aiming));
     }
 
     public static boolean isRogueSneakToggled() {

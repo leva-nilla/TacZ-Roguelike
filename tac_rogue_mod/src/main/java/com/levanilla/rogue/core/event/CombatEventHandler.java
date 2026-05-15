@@ -6,6 +6,7 @@ import com.levanilla.rogue.networking.TacRogueNetworking;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -53,6 +54,10 @@ public class CombatEventHandler {
         return lastDamageTickMap.getOrDefault(playerId, 0L);
     }
 
+    public static void markPlayerDamaged(ServerPlayer player) {
+        lastDamageTickMap.put(player.getUUID(), player.level().getGameTime());
+    }
+
     // Stealth target filtering: mobs do not acquire players outside their forward cone unless recently alerted.
     @SubscribeEvent
     public static void onLivingChangeTarget(net.minecraftforge.event.entity.living.LivingChangeTargetEvent event) {
@@ -85,6 +90,18 @@ public class CombatEventHandler {
     @SubscribeEvent
     public static void onLivingHurt(LivingHurtEvent event) {
         if (event.getEntity().level().isClientSide) return;
+
+        if ((event.getEntity().level().dimension() == ROGUE_DIM || event.getEntity().level().dimension() == LOBBY_DIM)
+                && event.getSource().is(DamageTypes.STARVE)) {
+            event.setCanceled(true);
+            return;
+        }
+
+        if (event.getEntity() instanceof ServerPlayer adsFatiguePlayer
+                && StaminaManager.isAdsExhaustDamage(adsFatiguePlayer)) {
+            lastDamageTickMap.put(adsFatiguePlayer.getUUID(), adsFatiguePlayer.level().getGameTime());
+            return;
+        }
 
         if (event.getSource().getDirectEntity() instanceof ServerPlayer srcPlayer) {
             net.minecraft.world.item.ItemStack hand = srcPlayer.getMainHandItem();

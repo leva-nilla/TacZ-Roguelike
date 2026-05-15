@@ -80,6 +80,19 @@ public class PerkDefinition {
         }
     }
 
+    public enum CursedPenaltyTarget {
+        VITALITY("perk.tac_rogue.cursed.vitality"),
+        ARMOR("perk.tac_rogue.cursed.armor"),
+        VELOCITY("perk.tac_rogue.cursed.velocity"),
+        STAMINA("perk.tac_rogue.cursed.stamina");
+
+        public final String descriptionKey;
+
+        CursedPenaltyTarget(String descriptionKey) {
+            this.descriptionKey = descriptionKey;
+        }
+    }
+
     // ===== フィールド =====
     public final Category category;
     public final Modifier modifier;
@@ -125,6 +138,17 @@ public class PerkDefinition {
             return net.minecraft.network.chat.Component.translatable("perk.tac_rogue.mod.none");
         }
         return net.minecraft.network.chat.Component.translatable(modifier.tradeoff);
+    }
+
+    public static CursedPenaltyTarget resolveCursedPenaltyTarget(java.util.UUID playerId, String perkTag) {
+        int seed = 31 * playerId.hashCode() + (perkTag == null ? 0 : perkTag.hashCode());
+        CursedPenaltyTarget[] values = CursedPenaltyTarget.values();
+        return values[Math.floorMod(seed, values.length)];
+    }
+
+    public static net.minecraft.network.chat.Component getCursedPenaltyDescription(java.util.UUID playerId, String perkTag) {
+        CursedPenaltyTarget target = resolveCursedPenaltyTarget(playerId, perkTag);
+        return net.minecraft.network.chat.Component.translatable(target.descriptionKey);
     }
 
     /** 文字列として説明を返す（ログ等のフォールバック用） */

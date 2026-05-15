@@ -19,6 +19,10 @@ public final class ClientSyncHandler {
                 handleStamina(data);
                 return;
             }
+            if (data.startsWith("health:")) {
+                handleHealth(data);
+                return;
+            }
             if (data.startsWith("perks:")) {
                 handlePerks(data);
                 return;
@@ -88,6 +92,16 @@ public final class ClientSyncHandler {
             float maxStamina = Float.parseFloat(parts[1]);
             boolean exhausted = parts.length >= 3 && ("1".equals(parts[2]) || Boolean.parseBoolean(parts[2]));
             StaminaManager.setClientData(stamina, maxStamina, exhausted);
+        }
+    }
+
+    private static void handleHealth(String data) {
+        String[] parts = data.substring(7).split(":");
+        if (parts.length >= 2) {
+            float health = Float.parseFloat(parts[0]);
+            float maxHealth = Float.parseFloat(parts[1]);
+            long durationMs = parts.length >= 3 ? Long.parseLong(parts[2]) : 1500L;
+            ClientRunState.setHealthOverride(health, maxHealth, durationMs);
         }
     }
 

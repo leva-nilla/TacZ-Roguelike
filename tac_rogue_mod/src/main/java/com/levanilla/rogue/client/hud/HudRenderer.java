@@ -44,6 +44,10 @@ public final class HudRenderer {
         float absorptionAmount = player.getAbsorptionAmount();
         float totalHealth = health + absorptionAmount;
         float targetHealthRatio = maxHealth > 0.0f ? Math.max(0.0f, totalHealth / maxHealth) : 0.0f;
+        float syncedHealthOverride = com.levanilla.rogue.core.ClientRunState.getHealthRatioOverride();
+        if (!Float.isNaN(syncedHealthOverride)) {
+            targetHealthRatio = syncedHealthOverride;
+        }
         if (!displayedHealthInitialized) {
             displayedHealthRatio = targetHealthRatio;
             displayedHealthInitialized = true;

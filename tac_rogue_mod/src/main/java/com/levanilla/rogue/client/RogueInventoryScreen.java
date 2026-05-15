@@ -531,8 +531,26 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         lines.add(tr("gui.tac_rogue.status.regen_delay",
             String.format(java.util.Locale.ROOT, "%.1fs", GameConstants.REGEN_DAMAGE_COOLDOWN_TICKS / 20.0f)));
         lines.add(tr("gui.tac_rogue.status.ads_stamina_drain", fmtMult(Math.max(0.1f, 1.0f - staminaBonus / 200.0f))));
+        addCursedPenaltyDetailLines(player, lines);
         lines.add(tr("gui.tac_rogue.status.flashlight_level", com.levanilla.rogue.core.ClientRunState.getFlashlightLevel()));
         return lines;
+    }
+
+    private static void addCursedPenaltyDetailLines(net.minecraft.client.player.LocalPlayer player, List<String> lines) {
+        int[] counts = new int[PerkDefinition.CursedPenaltyTarget.values().length];
+        for (String tag : player.getTags()) {
+            if (!tag.startsWith("perk:")) continue;
+            PerkDefinition perk = PerkDefinition.fromTag(tag);
+            if (perk.modifier != PerkDefinition.Modifier.CURSED) continue;
+            PerkDefinition.CursedPenaltyTarget target = PerkDefinition.resolveCursedPenaltyTarget(player.getUUID(), tag);
+            counts[target.ordinal()]++;
+        }
+        for (PerkDefinition.CursedPenaltyTarget target : PerkDefinition.CursedPenaltyTarget.values()) {
+            int count = counts[target.ordinal()];
+            if (count <= 0) continue;
+            String desc = Component.translatable(target.descriptionKey).getString();
+            lines.add(tr("gui.tac_rogue.status.cursed_penalty", count == 1 ? desc : desc + " x" + count));
+        }
     }
 
     private static int countModifier(net.minecraft.client.player.LocalPlayer player, PerkDefinition.Modifier modifier) {
@@ -609,7 +627,8 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
     }
 
     // === Perk grouping data class ===
-    private record PerkGroupEntry(String categoryKey, PerkDefinition samplePerk, int count, float totalEffect, List<PerkDefinition> perks) {}
+    private record PerkGroupEntry(String categoryKey, PerkDefinition samplePerk, int count, float totalEffect,
+                                  List<PerkDefinition> perks, List<String> tags) {}
 
     private List<PerkGroupEntry> buildPerkGroups(net.minecraft.client.player.LocalPlayer player) {
         List<String> perkTags = new ArrayList<>();
@@ -625,17 +644,19 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         }
 
         Map<String, List<PerkDefinition>> grouped = new LinkedHashMap<>();
+        Map<String, List<String>> groupedTags = new LinkedHashMap<>();
         for (String tag : perkTags) {
             PerkDefinition perk = PerkDefinition.fromTag(tag);
             String key = perk.category.name(); // modifierの違いを無視してカテゴリでまとめる
             grouped.computeIfAbsent(key, k -> new ArrayList<>()).add(perk);
+            groupedTags.computeIfAbsent(key, k -> new ArrayList<>()).add(tag);
         }
         List<PerkGroupEntry> result = new ArrayList<>();
         for (var entry : grouped.entrySet()) {
             List<PerkDefinition> perks = entry.getValue();
             float totalEffect = 0;
             for (PerkDefinition p : perks) totalEffect += p.calculateEffect();
-            result.add(new PerkGroupEntry(entry.getKey(), perks.get(0), perks.size(), totalEffect, perks));
+            result.add(new PerkGroupEntry(entry.getKey(), perks.get(0), perks.size(), totalEffect, perks, groupedTags.get(entry.getKey())));
         }
         result.sort(java.util.Comparator.comparing(g -> g.samplePerk().category.displayName.toLowerCase(java.util.Locale.ROOT)));
         cachedPerkTagSignature = signature;
@@ -717,10 +738,10 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
 
         // === Cursed penalty summary ===
         int cursedCount = 0;
-        List<PerkDefinition> cursedPerks = new ArrayList<>();
+        List<String> cursedTags = new ArrayList<>();
         for (String tag : player.getTags()) {
             if (tag.startsWith("perk:") && tag.contains(":CURSED:")) {
-                cursedPerks.add(PerkDefinition.fromTag(tag));
+                cursedTags.add(tag);
                 cursedCount++;
             }
         }
@@ -741,10 +762,9 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
                     int lineY = summaryY + 12;
                     int shown = 0;
 
-                    for (int i = cursedStartOffset; i < cursedPerks.size() && shown < effectiveLines; i++) {
+                    for (int i = cursedStartOffset; i < cursedTags.size() && shown < effectiveLines; i++) {
                         if (lineY + 10 > panelBottom) break; // パネル外なら描画しない
-                        PerkDefinition cp = cursedPerks.get(i);
-                        String penalty = getCursedPenaltyText(cp);
+                        String penalty = getCursedPenaltyText(player, cursedTags.get(i));
                         graphics.pose().pushPose();
                         graphics.pose().translate(rightX + 8, lineY, 0);
                         graphics.pose().scale(0.75f, 0.75f, 1.0f); // 少し小さくしてはみ出し防止
@@ -778,20 +798,8 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
     }
 
     /** Cursed パークのペナルティテキストを返す */
-    private String getCursedPenaltyText(PerkDefinition perk) {
-        String effect = String.format("%.0f", perk.calculateEffect());
-        return switch (perk.category) {
-            case VITALITY -> "\u00A7c-" + effect + "% Max HP";
-            case ARMOR -> "\u00A7c-" + effect + "% Armor";
-            case VELOCITY -> "\u00A7c-" + effect + "% Movement Speed";
-            case DAMAGE -> "\u00A7c-" + effect + "% Accuracy (recoil+)";
-            case FIRE_RATE -> "\u00A7c-" + effect + "% Fire Rate";
-            case RELOAD_SPEED -> "\u00A7c-" + effect + "% Reload Speed";
-            case AUTOLOADER -> "\u00A7c-" + fmtAutoloaderRate(perk.calculateEffect()) + " Autoload";
-            case STAMINA -> "\u00A7c-" + effect + "% Stamina Regen";
-            case RESISTANCE -> "\u00A7c-" + effect + "% Special Resist";
-            default -> "\u00A7c\u2022 " + perk.category.displayName + " penalty";
-        };
+    private String getCursedPenaltyText(net.minecraft.client.player.LocalPlayer player, String perkTag) {
+        return "\u00A7c" + PerkDefinition.getCursedPenaltyDescription(player.getUUID(), perkTag).getString();
     }
 
     /** パークホバー時のツールチップ (グループ化対応) */
@@ -821,7 +829,8 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         tooltip.add(Component.literal("\u00A77Per unit: " + unitStr + "  \u00A7aTotal: " + totalStr));
 
         boolean hasModifiers = false;
-        for (PerkDefinition pk : group.perks()) {
+        for (int i = 0; i < group.perks().size(); i++) {
+            PerkDefinition pk = group.perks().get(i);
             if (pk.modifier != PerkDefinition.Modifier.NONE) {
                 if (!hasModifiers) {
                     tooltip.add(Component.literal("\u00A77Modifiers:"));
@@ -833,7 +842,8 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
                 }
                 tooltip.add(modLine);
                 if (pk.modifier == PerkDefinition.Modifier.CURSED) {
-                    tooltip.add(Component.literal("   " + getCursedPenaltyText(pk)));
+                    String perkTag = i < group.tags().size() ? group.tags().get(i) : pk.toTag();
+                    tooltip.add(Component.literal("   " + getCursedPenaltyText(player, perkTag)));
                 }
             }
         }
