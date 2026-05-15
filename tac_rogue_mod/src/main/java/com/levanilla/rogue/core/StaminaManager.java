@@ -159,11 +159,13 @@ public class StaminaManager {
             if (player.isSprinting()) player.setSprinting(false);
             if (aiming) {
                 if (current > 0.0f) {
+                    resetAdsExhaustion(player);
                     current = Math.max(0.0f, current - getAdsStaminaCost(player));
                     if (current > 0.0f) {
                         resetAdsExhaustion(player);
                     }
                 } else {
+                    current = 0.0f;
                     int overTicks = ADS_EXHAUST_TICKS.merge(id, 1, Integer::sum);
                     if (overTicks >= GameConstants.STAMINA_ADS_EXHAUST_GRACE_TICKS) {
                         applyAdsExhaustPenalty(player);
@@ -308,6 +310,10 @@ public class StaminaManager {
 
     private static void damageAdsExhaustedPlayer(Player player) {
         if (player.level().isClientSide || player.isCreative() || player.isSpectator()) return;
+        if (getStamina(player) > 0.0f) {
+            resetAdsExhaustion(player);
+            return;
+        }
 
         UUID id = player.getUUID();
         long now = player.level().getGameTime();
