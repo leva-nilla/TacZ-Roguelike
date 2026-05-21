@@ -45,6 +45,16 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         this.shopPage = 0;
     }
 
+    Tab activeTab() { return activeTab; }
+    int tabX() { return tabX; }
+    int tabY() { return tabY; }
+    int leftPos() { return leftPos; }
+    int topPos() { return topPos; }
+    int rogueImageWidth() { return imageWidth; }
+    int rogueImageHeight() { return imageHeight; }
+    net.minecraft.client.gui.Font rogueFont() { return font; }
+    AbstractContainerMenu rogueMenu() { return menu; }
+
     public RogueInventoryScreen(AbstractContainerMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
         this.imageWidth = 236;
@@ -57,11 +67,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         int x = this.leftPos;
         int y = this.topPos;
 
-        // --- 繝上う繝・け縺ｪ繧ｵ繧､繝舌・繝代Φ繧ｯ鬚ｨ閭梧勹縺ｮ謠冗判 ---
-        graphics.fill(x - 110, y - 40, x + imageWidth + 110, y + imageHeight + 40, 0xAA001122);
-        graphics.renderOutline(x - 110, y - 40, imageWidth + 220, imageHeight + 80, 0xAA00AAFF);
-        for (int i = -100; i < imageWidth + 100; i += 20) graphics.fill(x + i, y - 35, x + i + 1, y + imageHeight + 35, 0x2200AAFF);
-        for (int i = -30; i < imageHeight + 30; i += 20) graphics.fill(x - 105, y + i, x + imageWidth + 105, y + i + 1, 0x2200AAFF);
+        RogueInventoryTabContainer.renderChrome(this, graphics, x, y);
 
         net.minecraft.client.player.LocalPlayer player = net.minecraft.client.Minecraft.getInstance().player;
 
@@ -110,30 +116,10 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         if (activeTab == Tab.INVENTORY) {
             super.render(graphics, mouseX, mouseY, partialTick);
 
-            // --- キャラクターモデル表示パネル ---
-            int panelX = x - 95;
-            int panelY = y + 5;
-            int panelW = 80;
-            int panelH = 130;
-            graphics.fill(panelX, panelY, panelX + panelW, panelY + panelH, 0x88001133);
-            graphics.renderOutline(panelX, panelY, panelW, panelH, 0xAA00CCFF);
-            graphics.drawString(this.font, "\u00A7b\u2605 OPERATOR", panelX + 4, panelY + 3, 0xFF00AAFF, false);
-
-            if (player != null) {
-                int entityX = panelX + panelW / 2;
-                int entityY = panelY + panelH - 10;
-                float scale = 38.0f;
-                float lookX = entityX - mouseX;
-                float lookY = (entityY - 60) - mouseY;
-                net.minecraft.client.gui.screens.inventory.InventoryScreen.renderEntityInInventoryFollowsMouse(
-                    graphics, entityX, entityY, (int) scale, lookX, lookY, player);
-            }
+            InventoryTabRenderer.renderOperatorPanel(this, graphics, player, mouseX, mouseY, x, y);
         }
 
-        Component statusText = RunManager.isRunActive() ? 
-            Component.translatable("gui.tac_rogue.inventory.operator_status", RunManager.getCurrentFloor()) : 
-            Component.translatable("gui.tac_rogue.inventory.base_command");
-        graphics.drawString(this.font, statusText, x - 100, y - 55, 0xFF00FFFF, false);
+        RogueInventoryTabContainer.renderTitle(this, graphics, x, y);
 
         renderTabHighlight(graphics);
 
@@ -397,13 +383,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
     }
 
     private void renderTabHighlight(GuiGraphics graphics) {
-        int[] offsets = {-6, 61, 113, 165, 217, 284};
-        int[] widths = {65, 50, 50, 50, 65, 55};
-        int index = activeTab.ordinal();
-        if (index >= 0 && index < offsets.length) {
-            graphics.fill(tabX + offsets[index], tabY, tabX + offsets[index] + widths[index], tabY + 15, 0x4400FFFF);
-            graphics.renderOutline(tabX + offsets[index], tabY, widths[index], 15, 0xFF00FFFF);
-        }
+        RogueInventoryTabContainer.renderTabHighlight(this, graphics);
     }
 
     private void renderStatusTab(GuiGraphics graphics, net.minecraft.client.player.LocalPlayer player, int x, int y) {
@@ -1417,81 +1397,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
     @Override
     protected void renderBg(GuiGraphics g, float partialTick, int mouseX, int mouseY) {
         if (activeTab != Tab.INVENTORY) return;
-        int bx = this.leftPos;
-        int by = this.topPos;
-
-        // Main inventory area background
-        g.fill(bx, by, bx + imageWidth, by + imageHeight, 0x88001122);
-        g.fill(bx + 8, by + 18, bx + 88, by + 62, 0x33100000);
-        g.renderOutline(bx + 8, by + 18, 80, 44, 0x66AA5533);
-        g.fill(bx + 94, by + 18, bx + 164, by + 88, 0x33102010);
-        g.renderOutline(bx + 94, by + 18, 70, 70, 0x6644AA55);
-        g.fill(bx + 168, by + 18, bx + 218, by + 68, 0x33303010);
-        g.renderOutline(bx + 168, by + 18, 50, 50, 0x66AAAA44);
-        g.fill(bx + 8, by + 104, bx + 220, by + 160, 0x33202028);
-        g.renderOutline(bx + 8, by + 104, 212, 56, 0x66556688);
-
-        // Draw slot backgrounds by type
-        for (int i = 0; i < this.menu.slots.size(); i++) {
-            if (i <= 8 || i == 45) continue;
-            net.minecraft.world.inventory.Slot slot = this.menu.slots.get(i);
-            int sx = bx + slot.x - 1;
-            int sy = by + slot.y - 1;
-            int bgColor;
-            String label = null;
-
-            if (i >= 36 && i <= 37) {
-                // GUN slots (hotbar 0-1)
-                bgColor = 0x55FF4422;
-                if (i == 36) label = "\u00A7cG1";
-                else label = "\u00A7cG2";
-            } else if (i == 38) {
-                // MELEE slot (hotbar 2)
-                bgColor = 0x552244FF;
-                label = "\u00A79M";
-            } else if ((i >= 39 && i <= 44) || (i >= 9 && i <= 11)) {
-                // ITEM slots (hotbar 3-8 + extended quick slots 9-11)
-                bgColor = i <= 11 ? 0x6633AA66 : 0x5522FF22;
-                if (i >= 9 && i <= 11) label = "\u00A7aE" + (i - 8);
-            } else if (i >= 12 && i <= 15) {
-                // AMMO slots (inv 12-15)
-                boolean isGun2 = (i >= 14);
-                bgColor = isGun2 ? 0x5500AAFF : 0x55FFFF00;
-                if (i == 12) label = "\u00A7eA1";
-                else if (i == 14) label = "\u00A7bA2";
-            } else if (i >= 16 && i <= 35) {
-                // Expandable inventory slots
-                net.minecraft.world.item.ItemStack stack = slot.getItem();
-                boolean isLocked = stack.is(net.minecraft.world.item.Items.BARRIER)
-                    && stack.hasTag() && stack.getOrCreateTag().getBoolean("rogue_item_locked");
-                bgColor = isLocked ? 0x44330000 : 0x33FFFFFF;
-            } else {
-                bgColor = 0x22FFFFFF;
-            }
-
-            g.fill(sx, sy, sx + 18, sy + 18, bgColor);
-            g.renderOutline(sx, sy, 18, 18, (bgColor & 0x00FFFFFF) | 0x66000000);
-
-            // Draw slot label in top-left corner
-            if (label != null) {
-                g.pose().pushPose();
-                g.pose().translate(sx + 1, sy + 1, 300);
-                g.pose().scale(0.5f, 0.5f, 1.0f);
-                g.drawString(this.font, label, 0, 0, 0x88FFFFFF, false);
-                g.pose().popPose();
-            }
-        }
-
-        // Section labels
-        g.pose().pushPose();
-        g.pose().translate(0, 0, 300);
-        g.pose().scale(0.6f, 0.6f, 1.0f);
-        float invScale = 1.0f / 0.6f;
-        g.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.section.gun_melee"), (int)((bx + 12) * invScale), (int)((by + 22) * invScale), 0xAAFF7755, false);
-        g.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.section.items"), (int)((bx + 98) * invScale), (int)((by + 10) * invScale), 0xAA55DD77, false);
-        g.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.section.ammo"), (int)((bx + 172) * invScale), (int)((by + 10) * invScale), 0xAAAAA800, false);
-        g.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.section.backpack"), (int)((bx + 12) * invScale), (int)((by + 98) * invScale), 0xAAAAAAAA, false);
-        g.pose().popPose();
+        InventoryTabRenderer.renderBackground(this, g);
     }
     @Override protected void renderLabels(GuiGraphics g, int x, int y) {}
 

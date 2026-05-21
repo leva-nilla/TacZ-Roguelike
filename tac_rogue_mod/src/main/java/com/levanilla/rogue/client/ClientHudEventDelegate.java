@@ -1,0 +1,157 @@
+package com.levanilla.rogue.client;
+
+import com.levanilla.rogue.client.compat.LeaWindsCompat;
+import com.levanilla.rogue.client.hud.DamageIndicatorRenderer;
+import com.levanilla.rogue.client.hud.HotbarRenderer;
+import com.levanilla.rogue.client.hud.HudRenderer;
+import com.levanilla.rogue.client.hud.NotificationManager;
+import com.levanilla.rogue.core.RunManager;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.player.Player;
+import net.minecraftforge.client.event.RenderGuiOverlayEvent;
+import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
+
+final class ClientHudEventDelegate {
+    private ClientHudEventDelegate() {}
+
+    static void onRenderGuiOverlay(RenderGuiOverlayEvent.Pre event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (!ClientInputEventDelegate.isRogueContext(mc)) return;
+        if (event.getOverlay().id().equals(VanillaGuiOverlay.PLAYER_HEALTH.id()) ||
+            event.getOverlay().id().equals(VanillaGuiOverlay.FOOD_LEVEL.id()) ||
+            event.getOverlay().id().equals(VanillaGuiOverlay.ARMOR_LEVEL.id()) ||
+            event.getOverlay().id().equals(VanillaGuiOverlay.EXPERIENCE_BAR.id()) ||
+            event.getOverlay().id().equals(VanillaGuiOverlay.AIR_LEVEL.id())) {
+            event.setCanceled(true);
+        }
+    }
+
+    static void onRenderHotbar(RenderGuiOverlayEvent.Pre event) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return;
+
+        boolean isRogueDim = mc.level.dimension().location().getNamespace().equals("tac_rogue");
+        if (!isRogueDim && !RunManager.isRunActive()) return;
+
+        if (event.getOverlay().id().equals(VanillaGuiOverlay.HOTBAR.id())) {
+            event.setCanceled(true);
+
+            Player player = mc.player;
+            if (player == null || player.isSpectator()) return;
+
+            GuiGraphics graphics = event.getGuiGraphics();
+            int width = event.getWindow().getGuiScaledWidth();
+            int height = event.getWindow().getGuiScaledHeight();
+
+            HotbarRenderer.render(graphics, mc, player, width, height);
+            HudRenderer.render(graphics, mc, player, width, height);
+            PublicCoopWaitState.render(graphics, mc, width, height);
+            DamageIndicatorRenderer.renderGui(graphics, mc, width, height);
+            NotificationManager.render(graphics, mc, width, height);
+            NotificationManager.renderPopups(graphics, mc, width, height);
+            renderBackgroundLoadIndicator(graphics, mc, width);
+            renderThirdPersonAdsCrosshair(graphics, mc, player, width, height);
+        }
+    }
+
+    private static void renderThirdPersonAdsCrosshair(GuiGraphics graphics, Minecraft mc, Player player, int width, int height) {
+        if (mc.options.getCameraType().isFirstPerson()) return;
+        net.minecraft.world.item.ItemStack mainHand = player.getMainHandItem();
+        if (mainHand.isEmpty() || !mainHand.hasTag()) return;
+        net.minecraft.nbt.CompoundTag tag = mainHand.getTag();
+        if (tag == null || !tag.contains("GunId")) return;
+        try {
+            net.minecraft.resources.ResourceLocation crosshairLoc =
+                com.tacz.guns.client.renderer.crosshair.CrosshairType.getTextureLocation(
+                    com.tacz.guns.config.client.RenderConfig.CROSSHAIR_TYPE.get()
+                );
+
+            int texSize = 16;
+            int cx = width / 2;
+            int cy = height / 2;
+
+            net.minecraft.world.phys.Vec3 targetPos =
+                LeaWindsCompat.resolveThirdPersonAimTargetForRender(mc, 96.0D);
+            if (targetPos == null) return;
+
+            net.minecraft.client.Camera camera = mc.gameRenderer.getMainCamera();
+            net.minecraft.world.phys.Vec3 camPos = camera.getPosition();
+
+            org.joml.Vector4f pos = new org.joml.Vector4f(
+                (float)(targetPos.x - camPos.x),
+                (float)(targetPos.y - camPos.y),
+                (float)(targetPos.z - camPos.z),
+                1.0f
+            );
+
+            ClientEventHandler.lastViewMatrix.transform(pos);
+            ClientEventHandler.lastProjectionMatrix.transform(pos);
+
+            if (pos.w() > 0.0f) {
+                pos.div(pos.w());
+                if (pos.z() > -1.0f && pos.z() < 1.0f) {
+                    cx = (int) ((pos.x() + 1.0f) / 2.0f * width);
+                    cy = (int) ((1.0f - pos.y()) / 2.0f * height);
+                }
+            }
+
+            com.mojang.blaze3d.systems.RenderSystem.enableBlend();
+            com.mojang.blaze3d.systems.RenderSystem.blendFunc(
+                com.mojang.blaze3d.platform.GlStateManager.SourceFactor.SRC_ALPHA,
+                com.mojang.blaze3d.platform.GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA
+            );
+            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 0.9f);
+
+            graphics.blit(crosshairLoc, cx - texSize / 2, cy - texSize / 2, 0, 0, texSize, texSize, texSize, texSize);
+
+            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+        } catch (Exception e) {
+            // フォールバック
+        }
+    }
+
+    private static void renderBackgroundLoadIndicator(GuiGraphics graphics, Minecraft mc, int screenWidth) {
+        if (mc.level == null || !"tac_rogue:lobby_dimension".equals(mc.level.dimension().location().toString())) return;
+        PrewarmStatus status = readPrewarmStatus();
+        if (status == null || !status.pending || status.total <= 0) return;
+
+        int w = 142;
+        int h = 29;
+        int x = Math.max(8, screenWidth - w - 10);
+        int y = 10;
+        int loaded = Math.max(0, Math.min(status.loaded, status.total));
+        float progress = Math.max(0.0F, Math.min(1.0F, status.progress));
+        int fillW = Math.round((w - 14) * progress);
+
+        graphics.fill(x, y, x + w, y + h, 0xD8041019);
+        graphics.fill(x, y, x + 2, y + h, 0xEE55DDAA);
+        graphics.renderOutline(x, y, w, h, 0xAA55DDAA);
+        graphics.drawString(mc.font, Component.translatable("hud.tac_rogue.loading.title"), x + 7, y + 4, 0xFFBFFFF3, false);
+        graphics.drawString(mc.font,
+            Component.translatable(status.started ? "hud.tac_rogue.loading.sound_cache" : "hud.tac_rogue.loading.waiting"),
+            x + 7, y + 14, 0xFF8C99A6, false);
+        graphics.fill(x + 7, y + h - 6, x + w - 7, y + h - 3, 0xFF17242C);
+        graphics.fill(x + 7, y + h - 6, x + 7 + fillW, y + h - 3, 0xFF55DDAA);
+        String count = loaded + "/" + status.total;
+        graphics.drawString(mc.font, count, x + w - 7 - mc.font.width(count), y + 4, 0xFFD7E8EA, false);
+    }
+
+    private static PrewarmStatus readPrewarmStatus() {
+        try {
+            Class<?> manager = Class.forName("com.levanilla.taczstartuphelper.ClientPrewarmManager");
+            boolean pending = (boolean) manager.getMethod("hasPendingPrewarm").invoke(null);
+            if (!pending) return null;
+            int total = (int) manager.getMethod("getTotalSoundCount").invoke(null);
+            int loaded = (int) manager.getMethod("getLoadedSoundCount").invoke(null);
+            boolean started = (boolean) manager.getMethod("hasStartedPrewarm").invoke(null);
+            float progress = (float) manager.getMethod("getProgress").invoke(null);
+            return new PrewarmStatus(pending, started, total, loaded, progress);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    private record PrewarmStatus(boolean pending, boolean started, int total, int loaded, float progress) {}
+}
