@@ -44,11 +44,11 @@ public final class FloorInstanceManager {
     private static final int PUBLIC_ORIGIN_STRIDE = RunManager.FLOOR_OFFSET_Z;
     private static final int WAIT_TICKS = 15 * 20;
     private static final int TRACK_AUDIT_INTERVAL_TICKS = 100;
-    private static final double BOSS_JOIN_HP_RATIO = 0.70D;
+    static final double BOSS_JOIN_HP_RATIO = 0.70D;
 
-    private static final Map<String, FloorInstance> INSTANCES = new ConcurrentHashMap<>();
-    private static final Map<UUID, String> PLAYER_INSTANCES = new ConcurrentHashMap<>();
-    private static final Map<Integer, String> PUBLIC_INSTANCES_BY_FLOOR = new ConcurrentHashMap<>();
+    static final Map<String, FloorInstance> INSTANCES = new ConcurrentHashMap<>();
+    static final Map<UUID, String> PLAYER_INSTANCES = new ConcurrentHashMap<>();
+    static final Map<Integer, String> PUBLIC_INSTANCES_BY_FLOOR = new ConcurrentHashMap<>();
 
     private FloorInstanceManager() {}
 
@@ -92,7 +92,7 @@ public final class FloorInstanceManager {
         public volatile BlockPos spawnPos;
         public volatile MapGenerator.GenerationJob generationJob;
 
-        private FloorInstance(String id, int floor, EntryMode mode, UUID ownerUuid, BlockPos origin,
+        FloorInstance(String id, int floor, EntryMode mode, UUID ownerUuid, BlockPos origin,
                               long createdTick, long runSeed, long floorSeedSalt) {
             this.id = id;
             this.floor = floor;
@@ -124,11 +124,7 @@ public final class FloorInstanceManager {
             return;
         }
 
-        if (mode == EntryMode.SOLO) {
-            createSoloInstance(player, floor);
-        } else {
-            joinOrCreatePublicInstance(player, floor);
-        }
+        FloorEntryModeHandler.enterFloor(player, floor, mode);
     }
 
     public static void tick(MinecraftServer server) {
@@ -300,110 +296,7 @@ public final class FloorInstanceManager {
         return owner.isBlank() || owner.equals(player.getUUID().toString());
     }
 
-    private static void createSoloInstance(ServerPlayer player, int floor) {
-        leaveInstance(player, false);
-        long tick = player.server.getTickCount();
-        String id = "solo-" + player.getUUID() + "-" + tick + "-" + UUID.randomUUID();
-        BlockPos origin = RunManager.getPrivateDungeonOrigin(player);
-        FloorInstance instance = new FloorInstance(id, floor, EntryMode.SOLO, player.getUUID(), origin,
-            tick, System.nanoTime(), System.nanoTime() ^ tick);
-        instance.participants.add(player.getUUID());
-        instance.initialParticipantCount = 1;
-        INSTANCES.put(id, instance);
-        PLAYER_INSTANCES.put(player.getUUID(), id);
-        syncWaitClear(player);
-        activateInstance(player.server, instance);
-    }
-
-    private static void joinOrCreatePublicInstance(ServerPlayer player, int floor) {
-        leaveInstance(player, false);
-        FloorInstance existing = getPublicInstance(floor);
-        if (existing != null && existing.state == State.ACTIVE) {
-            if (!canJoinActiveInstance(player, existing)) return;
-            addParticipant(player, existing, true);
-            teleportParticipant(player, existing);
-            applyMidRunJoinScaling(player.server, existing);
-            PopupNotificationMessage.send(
-                player,
-                PopupNotificationMessage.PopupType.SYSTEM,
-                Component.literal("CO-OP JOIN"),
-                Component.literal("Joined active Floor " + floor + " instance."),
-                100);
-            return;
-        }
-        if (existing != null && existing.state == State.PREPARING) {
-            addParticipant(player, existing, false);
-            syncWaitUpdate(player, existing, 1);
-            PopupNotificationMessage.send(
-                player,
-                PopupNotificationMessage.PopupType.SYSTEM,
-                Component.literal("PUBLIC CO-OP"),
-                Component.literal("Floor " + floor + " is deploying. Joining launch group."),
-                100);
-            return;
-        }
-
-        if (existing == null || existing.state == State.CLEARED) {
-            long tick = player.server.getTickCount();
-            String id = "public-floor-" + floor + "-" + tick + "-" + UUID.randomUUID();
-            existing = new FloorInstance(id, floor, EntryMode.PUBLIC, player.getUUID(), publicOriginForFloor(floor),
-                tick, System.nanoTime(), System.nanoTime() ^ ((long) floor << 32));
-            INSTANCES.put(id, existing);
-            PUBLIC_INSTANCES_BY_FLOOR.put(floor, id);
-        }
-
-        addParticipant(player, existing, false);
-        int secondsLeft = waitingSecondsLeft(player.server, existing);
-        syncWaitUpdate(player, existing, secondsLeft);
-        PopupNotificationMessage.send(
-            player,
-            PopupNotificationMessage.PopupType.SYSTEM,
-            Component.literal("PUBLIC CO-OP"),
-            Component.literal("Floor " + floor + " starts in " + secondsLeft + "s."),
-            120);
-    }
-
-    private static FloorInstance getPublicInstance(int floor) {
-        String id = PUBLIC_INSTANCES_BY_FLOOR.get(floor);
-        if (id == null) return null;
-        FloorInstance instance = INSTANCES.get(id);
-        if (instance == null || instance.mode != EntryMode.PUBLIC) {
-            PUBLIC_INSTANCES_BY_FLOOR.remove(floor);
-            return null;
-        }
-        return instance;
-    }
-
-    private static boolean canJoinActiveInstance(ServerPlayer player, FloorInstance instance) {
-        if (ThemeManager.isBossFloor(instance.floor)) {
-            LivingEntity boss = findBoss(player.server.getLevel(CommonEventHandler.ROGUE_DIM), instance);
-            if (boss != null && boss.getHealth() <= boss.getMaxHealth() * BOSS_JOIN_HP_RATIO) {
-                player.sendSystemMessage(Component.literal("§c[LR-TAC] Boss engagement is too far along to join."));
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private static void addParticipant(ServerPlayer player, FloorInstance instance, boolean active) {
-        instance.participants.add(player.getUUID());
-        PLAYER_INSTANCES.put(player.getUUID(), instance.id);
-        PlayerRunData data = RunManager.getData(player);
-        data.setCurrentFloor(instance.floor);
-        data.setDungeonOrigin(instance.origin);
-        data.setFloorCleared(false);
-        data.setRunActive(active);
-        if (data.getMaxReachedFloor() < 1) data.setMaxReachedFloor(1);
-        data.setRunSeed(instance.runSeed);
-        data.setFloorSeedSalt(instance.floorSeedSalt);
-        if (active && player.server != null) {
-            data.setFloorStartTick(player.server.getTickCount());
-        }
-        RunManager.refreshThemeName(data);
-        RunManager.syncPlayer(player);
-    }
-
-    private static void activateInstance(MinecraftServer server, FloorInstance instance) {
+    static void activateInstance(MinecraftServer server, FloorInstance instance) {
         if (server == null || instance.state == State.ACTIVE && instance.spawnPos != null) return;
         if (instance.state == State.PREPARING) return;
         ServerLevel rogueLevel = server.getLevel(CommonEventHandler.ROGUE_DIM);
@@ -471,7 +364,7 @@ public final class FloorInstanceManager {
                 PLAYER_INSTANCES.remove(uuid);
                 continue;
             }
-            addParticipant(participant, instance, true);
+            FloorEntryModeHandler.addParticipant(participant, instance, true);
             PlayerPerkTickService.invalidateSnapshot(participant);
             PlayerPerkTickService.applyPerkStats(participant);
             syncWaitClear(participant);
@@ -492,7 +385,7 @@ public final class FloorInstanceManager {
         }
     }
 
-    private static void teleportParticipant(ServerPlayer player, FloorInstance instance) {
+    static void teleportParticipant(ServerPlayer player, FloorInstance instance) {
         ServerLevel rogueLevel = player.server.getLevel(CommonEventHandler.ROGUE_DIM);
         if (rogueLevel == null || instance.spawnPos == null) return;
         RunManager.safeTeleport(player, rogueLevel, instance.spawnPos);
@@ -509,19 +402,19 @@ public final class FloorInstanceManager {
         }
     }
 
-    private static int waitingSecondsLeft(MinecraftServer server, FloorInstance instance) {
+    static int waitingSecondsLeft(MinecraftServer server, FloorInstance instance) {
         if (server == null || instance == null) return 1;
         return Math.max(1, (int) Math.ceil((WAIT_TICKS - (server.getTickCount() - instance.createdTick)) / 20.0D));
     }
 
-    private static void syncWaitUpdate(ServerPlayer player, FloorInstance instance, int secondsLeft) {
+    static void syncWaitUpdate(ServerPlayer player, FloorInstance instance, int secondsLeft) {
         if (player == null || instance == null) return;
         com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
             net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
             new com.levanilla.rogue.networking.SyncDataMessage("coop_wait:" + instance.floor + ":" + Math.max(1, secondsLeft)));
     }
 
-    private static void syncWaitClear(ServerPlayer player) {
+    static void syncWaitClear(ServerPlayer player) {
         if (player == null) return;
         com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
             net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
@@ -577,7 +470,7 @@ public final class FloorInstanceManager {
         }
     }
 
-    private static void applyMidRunJoinScaling(MinecraftServer server, FloorInstance instance) {
+    static void applyMidRunJoinScaling(MinecraftServer server, FloorInstance instance) {
         ServerLevel level = server.getLevel(CommonEventHandler.ROGUE_DIM);
         if (level == null) return;
         auditTrackedEntities(level, instance, true);
@@ -687,7 +580,7 @@ public final class FloorInstanceManager {
         return id.length() <= 12 ? id : id.substring(0, 12);
     }
 
-    private static LivingEntity findBoss(ServerLevel level, FloorInstance instance) {
+    static LivingEntity findBoss(ServerLevel level, FloorInstance instance) {
         if (level == null) return null;
         boolean hadTrackedBoss = !instance.trackedBossUuids.isEmpty();
         LivingEntity trackedBoss = findTrackedBoss(level, instance);
@@ -851,7 +744,7 @@ public final class FloorInstanceManager {
         instance.trackedBossUuids.remove(uuid);
     }
 
-    private static BlockPos publicOriginForFloor(int floor) {
+    static BlockPos publicOriginForFloor(int floor) {
         return new BlockPos(PUBLIC_ORIGIN_X_BASE + floor * PUBLIC_ORIGIN_STRIDE, GameConstants.DUNGEON_BASE_Y, 0);
     }
 }
