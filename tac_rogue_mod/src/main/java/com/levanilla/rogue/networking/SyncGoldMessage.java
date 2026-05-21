@@ -25,7 +25,7 @@ public class SyncGoldMessage {
     public static void handle(SyncGoldMessage msg, Supplier<NetworkEvent.Context> ctx) {
         ctx.get().enqueueWork(() -> {
             if (ctx.get().getDirection().getReceptionSide().isClient()) {
-                com.levanilla.rogue.core.RunManager.setClientGold(msg.gold);
+                com.levanilla.rogue.core.ClientSyncHandler.applyGold(msg.gold);
             }
         });
         ctx.get().setPacketHandled(true);

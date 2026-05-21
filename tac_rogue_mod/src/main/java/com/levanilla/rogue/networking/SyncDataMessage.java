@@ -6,7 +6,11 @@ import java.util.function.Supplier;
 
 /**
  * サーバーからクライアントへ、現在の「ラン（Run）」の状態（階層、クリア状況など）を同期するためのパケット
+ *
+ * @deprecated 型安全な同期では SyncRunMessage / SyncMetaMessage / SyncGoldMessage /
+ * SyncPerksMessage を使う。HUDやイベント用の残存互換ルートとしてのみ残す。
  */
+@Deprecated
 public class SyncDataMessage {
     private final String data; // 同期するデータ（文字列形式）
 

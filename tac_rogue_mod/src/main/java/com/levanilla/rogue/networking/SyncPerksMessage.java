@@ -32,15 +32,6 @@ public class SyncPerksMessage {
     }
 
     private static void handleClient(SyncPerksMessage msg) {
-        net.minecraftforge.fml.DistExecutor.unsafeRunWhenOn(net.minecraftforge.api.distmarker.Dist.CLIENT, () -> () -> {
-            net.minecraft.client.player.LocalPlayer clientPlayer = net.minecraft.client.Minecraft.getInstance().player;
-            if (clientPlayer != null) {
-                clientPlayer.getTags().removeIf(t -> t.startsWith("perk:"));
-                String[] tags = msg.perkTags.split(",");
-                for (String t : tags) {
-                    if (!t.isEmpty()) clientPlayer.addTag(t);
-                }
-            }
-        });
+        com.levanilla.rogue.core.ClientSyncHandler.applyPerks(msg.perkTags);
     }
 }

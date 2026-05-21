@@ -11,7 +11,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
  * サーバーとクライアント間のすべてのパケット通信（メッセージング）をここで定義し、登録します
  */
 public class TacRogueNetworking {
-    private static final String PROTOCOL_VERSION = "4"; // 通信プロトコルのバージョン（互換性の確認用）
+    private static final String PROTOCOL_VERSION = "5"; // 通信プロトコルのバージョン（互換性の確認用）
     
     // チャンネルの定義
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
@@ -171,6 +171,13 @@ public class TacRogueNetworking {
                 .encoder(AdsInputMessage::encode)
                 .decoder(AdsInputMessage::decode)
                 .consumerMainThread(AdsInputMessage::handle)
+                .add();
+
+        // プレイヤー強化メタデータ同期 (S -> C)
+        CHANNEL.messageBuilder(SyncMetaMessage.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(SyncMetaMessage::encode)
+                .decoder(SyncMetaMessage::decode)
+                .consumerMainThread(SyncMetaMessage::handle)
                 .add();
     }
 
