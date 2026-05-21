@@ -1,7 +1,7 @@
 {
     "formatVersion": 1,
     "game": "minecraft",
-    "versionId": "0.6.1-hotfix",
+    "versionId": "0.8.0",
     "name": "TacZ Roguelike",
     "summary": "Fast-paced tactical rougelike shooter built on TacZ.",
     "files": [

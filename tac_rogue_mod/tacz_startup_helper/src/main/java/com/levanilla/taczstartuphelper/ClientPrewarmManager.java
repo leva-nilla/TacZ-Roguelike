@@ -1,6 +1,5 @@
 package com.levanilla.taczstartuphelper;
 
-import com.tacz.guns.client.resource.ClientAssetsManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraftforge.api.distmarker.Dist;
@@ -112,7 +111,7 @@ public final class ClientPrewarmManager {
             if (next == null) {
                 break;
             }
-            ClientAssetsManager.INSTANCE.getSoundBuffers(next);
+            markSoundLoaded(next);
             loadedThisTick++;
         }
     }

@@ -12,8 +12,7 @@
   ],
   "client": [
     "MixinClientIndexManager",
-    "MixinGunDisplayInstance",
-    "MixinSoundAssetsManager"
+    "MixinGunDisplayInstance"
   ],
   "injectors": {
     "defaultRequire": 0
