@@ -9,4 +9,3 @@ pluginManagement {
     }
 }
 rootProject.name = 'tac_rogue'
-include 'tacz_startup_helper'

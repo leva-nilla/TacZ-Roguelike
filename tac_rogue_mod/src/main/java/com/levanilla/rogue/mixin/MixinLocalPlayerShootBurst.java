@@ -24,7 +24,7 @@ public abstract class MixinLocalPlayerShootBurst {
     @Inject(method = "doShoot", at = @At("HEAD"), remap = false)
     private void tacRogue$syncLeaWindsAimBeforeShoot(GunDisplayInstance display, IGun iGun,
                                                      ItemStack mainHandItem, GunData gunData, long delay,
-                                                     CallbackInfo ci) {
+                                                     float pitch, CallbackInfo ci) {
         LeaWindsCompat.syncThirdPersonGunAimForShot();
     }
 
@@ -34,7 +34,8 @@ public abstract class MixinLocalPlayerShootBurst {
         remap = false
     )
     private long tacRogue$adjustClientBurstShootInterval(GunData gunData, GunDisplayInstance display, IGun iGun,
-                                                         ItemStack mainHandItem, GunData originalGunData, long delay) {
+                                                         ItemStack mainHandItem, GunData originalGunData, long delay,
+                                                         float pitch) {
         long interval = gunData.getBurstShootInterval();
         return adjustIntervalMs(interval, mainHandItem);
     }
