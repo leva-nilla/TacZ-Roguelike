@@ -37,9 +37,7 @@ public final class ClientSyncHandler {
             }
             if (data.startsWith("gold:")) {
                 int gold = Integer.parseInt(data.substring(5));
-                ClientRunState.setGold(gold);
-                DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
-                    com.levanilla.rogue.client.TitleRunSummary.recordGold(gold));
+                applyGold(gold);
                 return;
             }
             if (data.startsWith("meta:")) {
@@ -106,7 +104,11 @@ public final class ClientSyncHandler {
     }
 
     private static void handlePerks(String data) {
-        String[] tags = data.substring(6).split(",");
+        applyPerks(data.substring(6));
+    }
+
+    public static void applyPerks(String perkTags) {
+        String[] tags = perkTags.split(",");
         DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
             net.minecraft.client.player.LocalPlayer clientPlayer = net.minecraft.client.Minecraft.getInstance().player;
             if (clientPlayer != null) {
@@ -117,6 +119,12 @@ public final class ClientSyncHandler {
                 com.levanilla.rogue.client.TitleRunSummary.recordPerks(tags);
             }
         });
+    }
+
+    public static void applyGold(int gold) {
+        ClientRunState.setGold(gold);
+        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
+            com.levanilla.rogue.client.TitleRunSummary.recordGold(gold));
     }
 
     private static void handleDamageIndicator(String data) {
@@ -151,22 +159,25 @@ public final class ClientSyncHandler {
     private static void handleMeta(String data) {
         String[] parts = data.substring(5).split(":");
         if (parts.length >= 3) {
-            DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
-                net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
-                net.minecraft.client.player.LocalPlayer clientPlayer = mc.player;
-                if (clientPlayer != null) {
-                    clientPlayer.getPersistentData().putInt("TacRogue_InvLevel", Integer.parseInt(parts[0]));
-                    clientPlayer.getPersistentData().putInt("TacRogueMeleeLevel", Integer.parseInt(parts[1]));
-                    clientPlayer.getPersistentData().putInt("RandomPerkBuys", Integer.parseInt(parts[2]));
-                }
-                if (parts.length >= 4) {
-                    ClientRunState.setFlashlightLevel(Integer.parseInt(parts[3]));
-                }
-                if (mc.screen instanceof RogueInventoryScreen screen) {
-                    screen.init(mc, mc.getWindow().getGuiScaledWidth(), mc.getWindow().getGuiScaledHeight());
-                }
-            });
+            int flashlightLevel = parts.length >= 4 ? Integer.parseInt(parts[3]) : ClientRunState.getFlashlightLevel();
+            applyMeta(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]), Integer.parseInt(parts[2]), flashlightLevel);
         }
+    }
+
+    public static void applyMeta(int invLevel, int meleeLevel, int randomPerkBuys, int flashlightLevel) {
+        ClientRunState.setMetaData(invLevel, meleeLevel, randomPerkBuys, flashlightLevel);
+        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
+            net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+            net.minecraft.client.player.LocalPlayer clientPlayer = mc.player;
+            if (clientPlayer != null) {
+                clientPlayer.getPersistentData().putInt("TacRogue_InvLevel", invLevel);
+                clientPlayer.getPersistentData().putInt("TacRogueMeleeLevel", meleeLevel);
+                clientPlayer.getPersistentData().putInt("RandomPerkBuys", randomPerkBuys);
+            }
+            if (mc.screen instanceof RogueInventoryScreen screen) {
+                screen.init(mc, mc.getWindow().getGuiScaledWidth(), mc.getWindow().getGuiScaledHeight());
+            }
+        });
     }
 
     private static void handleQuestData(String data) {
@@ -229,15 +240,24 @@ public final class ClientSyncHandler {
             int maxFloor = parts.length >= 5 ? Integer.parseInt(parts[4]) : 0;
             int floor = Integer.parseInt(parts[0]);
             boolean active = Boolean.parseBoolean(parts[2]);
-            ClientRunState.setRunData(floor, parts[1], active, maxFloor);
-            DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
-                com.levanilla.rogue.client.TitleRunSummary.recordRun(floor, parts[1], active, maxFloor));
             if (parts.length >= 4) {
-                ClientRunState.setFloorCleared(Boolean.parseBoolean(parts[3]));
-            }
-            if (parts.length >= 6) {
-                ClientRunState.setAmmoCapacityLevel(Integer.parseInt(parts[5]));
+                int ammoCapacityLevel = parts.length >= 6 ? Integer.parseInt(parts[5]) : ClientRunState.getAmmoCapacityLevel();
+                applyRunData(floor, parts[1], active, Boolean.parseBoolean(parts[3]), maxFloor, ammoCapacityLevel);
+            } else {
+                applyRunData(floor, parts[1], active, maxFloor);
             }
         }
+    }
+
+    public static void applyRunData(int floor, String theme, boolean active, int maxFloor) {
+        ClientRunState.setRunData(floor, theme, active, maxFloor);
+        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
+            com.levanilla.rogue.client.TitleRunSummary.recordRun(floor, theme, active, maxFloor));
+    }
+
+    public static void applyRunData(int floor, String theme, boolean active, boolean cleared, int maxFloor, int ammoCapacityLevel) {
+        ClientRunState.setRunData(floor, theme, active, cleared, maxFloor, ammoCapacityLevel);
+        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
+            com.levanilla.rogue.client.TitleRunSummary.recordRun(floor, theme, active, maxFloor));
     }
 }

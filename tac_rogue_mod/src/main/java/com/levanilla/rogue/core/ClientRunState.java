@@ -10,6 +10,9 @@ public final class ClientRunState {
     private static String themeName = "RUINS - OVERGROWN";
     private static int gold = 0;
     private static int ammoCapacityLevel = 0;
+    private static int inventoryLevel = 0;
+    private static int meleeLevel = 0;
+    private static int randomPerkBuys = 0;
     private static int flashlightLevel = 0;
     private static float healthRatioOverride = Float.NaN;
     private static long healthRatioOverrideUntilMs = 0L;
@@ -38,6 +41,18 @@ public final class ClientRunState {
 
     public static int getFlashlightLevel() {
         return flashlightLevel;
+    }
+
+    public static int getInventoryLevel() {
+        return inventoryLevel;
+    }
+
+    public static int getMeleeLevel() {
+        return meleeLevel;
+    }
+
+    public static int getRandomPerkBuys() {
+        return randomPerkBuys;
     }
 
     public static void setHealthOverride(float health, float maxHealth, long durationMs) {
@@ -84,6 +99,12 @@ public final class ClientRunState {
         maxReachedFloor = maxFloor;
     }
 
+    public static void setRunData(int newFloor, String newThemeName, boolean active, boolean cleared, int maxFloor, int ammoCapacity) {
+        setRunData(newFloor, newThemeName, active, maxFloor);
+        floorCleared = cleared;
+        ammoCapacityLevel = ammoCapacity;
+    }
+
     public static void setFloorCleared(boolean value) {
         floorCleared = value;
     }
@@ -94,5 +115,12 @@ public final class ClientRunState {
 
     public static void setFlashlightLevel(int value) {
         flashlightLevel = value;
+    }
+
+    public static void setMetaData(int invLevel, int meleeUpgradeLevel, int perkBuys, int lightLevel) {
+        inventoryLevel = invLevel;
+        meleeLevel = meleeUpgradeLevel;
+        randomPerkBuys = perkBuys;
+        flashlightLevel = lightLevel;
     }
 }

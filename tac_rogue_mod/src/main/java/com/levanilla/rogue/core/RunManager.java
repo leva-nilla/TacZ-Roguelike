@@ -133,7 +133,7 @@ public class RunManager {
 
     /** クライアント同期データ受信 */
     public static void setClientData(int floor, String theme, boolean active, int maxF) {
-        ClientRunState.setRunData(floor, theme, active, maxF);
+        ClientSyncHandler.applyRunData(floor, theme, active, maxF);
     }
 
     public static void setClientFloorCleared(boolean v) { ClientRunState.setFloorCleared(v); }
@@ -417,11 +417,15 @@ public class RunManager {
         saveToPlayerNbt(player); // 念のため毎同期時にNBTへ保存
 
         PlayerRunData data = getData(player);
-        String syncData = String.format("%d:%s:%b:%b:%d:%d",
-                data.getCurrentFloor(), data.getThemeName(), data.isRunActive(), data.isFloorCleared(), data.getMaxReachedFloor(), data.getAmmoCapacityLevel());
         com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
             net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
-            new com.levanilla.rogue.networking.SyncDataMessage(syncData)
+            new com.levanilla.rogue.networking.SyncRunMessage(
+                data.getCurrentFloor(),
+                data.getThemeName(),
+                data.isRunActive(),
+                data.isFloorCleared(),
+                data.getMaxReachedFloor(),
+                data.getAmmoCapacityLevel())
         );
 
         int invLevel = player.getPersistentData().getInt("TacRogue_InvLevel");
@@ -430,24 +434,24 @@ public class RunManager {
         int flashlightLevel = player.getPersistentData().getInt("TacRogueFlashlightLevel");
         com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
             net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
-            new com.levanilla.rogue.networking.SyncDataMessage("meta:" + invLevel + ":" + meleeLevel + ":" + randomPerkBuys + ":" + flashlightLevel)
+            new com.levanilla.rogue.networking.SyncMetaMessage(invLevel, meleeLevel, randomPerkBuys, flashlightLevel)
         );
 
         // ゴールド同期
         int gold = CurrencyManager.getGold(player);
         com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
             net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
-            new com.levanilla.rogue.networking.SyncDataMessage("gold:" + gold)
+            new com.levanilla.rogue.networking.SyncGoldMessage(gold)
         );
 
         // パーク同期
-        StringBuilder perks = new StringBuilder("perks:");
+        StringBuilder perks = new StringBuilder();
         for (String tag : player.getTags()) {
             if (tag.startsWith("perk:")) perks.append(tag).append(",");
         }
         com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
             net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
-            new com.levanilla.rogue.networking.SyncDataMessage(perks.toString())
+            new com.levanilla.rogue.networking.SyncPerksMessage(perks.toString())
         );
     }
 
