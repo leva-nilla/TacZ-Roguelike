@@ -40,6 +40,10 @@ public class ScalingEngine {
         }
     }
 
+    private static final Prefix[] SPECIAL_PREFIXES = java.util.Arrays.stream(Prefix.values())
+        .filter(p -> p != Prefix.NORMAL)
+        .toArray(Prefix[]::new);
+
     /** ボス名（バイオーム群ごと） */
     private static final String[] BOSS_NAMES = {
         "RUINED OVERLORD", "BIO HAZARD ALPHA", "DEEP CORE GUARDIAN",
@@ -60,8 +64,7 @@ public class ScalingEngine {
         double specialChance = Math.min(0.95, 0.10 + (floor - 1) * 0.01);
         Prefix prefix;
         if (RANDOM.nextDouble() < specialChance) {
-            Prefix[] specials = java.util.Arrays.stream(Prefix.values()).filter(p -> p != Prefix.NORMAL).toArray(Prefix[]::new);
-            prefix = specials[RANDOM.nextInt(specials.length)];
+            prefix = SPECIAL_PREFIXES[RANDOM.nextInt(SPECIAL_PREFIXES.length)];
         } else {
             prefix = Prefix.NORMAL;
         }
@@ -180,6 +183,7 @@ public class ScalingEngine {
 
     /** プレフィックス固有の追加効果 */
     private static void applyPrefixEffects(LivingEntity entity, Prefix prefix) {
+        // TODO: 効果キャッシュが必要になったら、prefix効果の副作用とMobEffect寿命を先に設計する。
         switch (prefix) {
             case ARMORED -> {
                 AttributeInstance armor = entity.getAttribute(Attributes.ARMOR);
