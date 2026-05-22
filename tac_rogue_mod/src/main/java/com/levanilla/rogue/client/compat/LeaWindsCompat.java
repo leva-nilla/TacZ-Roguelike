@@ -162,12 +162,12 @@ public final class LeaWindsCompat {
         if (mc == null || mc.player == null || mc.level == null || mc.gameRenderer == null) return null;
 
         net.minecraft.client.Camera camera = mc.gameRenderer.getMainCamera();
-        net.minecraft.world.phys.Vec3 shotLook = resolveCameraAimDirection(camera);
+        net.minecraft.world.phys.Vec3 cameraLook = resolveCameraAimDirection(camera);
         net.minecraft.world.phys.Vec3 bulletStart = getTacZBulletStart(mc.player);
+        net.minecraft.world.phys.Vec3 shotLook = cameraLook;
         AimTraceResult bulletTrace = traceAim(mc, bulletStart, shotLook, range);
-        AimTraceResult cameraTrace = traceAim(mc, camera.getPosition(), shotLook, range);
-        boolean cameraObstructed = isCameraObstructingShot(camera.getPosition(), cameraTrace, bulletTrace);
-        return new GunAimResult(bulletTrace.target(), cameraObstructed, cameraTrace.hit() ? cameraTrace.target() : null);
+        net.minecraft.world.phys.Vec3 cameraHit = traceCameraObstructionToTarget(mc, camera.getPosition(), bulletTrace.target());
+        return new GunAimResult(bulletTrace.target(), cameraHit != null, cameraHit);
     }
 
     public static net.minecraft.world.phys.Vec3 resolveThirdPersonAimTargetForRender(Minecraft mc, double range) {
@@ -482,14 +482,24 @@ public final class LeaWindsCompat {
         return new AimTraceResult(target, hit);
     }
 
-    private static boolean isCameraObstructingShot(net.minecraft.world.phys.Vec3 cameraPos,
-                                                   AimTraceResult cameraTrace,
-                                                   AimTraceResult bulletTrace) {
-        if (cameraTrace == null || bulletTrace == null || !cameraTrace.hit()) return false;
-        double cameraHitDistance = cameraPos.distanceTo(cameraTrace.target());
-        double bulletTargetDistance = cameraPos.distanceTo(bulletTrace.target());
-        if (cameraHitDistance + 0.75D >= bulletTargetDistance) return false;
-        return cameraTrace.target().distanceToSqr(bulletTrace.target()) > 0.75D * 0.75D;
+    private static net.minecraft.world.phys.Vec3 traceCameraObstructionToTarget(Minecraft mc,
+                                                                                net.minecraft.world.phys.Vec3 cameraPos,
+                                                                                net.minecraft.world.phys.Vec3 target) {
+        if (mc == null || mc.level == null || mc.player == null || cameraPos == null || target == null) return null;
+        double targetDistance = cameraPos.distanceTo(target);
+        if (targetDistance < 0.5D) return null;
+
+        net.minecraft.world.phys.HitResult blockHit = mc.level.clip(new net.minecraft.world.level.ClipContext(
+            cameraPos, target,
+            net.minecraft.world.level.ClipContext.Block.COLLIDER,
+            net.minecraft.world.level.ClipContext.Fluid.NONE,
+            mc.player));
+        if (blockHit.getType() == net.minecraft.world.phys.HitResult.Type.MISS) return null;
+
+        net.minecraft.world.phys.Vec3 hit = blockHit.getLocation();
+        double hitDistance = cameraPos.distanceTo(hit);
+        if (hitDistance + 0.35D >= targetDistance) return null;
+        return hit;
     }
 
     private static net.minecraft.world.phys.Vec3 resolveCameraAimDirection(net.minecraft.client.Camera camera) {

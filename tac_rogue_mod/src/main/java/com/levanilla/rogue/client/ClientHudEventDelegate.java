@@ -109,11 +109,8 @@ final class ClientHudEventDelegate {
                 com.mojang.blaze3d.platform.GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA
             );
 
-            if (aim.cameraObstructed() && aim.cameraHit() != null) {
-                ScreenPoint cameraHitPoint = projectToScreen(mc, aim.cameraHit(), width, height);
-                if (cameraHitPoint != null) {
-                    drawCameraObstructionMarker(graphics, cameraHitPoint.x(), cameraHitPoint.y());
-                }
+            if (aim.cameraObstructed()) {
+                drawCameraObstructionMarker(graphics, cx, cy);
             }
 
             com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 0.9f);
@@ -167,15 +164,15 @@ final class ClientHudEventDelegate {
 
     private static void drawCameraObstructionMarker(GuiGraphics graphics, int x, int y) {
         int outer = 0xCC101820;
-        int inner = 0xDDE7E1D5;
-        graphics.fill(x - 5, y - 1, x - 2, y + 1, outer);
-        graphics.fill(x + 3, y - 1, x + 6, y + 1, outer);
-        graphics.fill(x - 1, y - 5, x + 1, y - 2, outer);
-        graphics.fill(x - 1, y + 3, x + 1, y + 6, outer);
-        graphics.fill(x - 4, y, x - 2, y + 1, inner);
-        graphics.fill(x + 3, y, x + 5, y + 1, inner);
-        graphics.fill(x, y - 4, x + 1, y - 2, inner);
-        graphics.fill(x, y + 3, x + 1, y + 5, inner);
+        int inner = 0xDDEE5B4A;
+        graphics.fill(x - 10, y - 1, x - 7, y + 1, outer);
+        graphics.fill(x + 8, y - 1, x + 11, y + 1, outer);
+        graphics.fill(x - 1, y - 10, x + 1, y - 7, outer);
+        graphics.fill(x - 1, y + 8, x + 1, y + 11, outer);
+        graphics.fill(x - 9, y, x - 7, y + 1, inner);
+        graphics.fill(x + 8, y, x + 10, y + 1, inner);
+        graphics.fill(x, y - 9, x + 1, y - 7, inner);
+        graphics.fill(x, y + 8, x + 1, y + 10, inner);
     }
 
     private static void drawInteractionMarker(GuiGraphics graphics, int x, int y, boolean reachable) {
