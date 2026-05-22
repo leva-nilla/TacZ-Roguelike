@@ -1,20 +1,38 @@
 package com.levanilla.rogue.world;
 
 import com.levanilla.rogue.core.DifficultyManager;
+import com.levanilla.rogue.core.CurrencyManager;
+import com.levanilla.rogue.core.GameConstants;
 import com.levanilla.rogue.core.ModEntities;
+import com.levanilla.rogue.core.PriceManager;
 import com.levanilla.rogue.core.QuestManager;
 import com.levanilla.rogue.core.RunManager;
+import com.levanilla.rogue.core.StashSavedData;
+import com.levanilla.rogue.core.TacZRegistryHelper;
+import com.levanilla.rogue.core.registry.AttachmentDatabase;
+import com.levanilla.rogue.core.service.GoldGainService;
+import com.levanilla.rogue.core.service.RogueItemFactory;
+import com.levanilla.rogue.core.service.ShopPlacementService;
 import com.levanilla.rogue.networking.PopupNotificationMessage;
 import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.npc.Villager;
+import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.effect.MobEffects;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.registries.ForgeRegistries;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -48,18 +66,25 @@ public class NpcManager {
     private static final String NPC_TAG = "tac_rogue_npc";
     private static final String LOBBY_NPC_TAG = "tac_rogue_lobby_npc";
     private static final String NPC_VISUAL_TAG = "tac_rogue_npc_visual";
-    private static final int MENU_SESSION_TICKS = 20 * 30;
-    private static final double MENU_ACTION_MAX_DISTANCE_SQR = 36.0;
+    private static final String LOADOUT_PRESET_KEY = "TacRogueLoadoutPresetV1";
+    private static final String MEDICAL_BUFF_UNTIL_KEY = "TacRogueMedicalBuffUntil";
+    private static final int MENU_SESSION_TICKS = 20 * 60 * 5;
+    private static final double MENU_ACTION_MAX_DISTANCE_SQR = 144.0;
+    private static final int FIELD_BUFF_COST = 2000;
+    private static final int MEDICAL_REFILL_COST = 850;
+    private static final int BULK_AMMO_STACKS = 3;
     private static final Map<UUID, MenuSession> MENU_SESSIONS = new ConcurrentHashMap<>();
     private static final Map<String, Long> DELAYED_LOBBY_NORMALIZE_TICKS = new ConcurrentHashMap<>();
     private static final Map<String, Set<String>> ALLOWED_ACTIONS = Map.of(
-        "commander", Set.of("quest", "talk"),
-        "quartermaster", Set.of("shop", "talk", "deep_operations"),
+        "commander", Set.of("quest", "talk", "operation_plan"),
+        "quartermaster", Set.of("shop", "talk", "deep_operations", "save_loadout", "restore_loadout",
+            "bulk_ammo", "attachment_check", "sell_loose_attachments", "sync_service_stash"),
         "intel", Set.of("intel", "extract", "floor_select", "talk", "deep_operations"),
-        "medic", Set.of("heal", "talk")
+        "medic", Set.of("heal", "talk", "field_buff", "medical_refill", "critical_briefing")
     );
 
     private record MenuSession(int npcId, String role, String dimension, long expiresAtTick) {}
+    private record LoadoutSource(boolean stash, int slot) {}
 
     public static void scheduleLobbyNormalization(ServerLevel level, int delayTicks) {
         if (level == null) return;
@@ -350,6 +375,8 @@ public class NpcManager {
         if ("commander".equals(role)) {
             if ("quest".equals(action)) {
                 showQuestTerminal(player);
+            } else if ("operation_plan".equals(action)) {
+                showOperationPlan(player);
             } else {
                 PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.NPC,
                     Component.translatable("popup.tac_rogue.npc.commander.title"),
@@ -363,6 +390,18 @@ public class NpcManager {
                 RunManager.syncPlayer(player);
             } else if ("deep_operations".equals(action)) {
                 openDeepOperations(player);
+            } else if ("save_loadout".equals(action)) {
+                saveLoadoutPreset(player);
+            } else if ("restore_loadout".equals(action)) {
+                restoreLoadoutPreset(player);
+            } else if ("bulk_ammo".equals(action)) {
+                bulkBuyAmmo(player);
+            } else if ("attachment_check".equals(action)) {
+                checkAttachmentCompatibility(player);
+            } else if ("sell_loose_attachments".equals(action)) {
+                sellLooseIncompatibleAttachments(player);
+            } else if ("sync_service_stash".equals(action)) {
+                sendServiceLoadoutSummary(player);
             } else {
                 PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.NPC,
                     Component.translatable("popup.tac_rogue.npc.quartermaster.title"),
@@ -400,6 +439,14 @@ public class NpcManager {
                 PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.NPC,
                     Component.translatable("popup.tac_rogue.npc.medic.title"),
                     Component.translatable("message.tac_rogue.medic_heal"), 90);
+            } else if ("field_buff".equals(action)) {
+                applyFieldBuff(player);
+            } else if ("medical_refill".equals(action)) {
+                refillMedicalSupplies(player);
+            } else if ("critical_briefing".equals(action)) {
+                PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.NPC,
+                    Component.translatable("popup.tac_rogue.npc.medic.title"),
+                    Component.translatable("message.tac_rogue.medic_critical_briefing"), 180);
             } else {
                 PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.NPC,
                     Component.translatable("popup.tac_rogue.npc.medic.title"),
@@ -423,6 +470,377 @@ public class NpcManager {
                 && (npc.getRole() == NpcRole.QUARTERMASTER || npc.getRole() == NpcRole.INTEL_OFFICER)
                 && player.distanceToSqr(npc) <= MENU_ACTION_MAX_DISTANCE_SQR
         ).isEmpty();
+    }
+
+    public static void swapServiceLoadoutSlot(ServerPlayer player, int inventorySlot, int stashSlot) {
+        if (!validateMenuAction(player, "quartermaster", "sync_service_stash")) {
+            PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.WARNING,
+                Component.translatable("popup.tac_rogue.npc.quartermaster.title"),
+                Component.translatable("gui.tac_rogue.npc_menu.too_far"), 70);
+            return;
+        }
+        int maxSlot = maxManagedInventorySlot(player);
+        if (inventorySlot < 0 || inventorySlot > maxSlot || inventorySlot >= player.getInventory().items.size()) {
+            PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.WARNING,
+                Component.translatable("popup.tac_rogue.npc.quartermaster.title"),
+                Component.translatable("message.tac_rogue.loadout_swap_invalid"), 90);
+            sendServiceLoadoutSummary(player);
+            return;
+        }
+        StashSavedData.PlayerStash stash = StashSavedData.get(player.serverLevel()).getStash(player.getUUID());
+        if (stashSlot < 0 || stashSlot >= stash.unlockedLines * 9) {
+            PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.WARNING,
+                Component.translatable("popup.tac_rogue.npc.quartermaster.title"),
+                Component.translatable("message.tac_rogue.loadout_swap_invalid"), 90);
+            sendServiceLoadoutSummary(player);
+            return;
+        }
+
+        ItemStack inventoryStack = player.getInventory().items.get(inventorySlot);
+        ItemStack stashStack = stash.getItem(stashSlot);
+        player.getInventory().items.set(inventorySlot, stashStack.copy());
+        stash.setItem(stashSlot, inventoryStack.copy());
+        player.getInventory().setChanged();
+        player.inventoryMenu.broadcastChanges();
+        if (player.containerMenu != player.inventoryMenu) {
+            player.containerMenu.broadcastChanges();
+        }
+        PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.REWARD,
+            Component.translatable("popup.tac_rogue.npc.quartermaster.title"),
+            Component.translatable("message.tac_rogue.loadout_swap_done"), 80);
+        sendServiceLoadoutSummary(player);
+    }
+
+    private static void showOperationPlan(ServerPlayer player) {
+        com.levanilla.rogue.core.PlayerRunData data = RunManager.getData(player);
+        int floor = Math.max(1, data.getCurrentFloor());
+        int nextMilestone = ((floor - 1) / 5 + 1) * 5;
+        int nextBoss = ((floor - 1) / 10 + 1) * 10;
+        QuestManager.QuestProgress progress = QuestManager.getProgress(player);
+        PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.NPC,
+            Component.translatable("popup.tac_rogue.npc.commander.title"),
+            Component.translatable("message.tac_rogue.commander_operation_plan",
+                floor,
+                data.getMaxReachedFloor(),
+                nextMilestone,
+                nextBoss,
+                DifficultyManager.getDifficulty().displayName,
+                progress.currentChapter),
+            180);
+    }
+
+    private static void applyFieldBuff(ServerPlayer player) {
+        if (!requireLobby(player, "message.tac_rogue.medic_lobby_only")) return;
+        if (!consumeGoldOrWarn(player, FIELD_BUFF_COST, Component.translatable("popup.tac_rogue.npc.medic.title"))) return;
+        player.addEffect(new MobEffectInstance(MobEffects.ABSORPTION, 20 * 60 * 5, 0, true, true));
+        player.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SPEED, 20 * 60 * 4, 0, true, true));
+        player.getPersistentData().putLong(MEDICAL_BUFF_UNTIL_KEY, player.level().getGameTime() + 20L * 60L * 5L);
+        com.levanilla.rogue.core.StaminaManager.setStamina(player, com.levanilla.rogue.core.StaminaManager.getMaxStamina(player));
+        RunManager.syncPlayer(player);
+        PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.REWARD,
+            Component.translatable("popup.tac_rogue.npc.medic.title"),
+            Component.translatable("message.tac_rogue.medic_field_buff", FIELD_BUFF_COST), 120);
+    }
+
+    private static void refillMedicalSupplies(ServerPlayer player) {
+        if (!consumeGoldOrWarn(player, MEDICAL_REFILL_COST, Component.translatable("popup.tac_rogue.npc.medic.title"))) return;
+        ShopPlacementService.placeRewardItem(player, RogueItemFactory.createRecoveryItem("rogue:medkit"), "MEDKIT");
+        ShopPlacementService.placeRewardItem(player, RogueItemFactory.createRecoveryItem("rogue:adrenaline"), "ADRENALINE");
+        ShopPlacementService.placeRewardItem(player, RogueItemFactory.createRecoveryItem("rogue:bandage"), "BANDAGE");
+        RunManager.syncPlayer(player);
+        PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.REWARD,
+            Component.translatable("popup.tac_rogue.npc.medic.title"),
+            Component.translatable("message.tac_rogue.medic_refill", MEDICAL_REFILL_COST), 130);
+    }
+
+    private static void saveLoadoutPreset(ServerPlayer player) {
+        ListTag preset = new ListTag();
+        int maxSlot = maxManagedInventorySlot(player);
+        for (int slot = 0; slot <= maxSlot && slot < player.getInventory().items.size(); slot++) {
+            ItemStack stack = player.getInventory().items.get(slot);
+            if (stack.isEmpty()) continue;
+            String key = loadoutKey(stack);
+            if (key.isBlank()) continue;
+            CompoundTag entry = new CompoundTag();
+            entry.putInt("Slot", slot);
+            entry.putString("Key", key);
+            preset.add(entry);
+        }
+        player.getPersistentData().put(LOADOUT_PRESET_KEY, preset);
+        PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.NPC,
+            Component.translatable("popup.tac_rogue.npc.quartermaster.title"),
+            Component.translatable("message.tac_rogue.loadout_saved", preset.size()), 100);
+        sendServiceLoadoutSummary(player);
+    }
+
+    private static void restoreLoadoutPreset(ServerPlayer player) {
+        if (!player.getPersistentData().contains(LOADOUT_PRESET_KEY)) {
+            PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.WARNING,
+                Component.translatable("popup.tac_rogue.npc.quartermaster.title"),
+                Component.translatable("message.tac_rogue.loadout_missing"), 90);
+            return;
+        }
+        ListTag preset = player.getPersistentData().getList(LOADOUT_PRESET_KEY, 10);
+        int restored = 0;
+        int maxSlot = maxManagedInventorySlot(player);
+        boolean[] lockedSlots = new boolean[player.getInventory().items.size()];
+        StashSavedData data = StashSavedData.get(player.serverLevel());
+        StashSavedData.PlayerStash stash = data.getStash(player.getUUID());
+        for (int i = 0; i < preset.size(); i++) {
+            CompoundTag entry = preset.getCompound(i);
+            int targetSlot = entry.getInt("Slot");
+            if (targetSlot < 0 || targetSlot > maxSlot || targetSlot >= player.getInventory().items.size()) continue;
+            String key = entry.getString("Key");
+            if (key.equals(loadoutKey(player.getInventory().items.get(targetSlot)))) {
+                lockedSlots[targetSlot] = true;
+                restored++;
+                continue;
+            }
+            LoadoutSource sourceRef = findLoadoutSource(player, stash, key, maxSlot, lockedSlots);
+            if (sourceRef == null) continue;
+            if (sourceRef.stash()) {
+                ItemStack source = stash.getItem(sourceRef.slot());
+                ItemStack target = player.getInventory().items.get(targetSlot);
+                player.getInventory().items.set(targetSlot, source);
+                stash.setItem(sourceRef.slot(), target);
+            } else if (sourceRef.slot() != targetSlot) {
+                ItemStack source = player.getInventory().items.get(sourceRef.slot());
+                ItemStack target = player.getInventory().items.get(targetSlot);
+                player.getInventory().items.set(targetSlot, source);
+                player.getInventory().items.set(sourceRef.slot(), target);
+            }
+            lockedSlots[targetSlot] = true;
+            restored++;
+        }
+        player.getInventory().setChanged();
+        PopupNotificationMessage.send(player, restored > 0 ? PopupNotificationMessage.PopupType.REWARD : PopupNotificationMessage.PopupType.WARNING,
+            Component.translatable("popup.tac_rogue.npc.quartermaster.title"),
+            Component.translatable("message.tac_rogue.loadout_restored", restored, preset.size()), 110);
+        sendServiceLoadoutSummary(player);
+    }
+
+    private static void bulkBuyAmmo(ServerPlayer player) {
+        Set<String> ammoIds = equippedAmmoIds(player);
+        if (ammoIds.isEmpty()) {
+            PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.WARNING,
+                Component.translatable("popup.tac_rogue.npc.quartermaster.title"),
+                Component.translatable("message.tac_rogue.bulk_ammo_no_gun"), 90);
+            return;
+        }
+        int totalCost = 0;
+        for (String ammoId : ammoIds) {
+            totalCost += PriceManager.getAmmoBuyPrice(ammoId) * BULK_AMMO_STACKS;
+        }
+        if (!consumeGoldOrWarn(player, totalCost, Component.translatable("popup.tac_rogue.npc.quartermaster.title"))) return;
+        int stacks = 0;
+        for (String ammoId : ammoIds) {
+            for (int i = 0; i < BULK_AMMO_STACKS; i++) {
+                ItemStack stack = RogueItemFactory.createShopAmmoStack(ammoId);
+                if (!stack.isEmpty()) {
+                    ShopPlacementService.placePurchasedItem(player, stack, ammoId, 0);
+                    stacks++;
+                }
+            }
+        }
+        RunManager.syncPlayer(player);
+        PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.REWARD,
+            Component.translatable("popup.tac_rogue.npc.quartermaster.title"),
+            Component.translatable("message.tac_rogue.bulk_ammo_bought", stacks, totalCost), 120);
+        sendServiceLoadoutSummary(player);
+    }
+
+    private static void checkAttachmentCompatibility(ServerPlayer player) {
+        List<String> gunIds = equippedGunIds(player);
+        int loose = 0;
+        int compatible = 0;
+        int incompatible = 0;
+        for (ItemStack stack : player.getInventory().items) {
+            String attId = attachmentId(stack);
+            if (attId == null) continue;
+            loose++;
+            if (isCompatibleWithAnyGun(attId, gunIds)) compatible++;
+            else incompatible++;
+        }
+        StashSavedData.PlayerStash stash = StashSavedData.get(player.serverLevel()).getStash(player.getUUID());
+        for (int slot = 0; slot < stash.unlockedLines * 9; slot++) {
+            String attId = attachmentId(stash.getItem(slot));
+            if (attId == null) continue;
+            loose++;
+            if (isCompatibleWithAnyGun(attId, gunIds)) compatible++;
+            else incompatible++;
+        }
+        PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.NPC,
+            Component.translatable("popup.tac_rogue.npc.quartermaster.title"),
+            Component.translatable("message.tac_rogue.attachment_check", loose, compatible, incompatible, gunIds.size()), 150);
+        sendServiceLoadoutSummary(player);
+    }
+
+    private static void sellLooseIncompatibleAttachments(ServerPlayer player) {
+        List<String> gunIds = equippedGunIds(player);
+        if (gunIds.isEmpty()) {
+            PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.WARNING,
+                Component.translatable("popup.tac_rogue.npc.quartermaster.title"),
+                Component.translatable("message.tac_rogue.sell_junk_no_gun"), 90);
+            return;
+        }
+        int sold = 0;
+        int total = 0;
+        for (int slot = 0; slot < Math.min(36, player.getInventory().items.size()); slot++) {
+            ItemStack stack = player.getInventory().items.get(slot);
+            String attId = attachmentId(stack);
+            if (attId == null || isCompatibleWithAnyGun(attId, gunIds)) continue;
+            int price = PriceManager.getSellPrice(stack);
+            if (price <= 0) continue;
+            player.getInventory().items.set(slot, ItemStack.EMPTY);
+            sold += stack.getCount();
+            total += price;
+        }
+        StashSavedData data = StashSavedData.get(player.serverLevel());
+        StashSavedData.PlayerStash stash = data.getStash(player.getUUID());
+        for (int slot = 0; slot < stash.unlockedLines * 9; slot++) {
+            ItemStack stack = stash.getItem(slot);
+            String attId = attachmentId(stack);
+            if (attId == null || isCompatibleWithAnyGun(attId, gunIds)) continue;
+            int price = PriceManager.getSellPrice(stack);
+            if (price <= 0) continue;
+            stash.setItem(slot, ItemStack.EMPTY);
+            sold += stack.getCount();
+            total += price;
+        }
+        if (total > 0) {
+            GoldGainService.award(player, total);
+            player.getInventory().setChanged();
+        }
+        PopupNotificationMessage.send(player, total > 0 ? PopupNotificationMessage.PopupType.REWARD : PopupNotificationMessage.PopupType.WARNING,
+            Component.translatable("popup.tac_rogue.npc.quartermaster.title"),
+            Component.translatable("message.tac_rogue.sell_junk_done", sold, total), 120);
+        sendServiceLoadoutSummary(player);
+    }
+
+    private static void sendServiceLoadoutSummary(ServerPlayer player) {
+        List<com.levanilla.rogue.networking.SyncServiceStashMessage.Entry> hotbar = new ArrayList<>();
+        int maxSlot = maxManagedInventorySlot(player);
+        for (int slot = 0; slot <= maxSlot && slot < player.getInventory().items.size(); slot++) {
+            ItemStack stack = player.getInventory().items.get(slot);
+            hotbar.add(new com.levanilla.rogue.networking.SyncServiceStashMessage.Entry(slot, stack.copy(), classifyLoadoutStack(stack)));
+        }
+
+        List<com.levanilla.rogue.networking.SyncServiceStashMessage.Entry> stashEntries = new ArrayList<>();
+        StashSavedData.PlayerStash stash = StashSavedData.get(player.serverLevel()).getStash(player.getUUID());
+        for (int slot = 0; slot < stash.unlockedLines * 9; slot++) {
+            ItemStack stack = stash.getItem(slot);
+            stashEntries.add(new com.levanilla.rogue.networking.SyncServiceStashMessage.Entry(slot, stack.copy(), classifyLoadoutStack(stack)));
+        }
+
+        com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
+            net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+            new com.levanilla.rogue.networking.SyncServiceStashMessage(hotbar, stashEntries));
+    }
+
+    private static String classifyLoadoutStack(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return "empty";
+        CompoundTag tag = stack.getTag();
+        if (tag != null) {
+            if (tag.contains("GunId")) return "gun";
+            if (tag.contains("AmmoId")) return "ammo";
+            if (tag.contains("AttachmentId")) return "attachment";
+            if (tag.contains("MeleeWeaponId")) return "melee";
+            if (tag.getBoolean("rogue_item")) return "item";
+        }
+        return "item";
+    }
+
+    private static boolean requireLobby(ServerPlayer player, String messageKey) {
+        if (player.level().dimension() == com.levanilla.rogue.core.CommonEventHandler.LOBBY_DIM) return true;
+        PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.WARNING,
+            Component.translatable("popup.tac_rogue.npc.medic.title"),
+            Component.translatable(messageKey), 90);
+        return false;
+    }
+
+    private static boolean consumeGoldOrWarn(ServerPlayer player, int amount, Component title) {
+        if (amount <= 0 || CurrencyManager.consumeGold(player, amount)) return true;
+        PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.WARNING,
+            title,
+            Component.translatable("message.tac_rogue.not_enough_gold", amount), 90);
+        return false;
+    }
+
+    private static int maxManagedInventorySlot(ServerPlayer player) {
+        int invLevel = player.getPersistentData().getInt("TacRogue_InvLevel");
+        return Math.min(GameConstants.SLOT_AMMO_GUN2_END + invLevel * 2, 35);
+    }
+
+    private static LoadoutSource findLoadoutSource(ServerPlayer player, StashSavedData.PlayerStash stash, String key, int maxSlot, boolean[] lockedSlots) {
+        for (int slot = 0; slot <= maxSlot && slot < player.getInventory().items.size(); slot++) {
+            if (lockedSlots[slot]) continue;
+            ItemStack stack = player.getInventory().items.get(slot);
+            if (!stack.isEmpty() && key.equals(loadoutKey(stack))) return new LoadoutSource(false, slot);
+        }
+        for (int slot = 0; slot < stash.unlockedLines * 9; slot++) {
+            ItemStack stack = stash.getItem(slot);
+            if (!stack.isEmpty() && key.equals(loadoutKey(stack))) return new LoadoutSource(true, slot);
+        }
+        return null;
+    }
+
+    private static String loadoutKey(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return "";
+        CompoundTag tag = stack.getTag();
+        ResourceLocation itemId = ForgeRegistries.ITEMS.getKey(stack.getItem());
+        String base = itemId == null ? stack.getItem().toString() : itemId.toString();
+        if (tag == null) return "item:" + base;
+        if (tag.contains("AmmoId")) return "ammo:" + tag.getString("AmmoId");
+        if (tag.contains("AttachmentId")) return "attachment:" + tag.getString("AttachmentId");
+        if (tag.contains("MeleeWeaponId")) return "melee:" + tag.getString("MeleeWeaponId") + ":" + stableLoadoutTag(tag);
+        if (tag.contains("GunId")) return "gun:" + tag.getString("GunId") + ":" + stableLoadoutTag(tag);
+        if (tag.getBoolean("rogue_item")) return "rogue_item:" + base + ":" + tag.getInt("CustomModelData");
+        return "item:" + base + ":" + tag;
+    }
+
+    private static String stableLoadoutTag(CompoundTag tag) {
+        List<String> parts = new ArrayList<>();
+        if (tag.contains("RogueRarity")) parts.add("rarity=" + tag.getString("RogueRarity"));
+        if (tag.contains("WeaponRarity")) parts.add("rarity2=" + tag.getString("WeaponRarity"));
+        if (tag.contains("TacRogueRarity")) parts.add("rarity3=" + tag.getString("TacRogueRarity"));
+        if (tag.contains("Attachments")) parts.add("attachments=" + tag.getCompound("Attachments"));
+        if (tag.contains("DeepModifier")) parts.add("deep=" + tag.getString("DeepModifier"));
+        return String.join("|", parts);
+    }
+
+    private static List<String> equippedGunIds(ServerPlayer player) {
+        List<String> gunIds = new ArrayList<>();
+        for (int slot = GameConstants.SLOT_GUN_START; slot <= GameConstants.SLOT_GUN_END; slot++) {
+            if (slot >= player.getInventory().items.size()) continue;
+            ItemStack stack = player.getInventory().items.get(slot);
+            if (stack.isEmpty() || !stack.hasTag() || !stack.getTag().contains("GunId")) continue;
+            gunIds.add(stack.getTag().getString("GunId"));
+        }
+        return gunIds;
+    }
+
+    private static Set<String> equippedAmmoIds(ServerPlayer player) {
+        Set<String> ammoIds = new HashSet<>();
+        for (String gunId : equippedGunIds(player)) {
+            String ammoId = TacZRegistryHelper.getAmmoForGun(gunId);
+            if (ammoId != null && !ammoId.isBlank()) ammoIds.add(ammoId);
+        }
+        return ammoIds;
+    }
+
+    private static String attachmentId(ItemStack stack) {
+        if (stack == null || stack.isEmpty() || !stack.hasTag()) return null;
+        CompoundTag tag = stack.getTag();
+        if (tag == null || !tag.contains("AttachmentId")) return null;
+        String id = tag.getString("AttachmentId");
+        return id == null || id.isBlank() ? null : id;
+    }
+
+    private static boolean isCompatibleWithAnyGun(String attachmentId, List<String> gunIds) {
+        for (String gunId : gunIds) {
+            if (AttachmentDatabase.isCompatible(gunId, attachmentId)) return true;
+        }
+        return false;
     }
 
     private static void openDeepOperations(ServerPlayer player) {

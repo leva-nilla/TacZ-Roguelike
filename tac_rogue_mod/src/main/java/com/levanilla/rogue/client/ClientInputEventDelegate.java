@@ -4,6 +4,7 @@ import com.levanilla.rogue.client.compat.LeaWindsCompat;
 import com.levanilla.rogue.client.hud.DamageIndicatorRenderer;
 import com.levanilla.rogue.client.hud.HudRenderer;
 import com.levanilla.rogue.client.hud.NotificationManager;
+import com.levanilla.rogue.client.hud.TutorialGuideManager;
 import com.levanilla.rogue.core.RunManager;
 import com.tacz.guns.api.item.IGun;
 import net.minecraft.client.Minecraft;
@@ -27,6 +28,7 @@ final class ClientInputEventDelegate {
 
             Minecraft mc = Minecraft.getInstance();
             ClientWelcomeScreenDelegate.handlePendingWelcomeScreen(mc);
+            TutorialGuideManager.tick(mc);
             syncAdsInput(mc);
             handleRogueSneakToggle(mc);
             KeyComboManager.tick(mc);
@@ -51,6 +53,10 @@ final class ClientInputEventDelegate {
 
             while (ClientKeyBinds.DEBUG_MENU.consumeClick()) {
                 DebugMenuScreen.open();
+            }
+
+            while (ClientKeyBinds.TUTORIAL_NEXT.consumeClick()) {
+                TutorialGuideManager.advanceManually(mc);
             }
         }
     }

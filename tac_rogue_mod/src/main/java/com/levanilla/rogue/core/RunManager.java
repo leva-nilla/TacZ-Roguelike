@@ -521,6 +521,13 @@ public class RunManager {
             new com.levanilla.rogue.networking.SyncPerksMessage(perks.toString())
         );
 
+        long medicalBuffUntil = player.getPersistentData().getLong("TacRogueMedicalBuffUntil");
+        int medicalBuffTicks = (int)Math.max(0L, medicalBuffUntil - player.level().getGameTime());
+        com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
+            net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+            new com.levanilla.rogue.networking.SyncDataMessage("medical_buff:" + medicalBuffTicks)
+        );
+
         com.levanilla.rogue.core.service.DeepProgressService.sync(player);
     }
 

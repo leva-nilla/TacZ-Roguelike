@@ -10,6 +10,7 @@ final class ClientWelcomeScreenDelegate {
 
     static void onClientPlayerJoin(net.minecraftforge.client.event.ClientPlayerNetworkEvent.LoggingIn event) {
         Minecraft mc = Minecraft.getInstance();
+        com.levanilla.rogue.client.hud.TutorialGuideManager.resetForWorldJoin();
         pendingWelcomeScreen = true;
         pendingWelcomeTicks = 0;
         mc.tell(() -> {

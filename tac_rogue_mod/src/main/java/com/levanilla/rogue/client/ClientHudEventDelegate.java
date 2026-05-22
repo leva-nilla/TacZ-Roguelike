@@ -5,6 +5,7 @@ import com.levanilla.rogue.client.hud.DamageIndicatorRenderer;
 import com.levanilla.rogue.client.hud.HotbarRenderer;
 import com.levanilla.rogue.client.hud.HudRenderer;
 import com.levanilla.rogue.client.hud.NotificationManager;
+import com.levanilla.rogue.client.hud.TutorialGuideManager;
 import com.levanilla.rogue.core.RunManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -55,6 +56,7 @@ final class ClientHudEventDelegate {
             HudRenderer.render(graphics, mc, player, width, height);
             PublicCoopWaitState.render(graphics, mc, width, height);
             DamageIndicatorRenderer.renderGui(graphics, mc, width, height);
+            TutorialGuideManager.render(graphics, mc, width, height);
             NotificationManager.render(graphics, mc, width, height);
             NotificationManager.renderPopups(graphics, mc, width, height);
             renderBackgroundLoadIndicator(graphics, mc, width);

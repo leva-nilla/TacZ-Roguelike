@@ -99,6 +99,10 @@ public final class ClientSyncHandler {
                 ClientRunState.clearEnemyDirection();
                 return;
             }
+            if (data.startsWith("medical_buff:")) {
+                ClientRunState.setMedicalBuffRemainingTicks(Integer.parseInt(data.substring(13)));
+                return;
+            }
             if (data.startsWith("perf_start:")) {
                 handlePerfStart(data);
                 return;

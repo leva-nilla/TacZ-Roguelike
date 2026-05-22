@@ -36,11 +36,19 @@ public class ClientKeyBinds {
             CATEGORY
     );
 
+    public static final KeyMapping TUTORIAL_NEXT = new KeyMapping(
+            "key.tac_rogue.tutorial_next",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_N,
+            CATEGORY
+    );
+
     @SubscribeEvent
     public static void onKeyRegister(RegisterKeyMappingsEvent event) {
         event.register(FLASHLIGHT);
         event.register(CAMERA_TOGGLE);
         event.register(DEBUG_MENU);
+        event.register(TUTORIAL_NEXT);
     }
 
     public static boolean isDebugUser() {

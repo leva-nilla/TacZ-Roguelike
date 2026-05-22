@@ -31,8 +31,8 @@ final class PerkCardButton extends Button {
         textY += 14;
 
         boolean hasModifier = perk.modifier != PerkDefinition.Modifier.NONE;
-        int actionReserve = this.isHoveredOrFocused() ? 20 : 4;
-        int modifierPanelHeight = hasModifier ? Math.min(78, Math.max(58, this.height / 3)) : 0;
+        int actionReserve = this.isHoveredOrFocused() ? 18 : 4;
+        int modifierPanelHeight = hasModifier ? Math.min(64, Math.max(44, this.height / 4)) : 0;
         int contentBottom = this.getY() + this.height - actionReserve - modifierPanelHeight - 8;
 
         graphics.drawString(mc.font, Component.translatable("gui.tac_rogue.perk_screen.effect"), textX, textY, 0xFF8DEFFF, false);
@@ -47,6 +47,9 @@ final class PerkCardButton extends Button {
             graphics.drawString(mc.font, line, textX, textY, 0xFFCCCCCC, false);
             textY += 10;
             descLines++;
+        }
+        if (descLines < wrappedDesc.size() && descLines > 0) {
+            graphics.drawString(mc.font, Component.literal("..."), textX, textY - 10, 0xFFCCCCCC, false);
         }
         if (this.isHoveredOrFocused() && descLines < wrappedDesc.size()) {
             graphics.renderComponentTooltip(mc.font, java.util.List.of(pureDesc), mouseX, mouseY);
@@ -76,6 +79,9 @@ final class PerkCardButton extends Button {
                 graphics.drawString(mc.font, line, modX, lineY, perk.modifier.color, false);
                 lineY += 10;
                 lines++;
+            }
+            if (lines < wrapped.size() && lines > 0) {
+                graphics.drawString(mc.font, Component.literal("..."), modX, lineY - 10, perk.modifier.color, false);
             }
             if (this.isHoveredOrFocused() && lines < wrapped.size()) {
                 graphics.renderComponentTooltip(mc.font,

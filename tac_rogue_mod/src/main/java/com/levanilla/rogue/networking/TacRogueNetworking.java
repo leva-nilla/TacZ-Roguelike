@@ -63,6 +63,12 @@ public class TacRogueNetworking {
                 .consumerMainThread(SyncStashMessage::handle)
                 .add();
 
+        CHANNEL.messageBuilder(SyncServiceStashMessage.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(SyncServiceStashMessage::encode)
+                .decoder(SyncServiceStashMessage::decode)
+                .consumerMainThread(SyncServiceStashMessage::handle)
+                .add();
+
         // 各種データの汎用同期 (S -> C)
         CHANNEL.messageBuilder(SyncDataMessage.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
                 .encoder(SyncDataMessage::encode)
@@ -159,6 +165,12 @@ public class TacRogueNetworking {
                 .encoder(NpcMenuActionMessage::encode)
                 .decoder(NpcMenuActionMessage::decode)
                 .consumerMainThread(NpcMenuActionMessage::handle)
+                .add();
+
+        CHANNEL.messageBuilder(ServiceLoadoutSwapMessage.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(ServiceLoadoutSwapMessage::encode)
+                .decoder(ServiceLoadoutSwapMessage::decode)
+                .consumerMainThread(ServiceLoadoutSwapMessage::handle)
                 .add();
 
         CHANNEL.messageBuilder(NpcInteractMessage.class, packetId++, NetworkDirection.PLAY_TO_SERVER)

@@ -142,6 +142,12 @@ public class WelcomeScreen extends Screen {
         y += 15;
         y += wrappedHeight("gui.tac_rogue.welcome.tut9", textWidth);
         y += wrappedHeight("gui.tac_rogue.welcome.tut10", textWidth);
+        y += 12;
+        y += 15;
+        y += wrappedHeight("gui.tac_rogue.welcome.tut12", textWidth);
+        y += 12;
+        y += 15;
+        y += wrappedHeight("gui.tac_rogue.welcome.tut14", textWidth);
         y += 20;
         return y;
     }
@@ -471,7 +477,15 @@ public class WelcomeScreen extends Screen {
         graphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.tut8").withStyle(net.minecraft.ChatFormatting.GREEN), x, y, 0xFFFFFFFF, false);
         y += 15;
         y = drawWrapped(graphics, "gui.tac_rogue.welcome.tut9", x, y, w, 0xFFD8DEE9);
-        drawWrapped(graphics, "gui.tac_rogue.welcome.tut10", x, y, w, 0xFFD8DEE9);
+        y = drawWrapped(graphics, "gui.tac_rogue.welcome.tut10", x, y, w, 0xFFD8DEE9);
+        y += 12;
+        graphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.tut11").withStyle(net.minecraft.ChatFormatting.GOLD), x, y, 0xFFFFFFFF, false);
+        y += 15;
+        y = drawWrapped(graphics, "gui.tac_rogue.welcome.tut12", x, y, w, 0xFFD8DEE9);
+        y += 12;
+        graphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.tut13").withStyle(net.minecraft.ChatFormatting.LIGHT_PURPLE), x, y, 0xFFFFFFFF, false);
+        y += 15;
+        drawWrapped(graphics, "gui.tac_rogue.welcome.tut14", x, y, w, 0xFFD8DEE9);
 
         for (Row row : this.rows) {
             int rowY = this.layout.viewportTop() + row.baseY - (int)Math.round(this.scrollY);

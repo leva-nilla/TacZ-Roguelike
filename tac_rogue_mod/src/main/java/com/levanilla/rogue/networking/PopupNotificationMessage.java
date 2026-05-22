@@ -58,6 +58,14 @@ public class PopupNotificationMessage {
                     msg.type.name(), msg.title, msg.body, msg.type.color, msg.durationTicks)) {
                     return;
                 }
+                if (com.levanilla.rogue.client.QuartermasterServicesScreen.offerServicePopup(
+                    msg.type.name(), msg.title, msg.body, msg.type.color, msg.durationTicks)) {
+                    return;
+                }
+                if (com.levanilla.rogue.client.MedicalSupportScreen.offerServicePopup(
+                    msg.type.name(), msg.title, msg.body, msg.type.color, msg.durationTicks)) {
+                    return;
+                }
                 com.levanilla.rogue.client.ClientEventHandler.addPopupNotification(
                     msg.type.name(), msg.title, msg.body, msg.type.color, msg.durationTicks);
             }

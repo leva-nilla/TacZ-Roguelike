@@ -44,6 +44,7 @@ public final class NotificationManager {
     private static final int[] SPEED_VALUES = {5, 7, 11};
     private static final float[] DURATION_VALUES = {0.70f, 0.85f, 1.00f, 1.25f};
     private static final int[] MAX_VISIBLE_VALUES = {2, 3, 4};
+    private static final int MAX_POPUP_BODY_LINES = 4;
 
     private static boolean settingsLoaded = false;
     private static float popupScale = 0.82f;
@@ -245,7 +246,7 @@ public final class NotificationManager {
 
         float uiScale = popupScale;
         float textScale = Math.max(0.72f, 0.82f * uiScale);
-        int boxW = Math.min(Math.round(196 * uiScale), width - 18);
+        int boxW = Math.min(Math.round(236 * uiScale), width - 18);
         int gap = Math.max(3, Math.round(4 * uiScale));
         List<PopupLayout> layouts = new ArrayList<>();
         int totalHeight = 0;
@@ -253,7 +254,7 @@ public final class NotificationManager {
         int lineH = Math.max(7, Math.round(8 * uiScale));
         for (PopupNotification popup : popups) {
             List<FormattedCharSequence> bodyLines = popup.bodyLines(mc, textWidth);
-            int boxH = Math.round(22 * uiScale) + Math.min(2, bodyLines.size()) * lineH;
+            int boxH = Math.round(26 * uiScale) + Math.min(MAX_POPUP_BODY_LINES, bodyLines.size()) * lineH;
             layouts.add(new PopupLayout(popup, bodyLines, boxH));
             totalHeight += boxH + gap;
         }
@@ -295,7 +296,7 @@ public final class NotificationManager {
             int lineY = yy + Math.round(15 * uiScale);
             int lines = 0;
             for (FormattedCharSequence line : layout.bodyLines) {
-                if (lines >= 2) break;
+                if (lines >= MAX_POPUP_BODY_LINES) break;
                 graphics.pose().pushPose();
                 graphics.pose().translate(x + Math.round(7 * uiScale), lineY, 0);
                 graphics.pose().scale(textScale, textScale, 1.0f);
@@ -316,14 +317,14 @@ public final class NotificationManager {
 
         float uiScale = popupScale;
         float textScale = Math.max(0.72f, 0.82f * uiScale);
-        int boxW = Math.min(Math.round(196 * uiScale), width - 18);
+        int boxW = Math.min(Math.round(236 * uiScale), width - 18);
         int gap = Math.max(3, Math.round(4 * uiScale));
         int textWidth = Math.max(24, Math.round((boxW - 16) / textScale));
         int lineH = Math.max(7, Math.round(8 * uiScale));
         int totalHeight = 0;
         for (PopupNotification popup : popups) {
             List<FormattedCharSequence> bodyLines = popup.bodyLines(mc, textWidth);
-            int boxH = Math.round(22 * uiScale) + Math.min(2, bodyLines.size()) * lineH;
+            int boxH = Math.round(26 * uiScale) + Math.min(MAX_POPUP_BODY_LINES, bodyLines.size()) * lineH;
             totalHeight += boxH + gap;
         }
         return totalHeight > 0 ? totalHeight : 0;

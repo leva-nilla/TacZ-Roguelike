@@ -1,6 +1,5 @@
 package com.levanilla.rogue.client;
 
-import com.levanilla.rogue.client.compat.LeaWindsCompat;
 import com.levanilla.rogue.networking.NpcMenuActionMessage;
 import com.levanilla.rogue.networking.TacRogueNetworking;
 import net.minecraft.client.gui.GuiGraphics;
@@ -50,9 +49,13 @@ public class NpcMenuScreen extends Screen {
         List<MenuAction> actions = new ArrayList<>();
         if ("commander".equals(role)) {
             actions.add(MenuAction.server("gui.tac_rogue.npc_menu.quest", "quest"));
+            actions.add(MenuAction.server("gui.tac_rogue.npc_menu.operation_plan", "operation_plan"));
             actions.add(MenuAction.server("gui.tac_rogue.npc_menu.briefing", "talk"));
         } else if ("quartermaster".equals(role)) {
             actions.add(MenuAction.server("gui.tac_rogue.npc_menu.shop", "shop"));
+            actions.add(MenuAction.local(Component.translatable("gui.tac_rogue.npc_menu.quartermaster_services"), () -> {
+                if (this.minecraft != null) this.minecraft.setScreen(new QuartermasterServicesScreen(this));
+            }));
             if (deepUnlocked()) {
                 actions.add(MenuAction.server("gui.tac_rogue.npc_menu.deep_operations", "deep_operations"));
             }
@@ -66,23 +69,18 @@ public class NpcMenuScreen extends Screen {
                 if (deepUnlocked()) {
                     actions.add(MenuAction.server("gui.tac_rogue.npc_menu.deep_operations", "deep_operations"));
                 }
-                actions.add(MenuAction.local(Component.translatable("gui.tac_rogue.npc_menu.hud_settings"), () -> {
-                    if (this.minecraft != null) this.minecraft.setScreen(new HudSettingsScreen(this));
+                actions.add(MenuAction.local(Component.translatable("gui.tac_rogue.npc_menu.guide"), () -> {
+                    if (this.minecraft != null) this.minecraft.setScreen(new TutorialGuideScreen(this));
                 }));
-                actions.add(MenuAction.local(Component.translatable("gui.tac_rogue.npc_menu.popup_settings"), () -> {
-                    if (this.minecraft != null) this.minecraft.setScreen(new PopupSettingsScreen(this));
-                }));
-                actions.add(MenuAction.local(Component.translatable("gui.tac_rogue.npc_menu.quick_keys"), () -> {
-                    if (this.minecraft != null) this.minecraft.setScreen(new QuickKeybindScreen(this));
-                }));
-                actions.add(MenuAction.local(Component.translatable("gui.tac_rogue.npc_menu.third_person_ads",
-                    Component.translatable(LeaWindsCompat.getScopeAdsModeTranslationKey())), () -> {
-                    LeaWindsCompat.cycleScopeAdsMode();
-                    this.init();
+                actions.add(MenuAction.local(Component.translatable("gui.tac_rogue.npc_menu.settings"), () -> {
+                    if (this.minecraft != null) this.minecraft.setScreen(new IntelSettingsScreen(this));
                 }));
             }
         } else if ("medic".equals(role)) {
             actions.add(MenuAction.server("gui.tac_rogue.npc_menu.heal", "heal"));
+            actions.add(MenuAction.local(Component.translatable("gui.tac_rogue.npc_menu.medical_support"), () -> {
+                if (this.minecraft != null) this.minecraft.setScreen(new MedicalSupportScreen(this));
+            }));
             actions.add(MenuAction.server("gui.tac_rogue.npc_menu.medical", "talk"));
         }
         return actions;

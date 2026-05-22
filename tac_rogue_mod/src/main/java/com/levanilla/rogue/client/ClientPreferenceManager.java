@@ -14,6 +14,7 @@ public final class ClientPreferenceManager {
     private static final String FILE_NAME = "tac_rogue-client.properties";
     private static final String LANGUAGE_SELECTED = "language_selected";
     private static final String WELCOME_SEEN_PREFIX = "welcome_setup_seen_v2.";
+    private static final String TUTORIAL_GUIDE_DONE_PREFIX = "tutorial_guide_done_v1.";
 
     private ClientPreferenceManager() {}
 
@@ -34,6 +35,22 @@ public final class ClientPreferenceManager {
     public static void markWelcomeSeenForCurrentWorld() {
         Properties props = load();
         props.setProperty(WELCOME_SEEN_PREFIX + currentWorldKey(), "true");
+        save(props);
+    }
+
+    public static boolean hasCompletedTutorialGuideForCurrentWorld() {
+        return Boolean.parseBoolean(load().getProperty(TUTORIAL_GUIDE_DONE_PREFIX + currentWorldKey(), "false"));
+    }
+
+    public static void markTutorialGuideCompletedForCurrentWorld() {
+        Properties props = load();
+        props.setProperty(TUTORIAL_GUIDE_DONE_PREFIX + currentWorldKey(), "true");
+        save(props);
+    }
+
+    public static void clearTutorialGuideCompletedForCurrentWorld() {
+        Properties props = load();
+        props.remove(TUTORIAL_GUIDE_DONE_PREFIX + currentWorldKey());
         save(props);
     }
 

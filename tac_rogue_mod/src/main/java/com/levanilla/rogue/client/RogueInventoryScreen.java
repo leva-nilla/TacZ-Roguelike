@@ -616,6 +616,10 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         lines.add(tr("gui.tac_rogue.status.regen_delay",
             String.format(java.util.Locale.ROOT, "%.1fs", GameConstants.REGEN_DAMAGE_COOLDOWN_TICKS / 20.0f)));
         lines.add(tr("gui.tac_rogue.status.ads_stamina_drain", fmtMult(Math.max(0.1f, 1.0f - staminaBonus / 200.0f))));
+        int medicalBuffSeconds = com.levanilla.rogue.core.ClientRunState.getMedicalBuffRemainingSeconds();
+        if (medicalBuffSeconds > 0) {
+            lines.add(tr("gui.tac_rogue.status.medical_buff_remaining", fmtDuration(medicalBuffSeconds)));
+        }
         addCursedPenaltyDetailLines(player, lines);
         lines.add(tr("gui.tac_rogue.status.flashlight_level", com.levanilla.rogue.core.ClientRunState.getFlashlightLevel()));
         return lines;
@@ -714,6 +718,11 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         if (value == null) return "";
         if (value.length() <= max) return value;
         return value.substring(0, Math.max(0, max - 3)) + "...";
+    }
+
+    private static String fmtDuration(int seconds) {
+        int safe = Math.max(0, seconds);
+        return String.format(java.util.Locale.ROOT, "%d:%02d", safe / 60, safe % 60);
     }
 
     private static String categoryInitial(com.levanilla.rogue.core.registry.ShopCatalog.Category category) {

@@ -34,6 +34,7 @@ public final class ClientRunState {
     private static long bossBarStateUntilMs = 0L;
     private static EnemyDirectionState enemyDirectionState = null;
     private static long enemyDirectionUntilMs = 0L;
+    private static long medicalBuffUntilMs = 0L;
     private static final java.util.Set<String> perkTags = new java.util.LinkedHashSet<>();
 
     private ClientRunState() {}
@@ -202,6 +203,24 @@ public final class ClientRunState {
             return null;
         }
         return enemyDirectionState;
+    }
+
+    public static void setMedicalBuffRemainingTicks(int ticks) {
+        if (ticks <= 0) {
+            medicalBuffUntilMs = 0L;
+        } else {
+            medicalBuffUntilMs = System.currentTimeMillis() + ticks * 50L;
+        }
+    }
+
+    public static int getMedicalBuffRemainingSeconds() {
+        if (medicalBuffUntilMs <= 0L) return 0;
+        long remaining = medicalBuffUntilMs - System.currentTimeMillis();
+        if (remaining <= 0L) {
+            medicalBuffUntilMs = 0L;
+            return 0;
+        }
+        return (int)Math.ceil(remaining / 1000.0D);
     }
 
     public static int getFloor() {

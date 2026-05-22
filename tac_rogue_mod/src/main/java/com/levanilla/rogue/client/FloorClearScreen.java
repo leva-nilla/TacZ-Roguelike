@@ -70,8 +70,8 @@ public class FloorClearScreen extends Screen {
 
         if (!perkSelected) {
             perkListLayout = choices.size() > 3 || this.width < 620 || this.height < 330;
-            perkCardW = perkListLayout ? Math.min(170, Math.max(126, (this.width - 86) / 2)) : 130;
-            perkCardH = perkListLayout ? Math.min(132, Math.max(104, this.height - 176)) : 124;
+            perkCardW = perkListLayout ? Math.min(188, Math.max(142, (this.width - 86) / 2)) : Math.min(178, Math.max(148, (this.width - 72) / Math.max(1, choices.size()) - 10));
+            perkCardH = perkListLayout ? Math.min(182, Math.max(142, this.height - 176)) : Math.min(184, Math.max(154, this.height - 178));
             perkListLeft = perkListLayout ? Math.max(28, cx - Math.min(this.width - 56, perkCardW * 2 + 10) / 2) : 0;
             perkListVisibleW = perkListLayout ? Math.min(this.width - perkListLeft * 2, perkCardW * 2 + 10) : 0;
             perkListTop = perkListLayout ? Math.max(66, cy - 42) : cy - 38;
