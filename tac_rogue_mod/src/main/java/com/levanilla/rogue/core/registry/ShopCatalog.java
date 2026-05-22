@@ -1,6 +1,8 @@
 package com.levanilla.rogue.core.registry;
 
 
+import com.levanilla.rogue.core.PriceManager;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -76,32 +78,7 @@ public final class ShopCatalog {
         if (attachmentIds != null) {
             for (String id : attachmentIds) {
                 String name = extractName(id).toUpperCase();
-                String slot = AttachmentDatabase.getSlotType(id);
-                if (slot == null) slot = AttachmentDatabase.guessSlotType(id);
-                if (slot == null) slot = "unknown";
-                
-                int price = 300;
-                if (slot.equals("scope")) {
-                    if (name.contains("4X") || name.contains("6X") || name.contains("8X") || name.contains("SR") || name.contains("SNIPER")) price = 1000;
-                    else price = 300;
-                } else if (slot.equals("muzzle")) {
-                    if (name.contains("SILENCER") || name.contains("SUPPRESSOR")) price = 500;
-                    else price = 350;
-                } else if (slot.equals("grip")) {
-                    price = 300;
-                } else if (slot.equals("laser")) {
-                    price = 250;
-                } else if (slot.equals("extended_mag")) {
-                    if (name.contains("3") || name.contains("III")) price = 800;
-                    else if (name.contains("2") || name.contains("II")) price = 600;
-                    else price = 400;
-                } else if (slot.equals("stock")) {
-                    price = 350;
-                } else if (slot.equals("ammo_mod")) {
-                    price = 450;
-                }
-                
-                items.add(new ShopItem(id, name, price, Category.ATTACHMENT));
+                items.add(new ShopItem(id, name, PriceManager.getAttachmentBuyPrice(id), Category.ATTACHMENT));
             }
         }
         return items;
@@ -156,16 +133,16 @@ public final class ShopCatalog {
         items.add(new ShopItem("rogue:melee_upgrade", "\u2191 MELEE WEAPON Lvl UP", 1500, Category.SPECIAL));
         items.add(new ShopItem("rogue:flashlight_upgrade", "\u2191 FLASHLIGHT Lvl UP", 900, Category.SPECIAL));
         // --- Recovery Items ---
-        items.add(new ShopItem("rogue:medkit", "\u2726 MEDKIT", 300, Category.SPECIAL));
-        items.add(new ShopItem("rogue:field_ration", "\u2726 FIELD RATION x3", 100, Category.SPECIAL));
-        items.add(new ShopItem("rogue:stamina_shot", "\u2726 STAMINA SHOT", 250, Category.SPECIAL));
+        items.add(new ShopItem("rogue:medkit", "\u2726 MEDKIT", 420, Category.SPECIAL));
+        items.add(new ShopItem("rogue:field_ration", "\u2726 FIELD RATION x3", 180, Category.SPECIAL));
+        items.add(new ShopItem("rogue:stamina_shot", "\u2726 STAMINA SHOT", 320, Category.SPECIAL));
         // --- Tactical Items ---
-        items.add(new ShopItem("minecraft:snowball", "SNOWBALL x16", 150, Category.SPECIAL));
+        items.add(new ShopItem("minecraft:snowball", "SNOWBALL x16", 120, Category.SPECIAL));
         // --- New Consumables ---
-        items.add(new ShopItem("rogue:bandage", "\u2726 BANDAGE", 150, Category.SPECIAL));
-        items.add(new ShopItem("rogue:armor_plate", "\u2726 ARMOR PLATE", 400, Category.SPECIAL));
-        items.add(new ShopItem("rogue:adrenaline", "\u2726 ADRENALINE SYRINGE", 500, Category.SPECIAL));
-        items.add(new ShopItem("rogue:emp_device", "\u2726 EMP DEVICE", 350, Category.SPECIAL));
+        items.add(new ShopItem("rogue:bandage", "\u2726 BANDAGE", 220, Category.SPECIAL));
+        items.add(new ShopItem("rogue:armor_plate", "\u2726 ARMOR PLATE", 520, Category.SPECIAL));
+        items.add(new ShopItem("rogue:adrenaline", "\u2726 ADRENALINE SYRINGE", 700, Category.SPECIAL));
+        items.add(new ShopItem("rogue:emp_device", "\u2726 EMP DEVICE", 450, Category.SPECIAL));
         // --- Random Perk ---
         items.add(new ShopItem("rogue:random_perk", "\u2605 RANDOM PERK", 1500, Category.SPECIAL));
         return items;

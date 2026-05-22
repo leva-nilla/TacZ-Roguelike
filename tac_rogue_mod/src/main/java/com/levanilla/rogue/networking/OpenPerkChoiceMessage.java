@@ -58,7 +58,12 @@ public class OpenPerkChoiceMessage {
                 List<PerkDefinition> choices = msg.perkTags.stream()
                     .map(PerkDefinition::fromTag)
                     .toList();
-                com.levanilla.rogue.client.PerkManager.openPerkScreenWithChoices(choices, msg.type == PerkScreenType.BOSS);
+                com.levanilla.rogue.client.PerkManager.openPerkScreenWithChoices(choices,
+                    switch (msg.type) {
+                        case INITIAL -> com.levanilla.rogue.client.PerkManager.OpenPerkChoiceMode.INITIAL;
+                        case BOSS -> com.levanilla.rogue.client.PerkManager.OpenPerkChoiceMode.BOSS;
+                        case NORMAL -> com.levanilla.rogue.client.PerkManager.OpenPerkChoiceMode.NORMAL;
+                    });
             });
         });
         ctx.get().setPacketHandled(true);
@@ -81,13 +86,15 @@ public class OpenPerkChoiceMessage {
 
         // サーバー側でパーク候補を生成
         List<PerkDefinition> choices;
+        int selectionBonus = com.levanilla.rogue.core.service.DeepProgressService.getSelectionBonus(player);
+        int choiceCount = 3 + selectionBonus;
         if (type == PerkScreenType.INITIAL) {
-            choices = PerkGenerator.generateInitialChoices();
+            choices = PerkGenerator.generateInitialChoices(choiceCount);
         } else {
             PlayerRunData data = RunManager.getData(player);
             int floor = data.getCurrentFloor();
             boolean isBoss = (type == PerkScreenType.BOSS);
-            choices = PerkGenerator.generateChoices(floor, isBoss, existing, overclockedCount);
+            choices = PerkGenerator.generateChoices(floor, isBoss, existing, overclockedCount, choiceCount);
         }
 
         // セッションに候補を登録（APPLY_PERK 受信時の照合用）

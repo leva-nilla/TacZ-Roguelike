@@ -30,6 +30,8 @@ final class ClientInputEventDelegate {
             syncAdsInput(mc);
             handleRogueSneakToggle(mc);
             KeyComboManager.tick(mc);
+            SmokeClientAutomation.tick(mc);
+            ClientBenchmarkAutomation.tick(mc);
             if (LeaWindsCompat.isLeawindAvailable()) {
                 LeaWindsCompat.syncThirdPersonGunAim();
             }
@@ -45,6 +47,10 @@ final class ClientInputEventDelegate {
 
             while (ClientKeyBinds.CAMERA_TOGGLE.consumeClick()) {
                 LeaWindsCompat.toggleAdsForceFirstPerson();
+            }
+
+            while (ClientKeyBinds.DEBUG_MENU.consumeClick()) {
+                DebugMenuScreen.open();
             }
         }
     }

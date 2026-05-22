@@ -14,7 +14,9 @@ public class DifficultyManager {
         HARD("HARD", "difficulty.tac_rogue.hard.desc",
              1.5f, 1.2f, 0.8f, 0.8f, 0.15f, 0xFFFF5555),
         EXTREME("EXTREME", "difficulty.tac_rogue.extreme.desc",
-                2.0f, 1.5f, 0.7f, 0.7f, 0.20f, 0xFFFF0000);  // v0.5: DMG 2.0→1.5, Gold 0.5→0.7, Drop 0.5→0.7, DeathPen 0.30→0.20
+                1.75f, 1.3f, 0.8f, 0.8f, 0.15f, 0xFFFF0000),
+        IRONMAN("IRONMAN", "difficulty.tac_rogue.ironman.desc",
+                2.0f, 1.45f, 0.75f, 0.75f, 0.25f, 0xFFAA1111);
 
         public final String displayName;
         public final String description;
@@ -108,4 +110,3 @@ public class DifficultyManager {
         return currentDifficulty.deathPenalty;
     }
 }
-

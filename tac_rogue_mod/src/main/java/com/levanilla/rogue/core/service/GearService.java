@@ -58,7 +58,8 @@ public final class GearService {
         float hpScale = switch(DifficultyManager.getDifficulty()) {
             case EASY -> 1.5f;
             case HARD -> 0.9f;
-            case EXTREME -> 0.5f;
+            case EXTREME -> 0.75f;
+            case IRONMAN -> 0.65f;
             default -> 1.0f;
         };
         hp *= hpScale;
@@ -149,10 +150,11 @@ public final class GearService {
             player.sendSystemMessage(Component.literal("\u00A7c[ERROR] Ammo distribution failed: " + ammoId));
         }
 
+        DeepProgressService.applyStarterPrestigeBonuses(player);
         player.addTag("rogue:gear_selected");
         player.sendSystemMessage(Component.translatable(
             "message.tac_rogue.loadout_selected",
-            gunId.substring(gunId.indexOf(":") + 1).toUpperCase()));
+            gunId.substring(gunId.indexOf(":") + 1).toUpperCase()), true);
     }
 
     private static void addMeleeToGear(ServerPlayer player) {
@@ -180,7 +182,7 @@ public final class GearService {
 
     public static ItemStack createMedkitStack(int count) {
         ItemStack medkit = new ItemStack(Items.PAPER, count);
-        medkit.setHoverName(Component.literal("\u00A7a\u00A7l[MEDKIT]"));
+        medkit.setHoverName(Component.translatable("item.tac_rogue.medkit"));
         CompoundTag medkitTag = medkit.getOrCreateTag();
         medkitTag.putBoolean("rogue_item", true);
         medkitTag.putBoolean("rogue_medkit", true);
@@ -189,7 +191,7 @@ public final class GearService {
         ListTag loreList = new ListTag();
         loreList.add(StringTag.valueOf(
             Component.Serializer.toJson(
-                Component.literal("\u00A77右クリックで即座にHPを 30% 回復"))));
+                Component.translatable("item.tac_rogue.medkit.lore"))));
         displayTag.put("Lore", loreList);
         return medkit;
     }

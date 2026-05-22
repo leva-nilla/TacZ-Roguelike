@@ -291,6 +291,7 @@ public class TacRogueBossEntity extends Monster {
             damage += 1.5F;
         }
         int floor = Math.max(1, getPersistentData().getInt("TacRogueSpawnFloor"));
+        damage *= ScalingEngine.getBossSpecialDamageMultiplier(floor);
         if (floor <= 5) {
             damage *= 0.75F;
         }
@@ -336,7 +337,12 @@ public class TacRogueBossEntity extends Monster {
         incrementCounter(SHOCKWAVE_COUNT_KEY);
         double radius = role == BossRole.LEVIATHAN ? 9.0D : 7.0D;
         playShockwaveEffects(role, radius);
-        float damage = role == BossRole.VOID_WARDEN ? 9.0F : 7.0F;
+        int floor = Math.max(1, getPersistentData().getInt("TacRogueSpawnFloor"));
+        float damage = (role == BossRole.VOID_WARDEN ? 9.0F : 7.0F)
+            * ScalingEngine.getBossSpecialDamageMultiplier(floor);
+        if (floor <= 5) {
+            damage *= 0.85F;
+        }
         AABB area = getBoundingBox().inflate(radius);
         DamageSource source = damageSources().mobAttack(this);
         for (Player player : level().getEntitiesOfClass(Player.class, area, Player::isAlive)) {

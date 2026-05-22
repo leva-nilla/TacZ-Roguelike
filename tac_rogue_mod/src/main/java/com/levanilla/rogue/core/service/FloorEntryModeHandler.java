@@ -28,8 +28,11 @@ final class FloorEntryModeHandler {
         long tick = player.server.getTickCount();
         String id = "solo-" + player.getUUID() + "-" + tick + "-" + UUID.randomUUID();
         BlockPos origin = RunManager.getPrivateDungeonOrigin(player);
+        boolean questEligible = FloorInstanceManager.isQuestEligibleFloor(floor,
+            RunManager.getData(player).getMaxReachedFloor());
         FloorInstanceManager.FloorInstance instance = new FloorInstanceManager.FloorInstance(id, floor,
-            FloorInstanceManager.EntryMode.SOLO, player.getUUID(), origin, tick, System.nanoTime(), System.nanoTime() ^ tick);
+            FloorInstanceManager.EntryMode.SOLO, player.getUUID(), origin, tick, System.nanoTime(),
+            System.nanoTime() ^ tick, questEligible);
         instance.participants.add(player.getUUID());
         instance.initialParticipantCount = 1;
         FloorInstanceManager.INSTANCES.put(id, instance);
@@ -46,6 +49,7 @@ final class FloorEntryModeHandler {
             addParticipant(player, existing, true);
             FloorInstanceManager.teleportParticipant(player, existing);
             FloorInstanceManager.applyMidRunJoinScaling(player.server, existing);
+            FloorInstanceManager.syncBossBar(player.server, existing, true);
             PopupNotificationMessage.send(
                 player,
                 PopupNotificationMessage.PopupType.SYSTEM,
@@ -69,9 +73,11 @@ final class FloorEntryModeHandler {
         if (existing == null || existing.state == FloorInstanceManager.State.CLEARED) {
             long tick = player.server.getTickCount();
             String id = "public-floor-" + floor + "-" + tick + "-" + UUID.randomUUID();
+            boolean questEligible = FloorInstanceManager.isQuestEligibleFloor(floor,
+                RunManager.getData(player).getMaxReachedFloor());
             existing = new FloorInstanceManager.FloorInstance(id, floor, FloorInstanceManager.EntryMode.PUBLIC,
                 player.getUUID(), FloorInstanceManager.publicOriginForFloor(floor),
-                tick, System.nanoTime(), System.nanoTime() ^ ((long) floor << 32));
+                tick, System.nanoTime(), System.nanoTime() ^ ((long) floor << 32), questEligible);
             FloorInstanceManager.INSTANCES.put(id, existing);
             FloorInstanceManager.PUBLIC_INSTANCES_BY_FLOOR.put(floor, id);
         }
@@ -112,6 +118,7 @@ final class FloorEntryModeHandler {
     static void addParticipant(ServerPlayer player, FloorInstanceManager.FloorInstance instance, boolean active) {
         instance.participants.add(player.getUUID());
         FloorInstanceManager.PLAYER_INSTANCES.put(player.getUUID(), instance.id);
+        RunManager.restorePerkTags(player);
         PlayerRunData data = RunManager.getData(player);
         data.setCurrentFloor(instance.floor);
         data.setDungeonOrigin(instance.origin);
@@ -122,6 +129,7 @@ final class FloorEntryModeHandler {
         data.setFloorSeedSalt(instance.floorSeedSalt);
         if (active && player.server != null) {
             data.setFloorStartTick(player.server.getTickCount());
+            LowHealthChallengeService.activateForFloor(player);
         }
         RunManager.refreshThemeName(data);
         RunManager.syncPlayer(player);

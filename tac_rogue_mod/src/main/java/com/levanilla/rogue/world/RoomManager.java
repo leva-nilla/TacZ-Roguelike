@@ -77,8 +77,8 @@ public class RoomManager {
                         net.minecraft.world.effect.MobEffects.FIRE_RESISTANCE, Integer.MAX_VALUE, 0, false, false));
                 }
 
-                // ネームタグ非表示
-                mob.setCustomNameVisible(variantRoll != null);
+                // ネームタグ非表示。特殊個体名はHUD/戦闘ログ側だけで扱い、壁越し表示を避ける。
+                mob.setCustomNameVisible(false);
 
                 // 遠距離Mobに武器を装備
                 equipRangedWeapon(mob);
@@ -168,6 +168,7 @@ public class RoomManager {
 
     /** 蜘蛛の壁登り + 天井詰まりを防ぐ */
     private static void fixSpider(Mob spider, ServerLevel level) {
+        spider.getPersistentData().putBoolean("TacRogueNoSpiderClimb", true);
         spider.goalSelector.getAvailableGoals().removeIf(g -> {
             String name = g.getGoal().getClass().getName();
             return name.contains("Climb") || name.contains("Wall") || name.contains("climb");

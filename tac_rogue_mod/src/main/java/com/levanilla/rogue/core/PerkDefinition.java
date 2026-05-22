@@ -17,6 +17,7 @@ public class PerkDefinition {
         GUN_PROFICIENCY("Gun Proficiency", "perk.tac_rogue.cat.gun_proficiency", 0xFFFFAA00),
         FIRE_RATE("Fire Rate", "perk.tac_rogue.cat.fire_rate", 0xFFFF7744),
         RELOAD_SPEED("Reload Speed", "perk.tac_rogue.cat.reload_speed", 0xFFFFCC00),
+        MAG_SIZE("Mag Size", "perk.tac_rogue.cat.mag_size", 0xFFAAFFCC),
         AUTOLOADER("Autoloader", "perk.tac_rogue.cat.autoloader", 0xFF66EEFF),
         AMMO_EFFICIENCY("Ammo Saver", "perk.tac_rogue.cat.ammo_efficiency", 0xFFDDDD00),
         SCAVENGER("Scavenger", "perk.tac_rogue.cat.scavenger", 0xFF88FF88),
@@ -104,9 +105,32 @@ public class PerkDefinition {
         this.level = Math.max(1, Math.min(10, level));
     }
 
-    /** パークの基本効果値を算出 (カテゴリの基礎値 × レベル × 修飾子) */
+    /** パークの基本効果値を算出 (Lvソフトキャップ × カテゴリ係数 × 修飾子) */
     public float calculateEffect() {
-        return level * 10.0f * modifier.multiplier;
+        return effectiveLevel(level)
+            * GameConstants.PERK_EFFECT_PER_LEVEL
+            * categoryScale(category)
+            * modifier.multiplier;
+    }
+
+    private static float effectiveLevel(int level) {
+        int cappedLevel = Math.max(1, Math.min(10, level));
+        if (cappedLevel <= GameConstants.PERK_LEVEL_SOFTCAP_START) {
+            return cappedLevel;
+        }
+        return GameConstants.PERK_LEVEL_SOFTCAP_START
+            + (cappedLevel - GameConstants.PERK_LEVEL_SOFTCAP_START)
+            * GameConstants.PERK_LEVEL_POST_SOFTCAP_SCALE;
+    }
+
+    private static float categoryScale(Category category) {
+        return switch (category) {
+            case DAMAGE, FIRE_RATE, RELOAD_SPEED, MAG_SIZE, GOLD_RUSH, VELOCITY, STAMINA, DODGE ->
+                GameConstants.PERK_STRONG_CATEGORY_SCALE;
+            case AUTOLOADER, REGENERATION, VAMPIRE, BLOODLUST, QUICK_FIX ->
+                GameConstants.PERK_RECOVERY_CATEGORY_SCALE;
+            default -> 1.0f;
+        };
     }
 
     /** 表示名を動的生成 */
@@ -119,10 +143,14 @@ public class PerkDefinition {
     public net.minecraft.network.chat.Component getDescriptionComponent() {
         float effect = calculateEffect();
         String valueStr;
-        if (category == Category.REGENERATION || category == Category.VAMPIRE || category == Category.BLOODLUST || category == Category.QUICK_FIX) {
-            valueStr = String.format("%.1f", effect / 10.0f);
+        if (category == Category.REGENERATION) {
+            valueStr = String.format(java.util.Locale.ROOT, "%.1f", getRegenerationHealPerSecond(effect));
+        } else if (category == Category.VAMPIRE || category == Category.BLOODLUST || category == Category.QUICK_FIX) {
+            valueStr = String.format(java.util.Locale.ROOT, "%.1f", getRecoveryHealAmount(effect));
         } else if (category == Category.AUTOLOADER) {
-            valueStr = String.format("%.1f", getAutoloaderRoundsPerSecond(effect));
+            valueStr = String.format(java.util.Locale.ROOT, "%.1f", getAutoloaderRoundsPerSecond(effect));
+        } else if (category == Category.DODGE) {
+            valueStr = String.format(java.util.Locale.ROOT, "%.1f", getDodgeChancePercent(effect));
         } else {
             valueStr = String.valueOf((int) effect);
         }
@@ -130,7 +158,24 @@ public class PerkDefinition {
     }
 
     public static float getAutoloaderRoundsPerSecond(float effect) {
-        return Math.max(1.0f, effect / 10.0f);
+        return Math.max(GameConstants.AUTOLOADER_MIN_ROUNDS_PER_SECOND,
+            effect / GameConstants.AUTOLOADER_EFFECT_DIVISOR);
+    }
+
+    public static float getDodgeChancePercent(float effect) {
+        return effect * GameConstants.DODGE_EFFECT_SCALE;
+    }
+
+    public static float getRegenerationHealPerSecond(float effect) {
+        return effect / GameConstants.REGEN_EFFECT_HEAL_DIVISOR;
+    }
+
+    public static float getRegenerationCapUnlockRatio(float effect) {
+        return effect * GameConstants.REGEN_CAP_UNLOCK_PER_EFFECT;
+    }
+
+    public static float getRecoveryHealAmount(float effect) {
+        return effect / GameConstants.PERK_RECOVERY_HEAL_DIVISOR;
     }
 
     public net.minecraft.network.chat.Component getModifierDescriptionComponent() {

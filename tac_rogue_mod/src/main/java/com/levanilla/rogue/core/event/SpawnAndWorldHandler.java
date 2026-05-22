@@ -9,11 +9,14 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.AABB;
 import net.minecraftforge.event.entity.living.LivingEvent;
+import net.minecraftforge.event.entity.living.LivingDeathEvent;
+import net.minecraftforge.event.entity.living.LivingFallEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import static com.levanilla.rogue.core.CommonEventHandler.ROGUE_DIM;
 import static com.levanilla.rogue.core.CommonEventHandler.LOBBY_DIM;
@@ -23,6 +26,7 @@ import static com.levanilla.rogue.core.CommonEventHandler.LOBBY_DIM;
  */
 @Mod.EventBusSubscriber(modid = "tac_rogue")
 public class SpawnAndWorldHandler {
+    private static final List<PendingSlimeSplit> PENDING_SLIME_SPLITS = new ArrayList<>();
 
     // ===== バニラスポーン抑制 =====
 
@@ -74,6 +78,7 @@ public class SpawnAndWorldHandler {
         var dim = event.getLevel().dimension();
         if (dim == ROGUE_DIM && event.getEntity() instanceof Mob mob) {
             mob.setPersistenceRequired();
+            inheritSlimeSplitTracking(event, mob);
 
             // 強化版亡霊処理: チャンクロード時に過去のエンティティを一掃する
             boolean isSpawnedOrNpc = mob.getTags().contains("tac_rogue_spawned") || mob.getTags().contains("tac_rogue_npc");
@@ -126,6 +131,37 @@ public class SpawnAndWorldHandler {
                 }
             }
         }
+    }
+
+    @SubscribeEvent
+    public static void onLivingDeathTrackSlimeSplit(LivingDeathEvent event) {
+        if (event.getEntity().level().dimension() != ROGUE_DIM) return;
+        if (!(event.getEntity() instanceof Mob mob)) return;
+        if (!(mob instanceof net.minecraft.world.entity.monster.Slime
+                || mob instanceof net.minecraft.world.entity.monster.MagmaCube)) return;
+        if (!mob.getTags().contains("tac_rogue_spawned")) return;
+
+        var data = mob.getPersistentData();
+        String instanceId = data.getString(com.levanilla.rogue.core.service.FloorInstanceManager.INSTANCE_ID_KEY);
+        if (instanceId.isBlank()) return;
+        PENDING_SLIME_SPLITS.add(new PendingSlimeSplit(
+            instanceId,
+            data.getInt(com.levanilla.rogue.core.service.FloorInstanceManager.FLOOR_KEY),
+            data.getString(com.levanilla.rogue.core.service.FloorInstanceManager.MODE_KEY),
+            data.getString(com.levanilla.rogue.core.service.FloorInstanceManager.OWNER_KEY),
+            mob.getX(), mob.getY(), mob.getZ(),
+            mob.level().getGameTime()));
+        prunePendingSlimeSplits(mob.level().getGameTime());
+    }
+
+    @SubscribeEvent
+    public static void onLivingFall(LivingFallEvent event) {
+        if (event.getEntity().level().dimension() != ROGUE_DIM) return;
+        if (!(event.getEntity() instanceof net.minecraft.world.entity.monster.Spider
+                || event.getEntity() instanceof net.minecraft.world.entity.monster.CaveSpider)) return;
+        if (!event.getEntity().getTags().contains("tac_rogue_spawned")) return;
+        event.setCanceled(true);
+        event.getEntity().fallDistance = 0.0F;
     }
 
     // ===== ブロック破壊禁止 =====
@@ -283,8 +319,10 @@ public class SpawnAndWorldHandler {
         // 蜘蛛の天井/壁埋まり修正
         if (mob instanceof net.minecraft.world.entity.monster.Spider ||
             mob instanceof net.minecraft.world.entity.monster.CaveSpider) {
+            mob.getPersistentData().putBoolean("TacRogueNoSpiderClimb", true);
             mob.setNoGravity(false);
             mob.noPhysics = false;
+            mob.fallDistance = 0.0F;
             BlockPos spPos = mob.blockPosition();
             boolean stuck = level.getBlockState(spPos).isSolid()
                 || level.getBlockState(spPos.above()).isSolid()
@@ -296,6 +334,55 @@ public class SpawnAndWorldHandler {
             }
         }
     }
+
+    private static void inheritSlimeSplitTracking(net.minecraftforge.event.entity.EntityJoinLevelEvent event, Mob mob) {
+        if (mob.getTags().contains("tac_rogue_spawned")) return;
+        if (!(mob instanceof net.minecraft.world.entity.monster.Slime
+                || mob instanceof net.minecraft.world.entity.monster.MagmaCube)) return;
+        long now = event.getLevel().getGameTime();
+        prunePendingSlimeSplits(now);
+        PendingSlimeSplit match = null;
+        double best = Double.MAX_VALUE;
+        for (PendingSlimeSplit pending : PENDING_SLIME_SPLITS) {
+            double dx = mob.getX() - pending.x;
+            double dy = mob.getY() - pending.y;
+            double dz = mob.getZ() - pending.z;
+            double dist = dx * dx + dy * dy + dz * dz;
+            if (dist < best && dist <= 64.0D) {
+                best = dist;
+                match = pending;
+            }
+        }
+        if (match == null) return;
+
+        mob.addTag("tac_rogue_spawned");
+        mob.getPersistentData().putInt("TacRogueSpawnFloor", match.floor);
+        var server = mob.level().getServer();
+        mob.getPersistentData().putLong("TacRogueSpawnTick", server == null ? now : server.getTickCount());
+        UUID owner = parseUuid(match.ownerUuid);
+        com.levanilla.rogue.core.service.FloorInstanceManager.stampEntity(
+            mob,
+            match.instanceId,
+            match.floor,
+            com.levanilla.rogue.core.service.FloorInstanceManager.EntryMode.parse(match.mode),
+            owner);
+    }
+
+    private static UUID parseUuid(String raw) {
+        if (raw == null || raw.isBlank()) return null;
+        try {
+            return UUID.fromString(raw);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
+    private static void prunePendingSlimeSplits(long now) {
+        PENDING_SLIME_SPLITS.removeIf(pending -> now - pending.createdTick > 60L);
+    }
+
+    private record PendingSlimeSplit(String instanceId, int floor, String mode, String ownerUuid,
+                                     double x, double y, double z, long createdTick) {}
 
     // ===== フロアクリア判定 (ServerTickEvent で最適化) =====
 
@@ -311,7 +398,7 @@ public class SpawnAndWorldHandler {
         if (tick % 5 == 0) {
             ServerLevel lobbyLevel = server.getLevel(LOBBY_DIM);
             if (lobbyLevel != null && !lobbyLevel.players().isEmpty()) {
-                com.levanilla.rogue.world.NpcManager.tickNpcLookAt(lobbyLevel, new net.minecraft.core.BlockPos(0, 201, 0));
+                com.levanilla.rogue.world.NpcManager.tickLobbyMaintenance(lobbyLevel, new net.minecraft.core.BlockPos(0, 201, 0));
             }
         }
 
@@ -360,6 +447,10 @@ public class SpawnAndWorldHandler {
                 
                 data.setFloorCleared(true);
                 RunManager.syncPlayer(player);
+
+                boolean questEligible = com.levanilla.rogue.core.service.FloorInstanceManager.isQuestEligibleFloor(
+                    data.getCurrentFloor(), data.getMaxReachedFloor());
+                if (!questEligible) continue;
 
                 // === クエスト進捗: フロアクリア系 ===
                 com.levanilla.rogue.core.QuestManager.advanceQuest(player, com.levanilla.rogue.core.QuestManager.QuestType.FLOOR_CLEAR, 1);

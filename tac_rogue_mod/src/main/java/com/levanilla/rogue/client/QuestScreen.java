@@ -1,28 +1,46 @@
 package com.levanilla.rogue.client;
 
+import com.levanilla.rogue.core.QuestManager;
+import com.levanilla.rogue.networking.QuestSelectionMessage;
+import com.levanilla.rogue.networking.TacRogueNetworking;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 public class QuestScreen extends Screen {
     private static int cachedChapter = 1;
     private static final List<String[]> cachedQuests = new ArrayList<>();
+    private static final Set<String> candidateQuestIds = new LinkedHashSet<>();
+    private static final Set<String> selectedQuestIds = new LinkedHashSet<>();
+    private static boolean selectionLocked = false;
 
     private int scrollOffset = 0;
     private int selectedIndex = 0;
+    private Button confirmButton;
 
     public QuestScreen() {
         super(Component.translatable("gui.tac_rogue.quest_screen.title"));
     }
 
     public static void syncQuestData(int chapter, List<String[]> quests) {
+        syncQuestData(chapter, quests, Set.of(), Set.of(), true);
+    }
+
+    public static void syncQuestData(int chapter, List<String[]> quests, Set<String> candidateIds, Set<String> selectedIds, boolean locked) {
         cachedChapter = chapter;
         cachedQuests.clear();
         cachedQuests.addAll(quests);
+        candidateQuestIds.clear();
+        candidateQuestIds.addAll(candidateIds);
+        selectedQuestIds.clear();
+        selectedQuestIds.addAll(selectedIds);
+        selectionLocked = locked;
     }
 
     @Override
@@ -31,6 +49,8 @@ public class QuestScreen extends Screen {
         Layout layout = layout();
         this.addRenderableWidget(Button.builder(Component.translatable("gui.tac_rogue.common.close"), b -> this.onClose())
             .bounds(layout.x + layout.panelW - 70, layout.y + 10, 54, 18).build());
+        confirmButton = this.addRenderableWidget(Button.builder(Component.translatable("gui.tac_rogue.quest_screen.confirm"), b -> confirmSelection())
+            .bounds(layout.x + layout.panelW - 194, layout.y + 10, 112, 18).build());
     }
 
     @Override
@@ -38,6 +58,10 @@ public class QuestScreen extends Screen {
         this.renderBackground(graphics);
         Layout l = layout();
         clampState(l);
+        if (confirmButton != null) {
+            confirmButton.visible = !selectionLocked;
+            confirmButton.active = selectedQuestIds.size() == QuestManager.REQUIRED_SIDE_QUESTS;
+        }
 
         graphics.fill(l.x, l.y, l.x + l.panelW, l.y + l.panelH, 0xF006101D);
         graphics.fill(l.x, l.y, l.x + l.panelW, l.y + 2, 0xFF55DDAA);
@@ -46,11 +70,11 @@ public class QuestScreen extends Screen {
         graphics.drawString(this.font, Component.translatable("gui.tac_rogue.quest_screen.chapter", cachedChapter), l.x + 14, l.y + 25, 0xFFFFD45C, false);
 
         if (l.summaryW > 0) {
-            renderSummary(graphics, l.summaryX, l.contentY, l.summaryW, l.contentH);
+            renderSummary(graphics, l.summaryX, l.summaryY, l.summaryW, l.summaryH);
         }
-        renderQuestList(graphics, mouseX, mouseY, l.listX, l.contentY, l.listW, l.contentH);
+        renderQuestList(graphics, mouseX, mouseY, l.listX, l.listY, l.listW, l.listH);
         if (l.detailW > 0) {
-            renderQuestDetail(graphics, l.detailX, l.contentY, l.detailW, l.contentH);
+            renderQuestDetail(graphics, l.detailX, l.detailY, l.detailW, l.detailH);
         }
 
         super.render(graphics, mouseX, mouseY, partialTick);
@@ -59,18 +83,36 @@ public class QuestScreen extends Screen {
     private void renderSummary(GuiGraphics graphics, int x, int y, int w, int h) {
         graphics.fill(x, y, x + w, y + h, 0x66000000);
         graphics.renderOutline(x, y, w, h, 0x6644AA88);
+        graphics.enableScissor(x, y, x + w, y + h);
+        boolean compact = h < 118;
         graphics.drawString(this.font, Component.translatable("gui.tac_rogue.quest_screen.summary"), x + 8, y + 8, 0xFF7FDDBB, false);
-        long completed = cachedQuests.stream().filter(q -> q.length > 5 && "true".equals(q[5])).count();
-        graphics.drawString(this.font, completed + "/" + cachedQuests.size(), x + 8, y + 27, 0xFFFFD45C, false);
-        graphics.drawString(this.font, Component.translatable("gui.tac_rogue.quest_screen.completed"), x + 8, y + 39, 0xFFAAFFDD, false);
+        long completed = cachedQuests.stream().filter(this::isActiveQuest).filter(q -> "true".equals(field(q, 5, "false"))).count();
+        long required = cachedQuests.stream().filter(this::isActiveQuest).count();
+        graphics.drawString(this.font, completed + "/" + required, x + w - 42, y + 8, 0xFFFFD45C, false);
+        if (!compact) {
+            graphics.drawString(this.font, Component.translatable("gui.tac_rogue.quest_screen.completed"), x + 8, y + 25, 0xFFAAFFDD, false);
+        }
 
         if (cachedChapter >= 1) {
             Component storyTitle = Component.translatable(com.levanilla.rogue.core.QuestManager.getChapterTitleKey(cachedChapter));
-            drawWrapped(graphics, storyTitle, x + 8, y + 62, w - 16, 0xFFE6E6E6, 5);
+            Component storySummary = Component.translatable(com.levanilla.rogue.core.QuestManager.getChapterSummaryKey(cachedChapter));
+            Component storyBackground = Component.translatable(com.levanilla.rogue.core.QuestManager.getChapterBackgroundKey(cachedChapter));
+            int yy = y + (compact ? 24 : 42);
+            yy = drawWrapped(graphics, storyTitle, x + 8, yy, w - 16, 0xFFE6E6E6, compact ? 1 : 2);
+            yy += compact ? 2 : 4;
+            yy = drawWrapped(graphics, storySummary, x + 8, yy, w - 16, 0xFFBFD7D7, compact ? 2 : 4);
+            yy += compact ? 2 : 4;
+            int maxBackgroundLines = Math.max(0, (y + h - (compact ? 26 : 40) - yy) / 10);
+            if (maxBackgroundLines > 0) {
+                drawWrapped(graphics, storyBackground, x + 8, yy, w - 16, 0xFF8FA5AA, maxBackgroundLines);
+            }
         }
 
-        graphics.drawString(this.font, Component.translatable("gui.tac_rogue.quest_screen.commander"), x + 8, y + h - 26, 0xFF777777, false);
-        graphics.drawString(this.font, Component.translatable("gui.tac_rogue.quest_screen.operations"), x + 8, y + h - 14, 0xFF777777, false);
+        Component status = selectionLocked
+            ? Component.translatable("gui.tac_rogue.quest_screen.selection_locked")
+            : Component.translatable("gui.tac_rogue.quest_screen.select_count", selectedQuestIds.size(), QuestManager.REQUIRED_SIDE_QUESTS);
+        drawWrapped(graphics, status, x + 8, y + h - (compact ? 18 : 32), w - 16, selectionLocked ? 0xFF77FFAA : 0xFFFFD45C, compact ? 1 : 3);
+        graphics.disableScissor();
     }
 
     private void renderQuestList(GuiGraphics graphics, int mouseX, int mouseY, int x, int y, int w, int h) {
@@ -96,9 +138,11 @@ public class QuestScreen extends Screen {
             int qy = listTop + row * rowH;
             boolean selected = idx == selectedIndex;
             boolean hovered = mouseX >= x + 4 && mouseX < x + w - 8 && mouseY >= qy && mouseY < qy + rowH - 4;
-            int bg = selected ? 0x7744FFAA : hovered ? 0x4433AAFF : 0x22000000;
+            boolean questSelected = isSelectedQuest(quest);
+            boolean active = isActiveQuest(quest);
+            int bg = questSelected ? 0x7755DDAA : selected ? 0x7744FFAA : hovered ? 0x4433AAFF : 0x22000000;
             graphics.fill(x + 4, qy, x + w - 8, qy + rowH - 4, bg);
-            graphics.renderOutline(x + 4, qy, w - 12, rowH - 4, selected ? 0xAA55FFAA : 0x33336655);
+            graphics.renderOutline(x + 4, qy, w - 12, rowH - 4, questSelected ? 0xCCFFD45C : selected ? 0xAA55FFAA : 0x33336655);
 
             Component type = Component.translatable(field(quest, 1, "quest.tac_rogue.type.kill"));
             Component role = Component.translatable(field(quest, 6, "quest.tac_rogue.role.contract"));
@@ -107,10 +151,14 @@ public class QuestScreen extends Screen {
             int target = parseInt(field(quest, 2, "0"));
             int progress = parseInt(field(quest, 3, "0"));
 
-            graphics.drawString(this.font, completed ? "[OK]" : "[..]", x + 10, qy + 5, completed ? 0xFF77FFAA : 0xFFFFD45C, false);
-            graphics.drawString(this.font, type, x + 38, qy + 5, completed ? 0xFF77FFAA : 0xFFE6E6E6, false);
-            graphics.drawString(this.font, role, x + 38, qy + 17, rare ? 0xFFFF66DD : 0xFF88AAFF, false);
-            if (rare && w > 160) graphics.drawString(this.font, Component.translatable("gui.tac_rogue.quest_screen.rare"), x + w - 42, qy + 5, 0xFFFF66DD, false);
+            String marker = completed ? "[OK]" : active ? "[..]" : questSelected ? "[+]" : "[ ]";
+            graphics.drawString(this.font, marker, x + 10, qy + 5, completed ? 0xFF77FFAA : questSelected ? 0xFFFFD45C : 0xFF777777, false);
+            graphics.drawString(this.font, type, x + 38, qy + 5, completed ? 0xFF77FFAA : active ? 0xFFE6E6E6 : 0xFF999999, false);
+            Component roleLabel = rare
+                ? Component.translatable("gui.tac_rogue.quest_screen.rare_contract")
+                : isStoryQuest(quest) ? Component.translatable("gui.tac_rogue.quest_screen.story_required") : role;
+            graphics.drawString(this.font, roleLabel, x + 38, qy + 17, rare ? 0xFFFF66DD : isStoryQuest(quest) ? 0xFFFFD45C : 0xFF88AAFF, false);
+            if (questSelected && w > 166) graphics.drawString(this.font, Component.translatable("gui.tac_rogue.quest_screen.selected"), x + w - 58, qy + 5, 0xFFFFD45C, false);
 
             int barX = x + 38;
             int barY = qy + 28;
@@ -178,14 +226,17 @@ public class QuestScreen extends Screen {
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         Layout l = layout();
         int rowH = 36;
-        int listTop = l.contentY + 22;
-        int visible = Math.max(1, (l.contentH - 30) / rowH);
+        int listTop = l.listY + 22;
+        int visible = Math.max(1, (l.listH - 30) / rowH);
         for (int row = 0; row < visible; row++) {
             int idx = scrollOffset + row;
             int qy = listTop + row * rowH;
             if (idx < cachedQuests.size() && mouseX >= l.listX + 4 && mouseX < l.listX + l.listW - 8
                 && mouseY >= qy && mouseY < qy + rowH - 4) {
                 selectedIndex = idx;
+                if (!selectionLocked) {
+                    toggleQuestSelection(cachedQuests.get(idx));
+                }
                 return true;
             }
         }
@@ -195,7 +246,7 @@ public class QuestScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
         Layout l = layout();
-        int visible = Math.max(1, (l.contentH - 30) / 36);
+        int visible = Math.max(1, (l.listH - 30) / 36);
         int maxScroll = Math.max(0, cachedQuests.size() - visible);
         if (delta < 0 && scrollOffset < maxScroll) scrollOffset++;
         if (delta > 0 && scrollOffset > 0) scrollOffset--;
@@ -212,18 +263,28 @@ public class QuestScreen extends Screen {
         int contentY = y + 42;
         int contentH = panelH - 54;
         int contentW = Math.max(80, panelW - margin * 2);
-        int summaryW = panelW >= 600 ? 108 : 0;
-        int remaining = contentW - summaryW - (summaryW > 0 ? gap : 0);
+        boolean stacked = panelW < 600 || panelH < 242;
+        int summaryW = stacked ? contentW : panelW >= 680 ? 160 : 138;
+        int summaryH = stacked ? Math.min(108, Math.max(74, contentH / 3)) : contentH;
+        int summaryY = contentY;
+        int listY = stacked ? contentY + summaryH + gap : contentY;
+        int listH = stacked ? Math.max(54, contentH - summaryH - gap) : contentH;
+        int remaining = stacked ? contentW : contentW - summaryW - gap;
         int detailW = 0;
         int listW = remaining;
-        if (remaining >= 330) {
+        if (!stacked && remaining >= 330) {
             detailW = Math.min(210, Math.max(140, remaining / 3));
             listW = Math.max(150, remaining - detailW - gap);
         }
         int summaryX = x + margin;
-        int listX = summaryX + (summaryW > 0 ? summaryW + gap : 0);
+        int listX = stacked ? summaryX : summaryX + summaryW + gap;
         int detailX = listX + listW + gap;
-        return new Layout(x, y, panelW, panelH, contentY, contentH, summaryX, summaryW, listX, listW, detailX, detailW);
+        int detailY = listY;
+        int detailH = listH;
+        return new Layout(x, y, panelW, panelH, contentY, contentH,
+            summaryX, summaryY, summaryW, summaryH,
+            listX, listY, listW, listH,
+            detailX, detailY, detailW, detailH);
     }
 
     private void clampState(Layout layout) {
@@ -233,8 +294,41 @@ public class QuestScreen extends Screen {
             return;
         }
         selectedIndex = Math.max(0, Math.min(selectedIndex, cachedQuests.size() - 1));
-        int visible = Math.max(1, (layout.contentH - 30) / 36);
+        int visible = Math.max(1, (layout.listH - 30) / 36);
         scrollOffset = Math.max(0, Math.min(scrollOffset, Math.max(0, cachedQuests.size() - visible)));
+    }
+
+    private void toggleQuestSelection(String[] quest) {
+        if (isStoryQuest(quest) || !isCandidateQuest(quest)) return;
+        String id = field(quest, 0, "");
+        if (selectedQuestIds.contains(id)) {
+            selectedQuestIds.remove(id);
+            return;
+        }
+        if (selectedQuestIds.size() < QuestManager.REQUIRED_SIDE_QUESTS) {
+            selectedQuestIds.add(id);
+        }
+    }
+
+    private void confirmSelection() {
+        if (selectionLocked || selectedQuestIds.size() != QuestManager.REQUIRED_SIDE_QUESTS) return;
+        TacRogueNetworking.CHANNEL.sendToServer(new QuestSelectionMessage(new ArrayList<>(selectedQuestIds)));
+    }
+
+    private boolean isStoryQuest(String[] quest) {
+        return "true".equals(field(quest, 12, "false")) || field(quest, 0, "").startsWith("story_");
+    }
+
+    private boolean isCandidateQuest(String[] quest) {
+        return "true".equals(field(quest, 11, "false")) || candidateQuestIds.contains(field(quest, 0, ""));
+    }
+
+    private boolean isSelectedQuest(String[] quest) {
+        return "true".equals(field(quest, 10, "false")) || selectedQuestIds.contains(field(quest, 0, ""));
+    }
+
+    private boolean isActiveQuest(String[] quest) {
+        return "true".equals(field(quest, 9, "true")) || isStoryQuest(quest) || isSelectedQuest(quest);
     }
 
     private int drawWrapped(GuiGraphics graphics, Component text, int x, int y, int width, int color, int maxLines) {
@@ -266,5 +360,7 @@ public class QuestScreen extends Screen {
     }
 
     private record Layout(int x, int y, int panelW, int panelH, int contentY, int contentH,
-                          int summaryX, int summaryW, int listX, int listW, int detailX, int detailW) {}
+        int summaryX, int summaryY, int summaryW, int summaryH,
+        int listX, int listY, int listW, int listH,
+        int detailX, int detailY, int detailW, int detailH) {}
 }

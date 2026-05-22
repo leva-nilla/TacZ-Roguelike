@@ -1,7 +1,9 @@
 package com.levanilla.rogue.core.event;
 
 import com.levanilla.rogue.core.*;
+import com.levanilla.rogue.core.service.ArmorPlateService;
 import com.levanilla.rogue.core.service.InventoryRuleService;
+import com.levanilla.rogue.core.service.LowHealthChallengeService;
 import com.levanilla.rogue.core.service.PlayerPerkTickService;
 import com.levanilla.rogue.core.service.PlayerRegenService;
 import net.minecraft.server.level.ServerPlayer;
@@ -39,6 +41,7 @@ public class PlayerTickHandler {
         // スタミナの自然回復/消費処理
         float adrenalineBonus = getAdrenalineBonus(perks);
         StaminaManager.tick(player, 1.0f + (adrenalineBonus / 100.0f));
+        ArmorPlateService.tick(player);
 
         // === 潜伏効果: スニーク/伏せ中はモブの検知範囲を低下 ===
         if (player.level().dimension() == ROGUE_DIM && player.tickCount % GameConstants.STEALTH_CHECK_INTERVAL == 0) {
@@ -71,13 +74,16 @@ public class PlayerTickHandler {
         if (player.level().dimension() == ROGUE_DIM && player.tickCount % 20 == 0) {
             PlayerRegenService.applyCustomHealthRegen(player);
         }
+        if (player.level().dimension() == ROGUE_DIM) {
+            LowHealthChallengeService.enforceCap(player);
+        }
 
         // 奈落への落下防止
         if ((player.level().dimension() == ROGUE_DIM || player.level().dimension() == LOBBY_DIM)
                 && player.getY() < GameConstants.VOID_Y_THRESHOLD) {
             RunManager.returnToLobby(player);
             player.setHealth(player.getMaxHealth());
-            player.sendSystemMessage(net.minecraft.network.chat.Component.translatable("message.tac_rogue.void_return"));
+            player.sendSystemMessage(net.minecraft.network.chat.Component.translatable("message.tac_rogue.void_return"), true);
         }
 
         // ロビーにいてまだ装備を選んでいない場合、定期的に初期装備選択画面を開く
@@ -95,6 +101,9 @@ public class PlayerTickHandler {
         // ===== パーク効果の適用 =====
         if (player.tickCount % 20 == 0) {
             PlayerPerkTickService.applyPerkStats(player, perks);
+            if (player.level().dimension() == ROGUE_DIM) {
+                LowHealthChallengeService.enforceCap(player);
+            }
         }
     }
 

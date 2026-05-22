@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.EnumMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -45,34 +46,56 @@ public class NpcManager {
 
     // NPC 識別用タグ
     private static final String NPC_TAG = "tac_rogue_npc";
+    private static final String LOBBY_NPC_TAG = "tac_rogue_lobby_npc";
     private static final String NPC_VISUAL_TAG = "tac_rogue_npc_visual";
     private static final int MENU_SESSION_TICKS = 20 * 30;
     private static final double MENU_ACTION_MAX_DISTANCE_SQR = 36.0;
     private static final Map<UUID, MenuSession> MENU_SESSIONS = new ConcurrentHashMap<>();
+    private static final Map<String, Long> DELAYED_LOBBY_NORMALIZE_TICKS = new ConcurrentHashMap<>();
     private static final Map<String, Set<String>> ALLOWED_ACTIONS = Map.of(
         "commander", Set.of("quest", "talk"),
-        "quartermaster", Set.of("shop", "talk"),
-        "intel", Set.of("intel", "extract", "floor_select", "talk"),
+        "quartermaster", Set.of("shop", "talk", "deep_operations"),
+        "intel", Set.of("intel", "extract", "floor_select", "talk", "deep_operations"),
         "medic", Set.of("heal", "talk")
     );
 
     private record MenuSession(int npcId, String role, String dimension, long expiresAtTick) {}
+
+    public static void scheduleLobbyNormalization(ServerLevel level, int delayTicks) {
+        if (level == null) return;
+        long dueTick = level.getServer().getTickCount() + Math.max(1, delayTicks);
+        DELAYED_LOBBY_NORMALIZE_TICKS.merge(
+            level.dimension().location().toString(),
+            dueTick,
+            Math::min
+        );
+    }
+
+    public static void tickLobbyMaintenance(ServerLevel level, BlockPos lobbyCenter) {
+        String dimension = level.dimension().location().toString();
+        Long dueTick = DELAYED_LOBBY_NORMALIZE_TICKS.get(dimension);
+        if (dueTick != null && level.getServer().getTickCount() >= dueTick) {
+            DELAYED_LOBBY_NORMALIZE_TICKS.remove(dimension);
+            ensureNpcsSpawned(level, lobbyCenter);
+        }
+        tickNpcLookAt(level, lobbyCenter);
+    }
 
     /** ロビーにNPCを配置（既存NPCがなければ生成） */
     public static void ensureNpcsSpawned(ServerLevel level, BlockPos lobbyCenter) {
         // アンロードによるNPC検索漏れと増殖を防ぐため、ロビー周辺のチャンクを強制ロード
         int cx = lobbyCenter.getX() >> 4;
         int cz = lobbyCenter.getZ() >> 4;
-        for (int i = -1; i <= 1; i++) {
-            for (int k = -1; k <= 1; k++) {
+        for (int i = -6; i <= 6; i++) {
+            for (int k = -6; k <= 6; k++) {
                 level.getChunk(cx + i, cz + k);
             }
         }
 
-        // 既存NPCを検索
-        AABB area = new AABB(lobbyCenter).inflate(30);
+        // 既存NPCを広めに検索。タグ漏れ・旧位置・再入場後の残骸もここで正規化する。
+        AABB area = new AABB(lobbyCenter).inflate(128.0D, 64.0D, 128.0D);
         List<TacRogueNpcEntity> existingCustom = level.getEntitiesOfClass(TacRogueNpcEntity.class, area,
-            e -> e.getTags().contains(NPC_TAG));
+            TacRogueNpcEntity::isAlive);
         List<Villager> existing = level.getEntitiesOfClass(Villager.class, area,
             e -> e.getTags().contains(NPC_TAG));
 
@@ -84,60 +107,93 @@ public class NpcManager {
             stand.remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
         }
 
-        // 正しく4人いて、新ロビーの各区画に配置済みの場合はそのまま再利用
-        if (existingCustom.size() == 4
-            && hasNpcAt(existingCustom, lobbyCenter, NpcRole.COMMANDER, 13, -13)
-            && hasNpcAt(existingCustom, lobbyCenter, NpcRole.QUARTERMASTER, 13, 13)
-            && hasNpcAt(existingCustom, lobbyCenter, NpcRole.INTEL_OFFICER, -13, -13)
-            && hasNpcAt(existingCustom, lobbyCenter, NpcRole.MEDIC, -13, 13)) {
-            return;
-        }
-
-        // 数がおかしい（増殖している、または欠けている）場合は一度全消去してリセットする
-        for (TacRogueNpcEntity npc : existingCustom) {
-            npc.remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
-        }
-
-        // コマンダー: NE 作戦室
-        spawnNpc(level,
-            lobbyCenter.offset(13, 0, -13),
-            NpcRole.COMMANDER,
-            "§6[COMMANDER] §fCol. Graves");
-
-        // 補給官: SE 武装ショップ
-        spawnNpc(level,
-            lobbyCenter.offset(13, 0, 13),
-            NpcRole.QUARTERMASTER,
-            "§a[SUPPLY] §fSgt. Knox");
-
-        // 情報将校: NW 情報分析室
-        spawnNpc(level,
-            lobbyCenter.offset(-13, 0, -13),
-            NpcRole.INTEL_OFFICER,
-            "§b[INTEL] §fLt. Hayes");
-
-        // 衛生兵: SW 医療ベイ
-        spawnNpc(level,
-            lobbyCenter.offset(-13, 0, 13),
-            NpcRole.MEDIC,
-            "§d[MEDIC] §fDoc Rivera");
-    }
-
-    private static boolean hasNpcAt(List<TacRogueNpcEntity> npcs, BlockPos center, NpcRole role, int dx, int dz) {
-        double targetX = center.getX() + dx + 0.5;
-        double targetZ = center.getZ() + dz + 0.5;
-        for (TacRogueNpcEntity npc : npcs) {
-            if (npc.getRole() != role) continue;
-            if (Math.abs(npc.getX() - targetX) <= 1.25 && Math.abs(npc.getZ() - targetZ) <= 1.25) {
-                return true;
+        Map<NpcRole, TacRogueNpcEntity> keepers = new EnumMap<>(NpcRole.class);
+        for (NpcRole role : NpcRole.values()) {
+            TacRogueNpcEntity best = null;
+            double bestDistance = Double.MAX_VALUE;
+            Vec3 target = Vec3.atBottomCenterOf(lobbyNpcPos(lobbyCenter, role));
+            for (TacRogueNpcEntity npc : existingCustom) {
+                if (resolveLobbyRole(npc) != role || !npc.isAlive()) continue;
+                double distance = npc.position().distanceToSqr(target);
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    best = npc;
+                }
+            }
+            if (best != null) {
+                keepers.put(role, best);
+                normalizeLobbyNpc(best, role, target);
             }
         }
-        return false;
+
+        for (TacRogueNpcEntity npc : existingCustom) {
+            NpcRole role = resolveLobbyRole(npc);
+            TacRogueNpcEntity keeper = keepers.get(role);
+            if (keeper == null || keeper.getId() != npc.getId()) {
+                npc.remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
+            }
+        }
+
+        for (NpcRole role : NpcRole.values()) {
+            if (!keepers.containsKey(role)) {
+                spawnLobbyNpc(level, lobbyNpcPos(lobbyCenter, role), role, lobbyNpcName(role));
+            }
+        }
+    }
+
+    private static NpcRole resolveLobbyRole(TacRogueNpcEntity npc) {
+        String stored = npc.getPersistentData().getString("TacRogueLobbyRole");
+        if (stored == null || stored.isBlank()) {
+            for (String tag : npc.getTags()) {
+                if (tag.startsWith("npc_role:")) {
+                    stored = tag.substring("npc_role:".length());
+                    break;
+                }
+            }
+        }
+        if (stored != null && !stored.isBlank()) {
+            for (NpcRole role : NpcRole.values()) {
+                if (role.id.equals(stored)) return role;
+            }
+        }
+        return npc.getRole();
+    }
+
+    private static void normalizeLobbyNpc(TacRogueNpcEntity npc, NpcRole role, Vec3 target) {
+        npc.addTag(NPC_TAG);
+        npc.addTag(LOBBY_NPC_TAG);
+        npc.setRole(role);
+        npc.markLobbyNpc(role);
+        npc.setPos(target.x, target.y, target.z);
+        npc.setCustomName(Component.literal(lobbyNpcName(role)));
+        npc.setCustomNameVisible(true);
+        npc.setInvulnerable(true);
+        npc.setNoAi(true);
+        npc.setPersistenceRequired();
+    }
+
+    private static BlockPos lobbyNpcPos(BlockPos center, NpcRole role) {
+        return switch (role) {
+            case COMMANDER -> center.offset(13, 0, -13);
+            case QUARTERMASTER -> center.offset(13, 0, 13);
+            case INTEL_OFFICER -> center.offset(-13, 0, -13);
+            case MEDIC -> center.offset(-13, 0, 13);
+        };
+    }
+
+    private static String lobbyNpcName(NpcRole role) {
+        return switch (role) {
+            case COMMANDER -> "§6[COMMANDER] §fCol. Graves";
+            case QUARTERMASTER -> "§a[SUPPLY] §fSgt. Knox";
+            case INTEL_OFFICER -> "§b[INTEL] §fLt. Hayes";
+            case MEDIC -> "§d[MEDIC] §fDoc Rivera";
+        };
     }
 
     /** ダンジョンに脱出用NPC（情報将校）を配置 */
     public static TacRogueNpcEntity spawnExtractionOfficer(ServerLevel level, BlockPos pos, int floor) {
-        TacRogueNpcEntity npc = spawnNpc(level, pos, NpcRole.INTEL_OFFICER, net.minecraft.network.chat.Component.translatable("npc.tac_rogue.extraction_officer").getString());
+        TacRogueNpcEntity npc = spawnNpc(level, pos, NpcRole.INTEL_OFFICER,
+            net.minecraft.network.chat.Component.translatable("npc.tac_rogue.extraction_officer").getString(), false);
         if (npc != null) {
             npc.getPersistentData().putInt("TacRogueSpawnFloor", floor);
             npc.getPersistentData().putLong("TacRogueSpawnTick", level.getServer().getTickCount());
@@ -196,7 +252,11 @@ public class NpcManager {
     }
 
     /** 独自NPCを生成 */
-    private static TacRogueNpcEntity spawnNpc(ServerLevel level, BlockPos pos, NpcRole role, String name) {
+    private static TacRogueNpcEntity spawnLobbyNpc(ServerLevel level, BlockPos pos, NpcRole role, String name) {
+        return spawnNpc(level, pos, role, name, true);
+    }
+
+    private static TacRogueNpcEntity spawnNpc(ServerLevel level, BlockPos pos, NpcRole role, String name, boolean lobbyNpc) {
         TacRogueNpcEntity npc = ModEntities.TAC_ROGUE_NPC.get().create(level);
         if (npc == null) return null;
 
@@ -207,11 +267,15 @@ public class NpcManager {
         npc.setNoAi(true);
         npc.addTag(NPC_TAG);
         npc.setRole(role);
+        if (lobbyNpc) {
+            npc.markLobbyNpc(role);
+        }
 
         level.addFreshEntity(npc);
 
-        // 待機場所の装飾生成
-        buildNpcStation(level, pos, role);
+        if (lobbyNpc) {
+            buildNpcStation(level, pos, role);
+        }
         return npc;
     }
 
@@ -289,7 +353,7 @@ public class NpcManager {
             } else {
                 PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.NPC,
                     Component.translatable("popup.tac_rogue.npc.commander.title"),
-                    Component.translatable("popup.tac_rogue.npc.commander.body", QuestManager.getProgress(player).currentChapter), 90);
+                    npcDialogue(player, "popup.tac_rogue.npc.commander.body", QuestManager.getProgress(player).currentChapter), 90);
             }
             return;
         }
@@ -297,10 +361,12 @@ public class NpcManager {
             if ("shop".equals(action)) {
                 com.levanilla.rogue.networking.TacRogueNetworking.openShop(player);
                 RunManager.syncPlayer(player);
+            } else if ("deep_operations".equals(action)) {
+                openDeepOperations(player);
             } else {
                 PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.NPC,
                     Component.translatable("popup.tac_rogue.npc.quartermaster.title"),
-                    Component.translatable("popup.tac_rogue.npc.quartermaster.body"), 90);
+                    npcDialogue(player, "popup.tac_rogue.npc.quartermaster.body"), 90);
             }
             return;
         }
@@ -320,6 +386,8 @@ public class NpcManager {
                 }
             } else if ("floor_select".equals(action)) {
                 openFloorSelection(player);
+            } else if ("deep_operations".equals(action)) {
+                openDeepOperations(player);
             } else {
                 showIntelBriefing(player, false);
             }
@@ -335,7 +403,7 @@ public class NpcManager {
             } else {
                 PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.NPC,
                     Component.translatable("popup.tac_rogue.npc.medic.title"),
-                    Component.translatable("gui.tac_rogue.npc_menu.medic.body"), 90);
+                    npcDialogue(player, "popup.tac_rogue.npc.medic.body"), 90);
             }
         }
     }
@@ -344,8 +412,42 @@ public class NpcManager {
         return validateMenuAction(player, "quartermaster", "shop");
     }
 
+    public static boolean canUseDeepOperations(ServerPlayer player) {
+        if (player == null || player.level().dimension() != com.levanilla.rogue.core.CommonEventHandler.LOBBY_DIM) {
+            return false;
+        }
+        AABB area = player.getBoundingBox().inflate(Math.sqrt(MENU_ACTION_MAX_DISTANCE_SQR));
+        return !player.serverLevel().getEntitiesOfClass(TacRogueNpcEntity.class, area, npc ->
+            npc.isAlive()
+                && npc.getTags().contains(NPC_TAG)
+                && (npc.getRole() == NpcRole.QUARTERMASTER || npc.getRole() == NpcRole.INTEL_OFFICER)
+                && player.distanceToSqr(npc) <= MENU_ACTION_MAX_DISTANCE_SQR
+        ).isEmpty();
+    }
+
+    private static void openDeepOperations(ServerPlayer player) {
+        com.levanilla.rogue.core.PlayerRunData data = RunManager.getData(player);
+        if (!com.levanilla.rogue.core.service.DeepProgressService.isUnlocked(data)) {
+            PopupNotificationMessage.send(player, PopupNotificationMessage.PopupType.WARNING,
+                Component.translatable("popup.tac_rogue.deep.title"),
+                Component.translatable("message.tac_rogue.deep_locked"), 80);
+            return;
+        }
+        com.levanilla.rogue.core.service.DeepProgressService.sync(player);
+        com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
+            net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+            new com.levanilla.rogue.networking.SyncDataMessage("open_deep_operations")
+        );
+    }
+
+    private static Component npcDialogue(ServerPlayer player, String baseKey, Object... args) {
+        int index = Math.floorMod(player.getUUID().hashCode() + player.server.getTickCount() / 20, 4);
+        return Component.translatable(baseKey + "." + index, args);
+    }
+
     public static void clearMemory() {
         MENU_SESSIONS.clear();
+        DELAYED_LOBBY_NORMALIZE_TICKS.clear();
     }
 
     private static boolean validateMenuAction(ServerPlayer player, String role, String action) {
@@ -378,21 +480,43 @@ public class NpcManager {
     private static void showQuestTerminal(ServerPlayer player) {
         QuestManager.QuestProgress progress = QuestManager.getProgress(player);
         int chapter = progress.currentChapter;
-        List<QuestManager.Quest> quests = QuestManager.getChapterQuests(chapter);
+        QuestManager.ensureChapterPlan(player, progress);
         PopupNotificationMessage.send(
             player,
             PopupNotificationMessage.PopupType.NPC,
             Component.translatable("popup.tac_rogue.npc.commander.title"),
-            Component.translatable("popup.tac_rogue.npc.commander.body", chapter),
+            npcDialogue(player, "popup.tac_rogue.npc.commander.body", chapter),
             110
         );
 
         // クエストデータをクライアントへ送信
+        sendQuestData(player);
+
+        // クライアント側でQUESTタブを開く
+        com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
+            net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+            new com.levanilla.rogue.networking.SyncDataMessage("open_quest_tab"));
+    }
+
+    public static void sendQuestData(ServerPlayer player) {
+        QuestManager.QuestProgress progress = QuestManager.getProgress(player);
+        int chapter = progress.currentChapter;
+        QuestManager.ensureChapterPlan(player, progress);
+        List<QuestManager.Quest> quests = QuestManager.getVisibleChapterQuests(player);
+
         StringBuilder sb = new StringBuilder();
-        sb.append("quest_data:").append(chapter).append("|");
+        boolean locked = progress.selectionLockedChapter == chapter;
+        sb.append("quest_data:").append(chapter)
+          .append(":").append(locked)
+          .append(":").append(String.join("~", progress.selectedQuestIds))
+          .append(":").append(String.join("~", progress.candidateQuestIds))
+          .append("|");
         for (QuestManager.Quest quest : quests) {
             boolean completed = progress.completedQuests.contains(quest.id);
             int current = progress.questProgress.getOrDefault(quest.id, 0);
+            boolean candidate = progress.candidateQuestIds.contains(quest.id);
+            boolean selected = progress.selectedQuestIds.contains(quest.id);
+            boolean active = quest.role == QuestManager.QuestRole.STORY || selected;
             // format: id;typeLangKey;target;progress;goldReward;completed
             sb.append(quest.id).append(";")
               .append(quest.type.langKey).append(";")
@@ -402,17 +526,16 @@ public class NpcManager {
               .append(completed).append(";")
               .append(quest.role.langKey).append(";")
               .append(quest.rareWeaponReward).append(";")
-              .append(quest.type.langKey).append(".desc").append(",");
+              .append(quest.type.langKey).append(".desc").append(";")
+              .append(active).append(";")
+              .append(selected).append(";")
+              .append(candidate).append(";")
+              .append(quest.role == QuestManager.QuestRole.STORY).append(",");
         }
 
         com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
             net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
             new com.levanilla.rogue.networking.SyncDataMessage(sb.toString()));
-
-        // クライアント側でQUESTタブを開く
-        com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
-            net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
-            new com.levanilla.rogue.networking.SyncDataMessage("open_quest_tab"));
     }
 
     /** インテル情報 */
@@ -423,7 +546,8 @@ public class NpcManager {
             player,
             PopupNotificationMessage.PopupType.NPC,
             Component.translatable("popup.tac_rogue.npc.intel.title"),
-            Component.translatable(
+            npcDialogue(
+                player,
                 "popup.tac_rogue.npc.intel.body",
                 floor,
                 DifficultyManager.getDifficulty().displayName,
@@ -432,6 +556,24 @@ public class NpcManager {
             ),
             160
         );
+        if (com.levanilla.rogue.core.service.DeepProgressService.isUnlocked(data)) {
+            String taskType = data.getCurrentDeepTaskType().isBlank() ? "band_clear" : data.getCurrentDeepTaskType().toLowerCase(java.util.Locale.ROOT);
+            PopupNotificationMessage.send(
+                player,
+                PopupNotificationMessage.PopupType.SYSTEM,
+                Component.translatable("popup.tac_rogue.deep.title"),
+                Component.translatable(
+                    "message.tac_rogue.deep_status",
+                    data.getDeepCore(),
+                    data.getPrestigeLevel(),
+                    data.getHighestEverFloor(),
+                    Component.translatable("deep_task.tac_rogue." + taskType),
+                    data.getDeepTaskProgress(),
+                    data.getDeepTaskTarget()
+                ),
+                150
+            );
+        }
 
         if (openFloorSelection) {
             openFloorSelection(player);

@@ -22,6 +22,7 @@ public class LobbyGenerator {
         boolean currentBlocks = isCurrentLobby(level, center);
         if (saved.getVersion() == LOBBY_VERSION) {
             NpcManager.ensureNpcsSpawned(level, center);
+            NpcManager.scheduleLobbyNormalization(level, 40);
             return false;
         }
         if (!currentBlocks || saved.getVersion() != LOBBY_VERSION) {
@@ -32,6 +33,7 @@ public class LobbyGenerator {
 
         saved.setVersion(LOBBY_VERSION);
         NpcManager.ensureNpcsSpawned(level, center);
+        NpcManager.scheduleLobbyNormalization(level, 40);
         return false;
     }
 
@@ -61,6 +63,7 @@ public class LobbyGenerator {
         buildWatchTowers(level, center);
 
         NpcManager.ensureNpcsSpawned(level, center);
+        NpcManager.scheduleLobbyNormalization(level, 40);
     }
 
     private static void clearArea(ServerLevel level, BlockPos c, int radius, int minY, int maxY) {

@@ -49,6 +49,8 @@ public class QuickKeybindScreen extends Screen {
 
         addOptionButton(this.minecraft.options.fov().createButton(this.minecraft.options, x + 18, by, panelW / 2 - 28), by);
         addOptionButton(this.minecraft.options.sensitivity().createButton(this.minecraft.options, x + panelW / 2 + 10, by, panelW / 2 - 28), by);
+        by += 24;
+        addOptionButton(this.minecraft.options.guiScale().createButton(this.minecraft.options, x + 18, by, panelW - 36), by);
         by += 34;
 
         for (Row row : rows) {
@@ -164,6 +166,9 @@ public class QuickKeybindScreen extends Screen {
         set(find("iris.keybind.toggleShaders", "key.iris.keybind.toggleShaders"), KeyModifier.NONE, key(GLFW.GLFW_KEY_F7));
         set(find("iris.keybind.shaderPackSelection", "key.iris.keybind.shaderPackSelection"), KeyModifier.ALT, key(GLFW.GLFW_KEY_F7));
         set(find("iris.keybind.reload", "key.iris.keybind.reload"), KeyModifier.NONE, InputConstants.UNKNOWN);
+        if (this.minecraft.options.guiScale().get() == 0 || this.minecraft.options.guiScale().get() > 2) {
+            this.minecraft.options.guiScale().set(2);
+        }
         unassignSupportKeys();
         saveKeys();
     }
@@ -262,7 +267,7 @@ public class QuickKeybindScreen extends Screen {
     }
 
     private void updateWidgetScroll() {
-        int clipTop = 92;
+        int clipTop = 116;
         int clipBottom = this.height - 62;
         for (Row row : rows) {
             if (row.button != null) {
@@ -318,9 +323,10 @@ public class QuickKeybindScreen extends Screen {
         graphics.drawCenteredString(this.font, Component.translatable("gui.tac_rogue.quick_keys.title"), this.width / 2, y + 10, 0xFFAAFFDD);
         graphics.drawCenteredString(this.font, Component.translatable("gui.tac_rogue.quick_keys.subtitle"), this.width / 2, y + 23, 0xFF9BA8B8);
         graphics.drawString(this.font, Component.translatable("gui.tac_rogue.quick_keys.display"), x + 18, y + 46, 0xFF8AFFF0, false);
-        graphics.drawString(this.font, Component.translatable("gui.tac_rogue.quick_keys.bindings"), x + 18, y + 80, 0xFF8AFFF0, false);
+        graphics.drawString(this.font, Component.translatable("gui.tac_rogue.quick_keys.gui_scale_recommend"), x + 18, y + 70, 0xFFFFD45C, false);
+        graphics.drawString(this.font, Component.translatable("gui.tac_rogue.quick_keys.bindings"), x + 18, y + 104, 0xFF8AFFF0, false);
 
-        int clipTop = y + 76;
+        int clipTop = y + 100;
         int clipBottom = this.height - 62;
         graphics.enableScissor(x + 8, clipTop, x + panelW - 8, clipBottom);
         int labelX = x + 18;

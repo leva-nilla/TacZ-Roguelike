@@ -98,9 +98,10 @@ public class TacZEventHandler {
             }
         }
 
-        // 射撃音アラート — TacZGunRegistry API でサプレッサー判定
-        boolean suppressed = TacZGunRegistry.hasSuppressor(event.getGunItemStack());
-        alertNearbyMobsByGunshot(player, suppressed);
+        // 射撃音アラート — TacZの消音距離をゲームバランス用に丸めて使う。
+        TacZGunRegistry.GunSoundProfile sound = TacZGunRegistry.getGunSoundProfile(event.getGunItemStack());
+        com.levanilla.rogue.core.service.RogueMobAlertService.onGunshot(
+            player, sound.suppressed(), sound.alertRadius());
 
         // === 修飾子: CORRUPTED (自傷ダメージ) ===
         int corruptedCount = 0;
@@ -133,6 +134,9 @@ public class TacZEventHandler {
 
         // === ヒット統計 ===
         shotsHit.compute(attacker.getUUID(), (k, v) -> (v == null ? 0 : v) + 1);
+        if (event.getHurtEntity() instanceof net.minecraft.world.entity.LivingEntity hurt) {
+            com.levanilla.rogue.core.service.RogueMobAlertService.onAllyHit(attacker, hurt);
+        }
 
         // === パーク: DAMAGE (攻撃力ボーナス) ===
         float damageBonus = softcapPercent(sumPerkEffect(attacker, "perk:DAMAGE"), 150.0f, 0.35f, 350.0f) / 100.0f;
@@ -190,6 +194,11 @@ public class TacZEventHandler {
 
         // === 武器レアリティダメージ倍率 ===
         damage *= WeaponRarity.getDamageMult(heldGun);
+        damage *= com.levanilla.rogue.core.service.DeepProgressService.damageMultiplier(
+            attacker,
+            event.getHurtEntity() instanceof net.minecraft.world.entity.LivingEntity living ? living : null,
+            heldGun,
+            event.isHeadShot());
 
         // === ヘッドショットボーナスの強化 ===
         if (event.isHeadShot()) {
@@ -221,7 +230,7 @@ public class TacZEventHandler {
                 // (VAMPIRE等のイベントは通常通り通すなら、setCanceled(true)する代わりにVanillaのイベントキャンセルフラグを操作するか、
                 // ここで独自にVAMPIREを計算する。今回は処理の重複を避けるためにイベント自体をキャンセル)
                 
-                float vampBonus = sumPerkEffect(attacker, "perk:VAMPIRE") / 10f;
+                float vampBonus = PerkDefinition.getRecoveryHealAmount(sumPerkEffect(attacker, "perk:VAMPIRE"));
                 if (vampBonus > 0 && damage > 0 && attacker.getHealth() < attacker.getMaxHealth()) {
                     attacker.heal(Math.min(vampBonus, damage));
                 }
@@ -311,28 +320,21 @@ public class TacZEventHandler {
         }
 
         // キル報酬
-        int reward = PriceManager.getKillReward(runData.getCurrentFloor());
-        float goldBonus = sumPerkEffect(killer, "perk:GOLD_RUSH") / 100.0f;
-        reward = (int)(reward * (1.0f + goldBonus));
-        CurrencyManager.addGold(killer, (int)(reward * DifficultyManager.getGoldMultiplier()));
-        RunManager.syncPlayer(killer);
+        com.levanilla.rogue.core.service.KillGoldRewardService.award(killer, killed, event.isHeadShot());
 
         // バンパイア効果
-        float totalVampHeal = sumPerkEffect(killer, "perk:VAMPIRE") / 10.0f;
+        float totalVampHeal = PerkDefinition.getRecoveryHealAmount(sumPerkEffect(killer, "perk:VAMPIRE"));
         if (totalVampHeal > 0) killer.heal(totalVampHeal);
 
         // パーク: BLOODLUST (キル時回復＆速度バフ)
-        float bloodlust = sumPerkEffect(killer, "perk:BLOODLUST") / 10.0f;
-        if (bloodlust > 0) {
-            killer.heal(bloodlust * 0.5f);
+        float bloodlustHeal = PerkDefinition.getRecoveryHealAmount(sumPerkEffect(killer, "perk:BLOODLUST"));
+        if (bloodlustHeal > 0) {
+            killer.heal(bloodlustHeal);
             killer.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.MOVEMENT_SPEED, 60, 0, false, false));
         }
 
-        // ヘッドショットキルのボーナスゴールド
+        // ヘッドショットキルのクエスト進行
         if (event.isHeadShot()) {
-            int hsBonus = (int)(reward * 0.3f);
-            CurrencyManager.addGold(killer, hsBonus);
-            // クエスト: ヘッドショット
             QuestManager.advanceQuest(killer, QuestManager.QuestType.HEADSHOT, 1);
         }
 
@@ -354,33 +356,11 @@ public class TacZEventHandler {
             QuestManager.advanceQuest(killer, QuestManager.QuestType.FAST_CHAIN, 1);
         }
 
-        // クエスト: ステルスキル (ターゲットに気づかれていない状態でのキル)
-        if (killed instanceof Mob mob && mob.getTarget() == null) {
-            QuestManager.advanceQuest(killer, QuestManager.QuestType.STEALTH_KILL, 1);
-        }
-
         // クエスト: WEAPON_MASTERY (銃での総キル数)
         QuestManager.advanceQuest(killer, QuestManager.QuestType.WEAPON_MASTERY, 1);
-    }
-
-    // ===== 射撃音アラート (GunFireEvent ベース) =====
-
-    private static void alertNearbyMobsByGunshot(ServerPlayer shooter, boolean suppressed) {
-        double radius = suppressed ? GameConstants.SUPPRESSED_ALERT_RADIUS : GameConstants.GUNSHOT_ALERT_RADIUS;
-        double reducedRadius = radius / 3.0;
-        AABB area = new AABB(shooter.blockPosition()).inflate(radius);
-        List<Mob> mobs = shooter.level().getEntitiesOfClass(
-            Mob.class, area, m -> m.isAlive() && m.getTags().contains("tac_rogue_spawned"));
-        for (Mob mob : mobs) {
-            if (mob.getTarget() == null) {
-                boolean hasLOS = mob.hasLineOfSight(shooter);
-                double dist = mob.distanceTo(shooter);
-                if (hasLOS || dist <= reducedRadius) {
-                    mob.getPersistentData().putLong("LastAlertTick", mob.level().getGameTime());
-                    mob.setTarget(shooter);
-                }
-            }
-        }
+        com.levanilla.rogue.core.service.DeepProgressService.advanceDeepTask(
+            killer, com.levanilla.rogue.core.service.DeepProgressService.DeepTaskType.WEAPON_MASTERY, 1);
+        com.levanilla.rogue.core.service.DeepProgressService.onGunKill(killer, heldGun, event.isHeadShot());
     }
 
     // ===== 雪玉のデコイ機能 (壁や敵に当ててもデコイとして働く) =====

@@ -40,10 +40,10 @@ public class TacRogueNpcRenderer extends MobRenderer<TacRogueNpcEntity, TacRogue
     protected void scale(TacRogueNpcEntity entity, PoseStack poseStack, float partialTickTime) {
         NpcManager.NpcRole role = entity.getRole();
         switch (role) {
-            case COMMANDER -> poseStack.scale(1.04f, 1.07f, 1.04f);
-            case QUARTERMASTER -> poseStack.scale(1.14f, 1.06f, 1.14f);
-            case INTEL_OFFICER -> poseStack.scale(0.92f, 1.02f, 0.92f);
-            case MEDIC -> poseStack.scale(1.00f, 1.00f, 1.00f);
+            case COMMANDER -> poseStack.scale(1.08f, 1.08f, 1.08f);
+            case QUARTERMASTER -> poseStack.scale(0.94f, 1.02f, 0.94f);
+            case INTEL_OFFICER -> poseStack.scale(1.00f, 1.05f, 1.00f);
+            case MEDIC -> poseStack.scale(0.92f, 1.00f, 0.92f);
         }
     }
 }

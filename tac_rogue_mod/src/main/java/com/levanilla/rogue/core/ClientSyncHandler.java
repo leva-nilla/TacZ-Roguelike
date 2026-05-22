@@ -6,12 +6,17 @@ import com.levanilla.rogue.client.RogueInventoryScreen;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.fml.DistExecutor;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 public final class ClientSyncHandler {
 
     private ClientSyncHandler() {}
+    private static final String PERK_CLEAR_TOKEN = "clear";
 
     public static void onSync(String data) {
         try {
@@ -40,8 +45,22 @@ public final class ClientSyncHandler {
                 applyGold(gold);
                 return;
             }
+            if (data.startsWith("gold_gain:")) {
+                int amount = Integer.parseInt(data.substring(10));
+                DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
+                    com.levanilla.rogue.client.hud.HudRenderer.addGoldGain(amount));
+                return;
+            }
             if (data.startsWith("meta:")) {
                 handleMeta(data);
+                return;
+            }
+            if (data.startsWith("deep:")) {
+                handleDeep(data);
+                return;
+            }
+            if (data.startsWith("deep_cache_result:")) {
+                handleDeepCacheResult(data);
                 return;
             }
             if (data.startsWith("quest_data:")) {
@@ -56,8 +75,45 @@ public final class ClientSyncHandler {
                 clearCoopWait();
                 return;
             }
+            if (data.startsWith("generation:")) {
+                handleGeneration(data);
+                return;
+            }
+            if (data.equals("generation_clear")) {
+                ClientRunState.clearGenerationStatus();
+                return;
+            }
+            if (data.startsWith("boss_bar:")) {
+                handleBossBar(data);
+                return;
+            }
+            if (data.equals("boss_bar_clear")) {
+                ClientRunState.clearBossBarState();
+                return;
+            }
+            if (data.startsWith("enemy_dir:")) {
+                handleEnemyDirection(data);
+                return;
+            }
+            if (data.equals("enemy_dir_clear")) {
+                ClientRunState.clearEnemyDirection();
+                return;
+            }
+            if (data.startsWith("perf_start:")) {
+                handlePerfStart(data);
+                return;
+            }
+            if (data.equals("perf_stop")) {
+                DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
+                    com.levanilla.rogue.client.ClientPerformanceProfiler.stop());
+                return;
+            }
             if (data.equals("open_quest_tab")) {
                 openQuestTab();
+                return;
+            }
+            if (data.equals("open_deep_operations")) {
+                openDeepOperations();
                 return;
             }
             if (data.startsWith("perk_init:")) {
@@ -104,20 +160,40 @@ public final class ClientSyncHandler {
     }
 
     private static void handlePerks(String data) {
-        applyPerks(data.substring(6));
+        applyClientPerkSync(data.substring(6));
     }
 
     public static void applyPerks(String perkTags) {
-        String[] tags = perkTags.split(",");
+        applyClientPerkSync(perkTags);
+    }
+
+    public static void applyClientPerkSync(String payload) {
+        String raw = payload == null ? "" : payload;
+        boolean explicitClear = PERK_CLEAR_TOKEN.equals(raw);
+        List<String> tags = new ArrayList<>();
+        if (!raw.isBlank() && !explicitClear) {
+            for (String tag : raw.split(",")) {
+                if (!tag.isEmpty() && tag.startsWith("perk:")) {
+                    tags.add(tag);
+                }
+            }
+        }
         DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
+            boolean hasStoredPerks = !ClientRunState.getPerkTags().isEmpty();
             net.minecraft.client.player.LocalPlayer clientPlayer = net.minecraft.client.Minecraft.getInstance().player;
+            boolean hasCurrentPerks = clientPlayer != null
+                && clientPlayer.getTags().stream().anyMatch(t -> t.startsWith("perk:"));
+            if (tags.isEmpty() && !explicitClear && (hasCurrentPerks || hasStoredPerks)) {
+                return;
+            }
+            ClientRunState.setPerkTags(tags);
             if (clientPlayer != null) {
                 clientPlayer.getTags().removeIf(t -> t.startsWith("perk:"));
                 for (String tag : tags) {
-                    if (!tag.isEmpty()) clientPlayer.addTag(tag);
+                    clientPlayer.addTag(tag);
                 }
-                com.levanilla.rogue.client.TitleRunSummary.recordPerks(tags);
             }
+            com.levanilla.rogue.client.TitleRunSummary.recordPerks(tags.toArray(String[]::new));
         });
     }
 
@@ -180,10 +256,43 @@ public final class ClientSyncHandler {
         });
     }
 
+    private static void handleDeep(String data) {
+        String[] parts = data.substring(5).split(":", -1);
+        if (parts.length < 7) return;
+        int core = Integer.parseInt(parts[0]);
+        int prestige = Integer.parseInt(parts[1]);
+        int highest = Integer.parseInt(parts[2]);
+        int band = Integer.parseInt(parts[3]);
+        String taskType = parts[4];
+        int progress = Integer.parseInt(parts[5]);
+        int target = Integer.parseInt(parts[6]);
+        int provision = parts.length > 7 ? Integer.parseInt(parts[7]) : 0;
+        int prepared = parts.length > 8 ? Integer.parseInt(parts[8]) : 0;
+        int selection = parts.length > 9 ? Integer.parseInt(parts[9]) : 0;
+        int supplyLine = parts.length > 10 ? Integer.parseInt(parts[10]) : 0;
+        int blackMarket = parts.length > 11 ? Integer.parseInt(parts[11]) : 0;
+        ClientRunState.setDeepState(core, prestige, highest, band, taskType, progress, target,
+            provision, prepared, selection, supplyLine, blackMarket);
+    }
+
+    private static void handleDeepCacheResult(String data) {
+        String[] parts = data.substring("deep_cache_result:".length()).split(":", -1);
+        if (parts.length < 3) return;
+        String name = new String(Base64.getUrlDecoder().decode(parts[0]), StandardCharsets.UTF_8);
+        String categoryKey = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
+        String meta = new String(Base64.getUrlDecoder().decode(parts[2]), StandardCharsets.UTF_8);
+        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
+            com.levanilla.rogue.client.DeepOperationsScreen.setLastCacheResult(name, categoryKey, meta));
+    }
+
     private static void handleQuestData(String data) {
         String payload = data.substring(11);
         String[] chapterAndQuests = payload.split("\\|", 2);
-        int chapter = Integer.parseInt(chapterAndQuests[0]);
+        String[] header = chapterAndQuests[0].split(":", -1);
+        int chapter = Integer.parseInt(header[0]);
+        boolean selectionLocked = header.length > 1 && Boolean.parseBoolean(header[1]);
+        Set<String> selectedIds = header.length > 2 ? parseIdSet(header[2]) : new LinkedHashSet<>();
+        Set<String> candidateIds = header.length > 3 ? parseIdSet(header[3]) : new LinkedHashSet<>();
         List<String[]> questList = new ArrayList<>();
         if (chapterAndQuests.length > 1 && !chapterAndQuests[1].isEmpty()) {
             String[] questEntries = chapterAndQuests[1].split(",");
@@ -196,12 +305,26 @@ public final class ClientSyncHandler {
             }
         }
         RogueInventoryScreen.syncQuestData(chapter, questList);
-        com.levanilla.rogue.client.QuestScreen.syncQuestData(chapter, questList);
+        com.levanilla.rogue.client.QuestScreen.syncQuestData(chapter, questList, candidateIds, selectedIds, selectionLocked);
+    }
+
+    private static Set<String> parseIdSet(String encoded) {
+        Set<String> ids = new LinkedHashSet<>();
+        if (encoded == null || encoded.isBlank()) return ids;
+        for (String id : encoded.split("~")) {
+            if (!id.isBlank()) ids.add(id);
+        }
+        return ids;
     }
 
     private static void openQuestTab() {
         DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
             net.minecraft.client.Minecraft.getInstance().setScreen(new com.levanilla.rogue.client.QuestScreen()));
+    }
+
+    private static void openDeepOperations() {
+        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
+            net.minecraft.client.Minecraft.getInstance().setScreen(new com.levanilla.rogue.client.DeepOperationsScreen()));
     }
 
     private static void handleCoopWait(String data) {
@@ -224,6 +347,44 @@ public final class ClientSyncHandler {
     private static void clearCoopWait() {
         DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
             com.levanilla.rogue.client.PublicCoopWaitState.clear());
+    }
+
+    private static void handleGeneration(String data) {
+        String[] parts = data.substring(11).split(":");
+        if (parts.length < 4) return;
+        int floor = Integer.parseInt(parts[0]);
+        int remaining = Integer.parseInt(parts[1]);
+        int total = Integer.parseInt(parts[2]);
+        float progress = Float.parseFloat(parts[3]);
+        ClientRunState.setGenerationStatus(floor, remaining, total, progress, 1600L);
+    }
+
+    private static void handleBossBar(String data) {
+        String[] parts = data.substring(9).split(":", 4);
+        if (parts.length < 4) return;
+        int floor = Integer.parseInt(parts[0]);
+        float health = Float.parseFloat(parts[1]);
+        float maxHealth = Float.parseFloat(parts[2]);
+        String name = new String(Base64.getUrlDecoder().decode(parts[3]), StandardCharsets.UTF_8);
+        ClientRunState.setBossBarState(floor, health, maxHealth, name, 2200L);
+    }
+
+    private static void handleEnemyDirection(String data) {
+        String[] parts = data.substring(10).split(":");
+        if (parts.length < 3) return;
+        ClientRunState.setEnemyDirection(
+            Double.parseDouble(parts[0]),
+            Double.parseDouble(parts[1]),
+            Integer.parseInt(parts[2]),
+            1600L);
+    }
+
+    private static void handlePerfStart(String data) {
+        String[] parts = data.split(":", 3);
+        int seconds = parts.length >= 2 ? Integer.parseInt(parts[1]) : 60;
+        String label = parts.length >= 3 ? parts[2] : "manual";
+        DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () ->
+            com.levanilla.rogue.client.ClientPerformanceProfiler.start(seconds, label));
     }
 
     private static void handleFloorSelection(String data) {

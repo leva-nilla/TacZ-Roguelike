@@ -21,6 +21,7 @@ public class FloorSelectionScreen extends Screen {
     private int leftPos;
     private int topPos;
     private boolean soloMode = true;
+    private boolean lowHealthMode = false;
 
     public FloorSelectionScreen(int maxFloor, long worldSeed) {
         super(Component.translatable("gui.tac_rogue.floor_select.title"));
@@ -37,7 +38,7 @@ public class FloorSelectionScreen extends Screen {
         int listX = this.leftPos - 100;
         int listY = this.topPos + 8;
         int listW = this.imageWidth + 200;
-        int listH = this.imageHeight + 12;
+        int listH = this.imageHeight - 8;
 
         this.addRenderableWidget(net.minecraft.client.gui.components.Button.builder(
             Component.translatable("gui.tac_rogue.floor_select.entry_solo"),
@@ -47,7 +48,16 @@ public class FloorSelectionScreen extends Screen {
                     ? "gui.tac_rogue.floor_select.entry_solo"
                     : "gui.tac_rogue.floor_select.entry_public"));
             }
-        ).bounds(this.leftPos - 100, this.topPos - 24, 112, 20).build());
+        ).bounds(this.leftPos - 100, this.topPos - 22, 112, 20).build());
+        this.addRenderableWidget(net.minecraft.client.gui.components.Button.builder(
+            Component.translatable("gui.tac_rogue.floor_select.low_health_off"),
+            b -> {
+                lowHealthMode = !lowHealthMode;
+                b.setMessage(Component.translatable(lowHealthMode
+                    ? "gui.tac_rogue.floor_select.low_health_on"
+                    : "gui.tac_rogue.floor_select.low_health_off"));
+            }
+        ).bounds(this.leftPos + 18, this.topPos - 22, 126, 20).build());
 
         // Initialize the custom selection list for scrollable functionality
         this.floorList = new FloorSelectionList(this.minecraft, listW, listH, listY, listY + listH, 25);
@@ -79,7 +89,12 @@ public class FloorSelectionScreen extends Screen {
         for (int i = -30; i < imageHeight + 30; i += 20) graphics.fill(x - 105, y + i, x + imageWidth + 105, y + i + 1, 0x2200AAFF);
 
         // Title text
-        graphics.drawCenteredString(this.font, Component.translatable("gui.tac_rogue.floor_select.replay_title"), this.width / 2, this.topPos - 30, 0xFFFFFF);
+        graphics.drawCenteredString(this.font, Component.translatable("gui.tac_rogue.floor_select.replay_title"), this.width / 2, this.topPos - 36, 0xFFFFFF);
+        int bandStart = currentBandStart();
+        int bandEnd = bandStart + 4;
+        graphics.drawCenteredString(this.font,
+            Component.translatable("gui.tac_rogue.floor_select.quest_hint", bandStart, bandEnd),
+            this.width / 2, this.topPos + this.imageHeight + 20, 0xFFAA66);
 
         if (maxFloor <= 0) {
             graphics.drawCenteredString(this.font, Component.translatable("gui.tac_rogue.floor_select.no_floors"), this.width / 2, this.topPos + 30, 0xFFFFFF);
@@ -93,6 +108,18 @@ public class FloorSelectionScreen extends Screen {
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    private boolean isQuestEligibleReplayFloor(int floor) {
+        return floorBand(floor) == floorBand(Math.max(1, this.maxFloor));
+    }
+
+    private int currentBandStart() {
+        return floorBand(Math.max(1, this.maxFloor)) * 5 + 1;
+    }
+
+    private int floorBand(int floor) {
+        return Math.floorDiv(Math.max(1, floor) - 1, 5);
     }
 
     // --- Inner class for the scrollable list ---
@@ -143,6 +170,11 @@ public class FloorSelectionScreen extends Screen {
                     ? Component.translatable("gui.tac_rogue.floor_select.boss_theme", themeName)
                     : Component.literal(themeName);
                 graphics.drawString(FloorSelectionScreen.this.font, infoText, left + 60, top + 5, isBoss, true);
+                Component eligibleText = Component.translatable(FloorSelectionScreen.this.isQuestEligibleReplayFloor(floor)
+                    ? "gui.tac_rogue.floor_select.quest_eligible"
+                    : "gui.tac_rogue.floor_select.practice_only");
+                graphics.drawString(FloorSelectionScreen.this.font, eligibleText, left + width - 94, top + 5,
+                    FloorSelectionScreen.this.isQuestEligibleReplayFloor(floor) ? 0x66FFAA : 0x999999, true);
             }
 
             @Override
@@ -150,6 +182,9 @@ public class FloorSelectionScreen extends Screen {
                 if (button == 0) { // Left click
                     // Send packet to server
                     String mode = FloorSelectionScreen.this.soloMode ? "solo" : "public";
+                    if (FloorSelectionScreen.this.lowHealthMode) {
+                        mode += ":lowhp";
+                    }
                     TacRogueNetworking.CHANNEL.sendToServer(new RogueActionMessage(RogueActionMessage.ActionType.GOTO_FLOOR, this.floor + ":" + mode));
                     // Close the UI immediately
                     Minecraft.getInstance().setScreen(null);

@@ -2,6 +2,7 @@ package com.levanilla.rogue.core.service;
 
 import com.levanilla.rogue.core.PerkDefinition;
 import com.levanilla.rogue.core.StaminaManager;
+import com.levanilla.rogue.core.TacZMagazineHelper;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.ai.attributes.AttributeInstance;
 import net.minecraft.world.entity.ai.attributes.AttributeModifier;
@@ -150,7 +151,7 @@ public final class PlayerPerkTickService {
             if (player.isSprinting()) player.setSprinting(false);
         }
 
-        // PRIMAL: スタミナ回復速度 -30% → staminaEffect を減少
+        // PRIMAL: 最大スタミナ -30% per perk
         staminaEffect -= primalCount * 30.0f;
         // OVERCLOCKED: スタミナ最大値 -50% は下のSTAMINAセクションで処理
         // VOLATILE: 被ダメ +20% はCombatEventHandlerで処理
@@ -197,7 +198,11 @@ public final class PlayerPerkTickService {
 
         float roundsPerSecond = PerkDefinition.getAutoloaderRoundsPerSecond(autoloaderEffect);
         float carry = autoloaderCarry.getOrDefault(player.getUUID(), 0.0f) + roundsPerSecond;
-        int bulletsToLoad = Math.max(1, (int) carry);
+        int bulletsToLoad = (int) carry;
+        if (bulletsToLoad <= 0) {
+            autoloaderCarry.put(player.getUUID(), carry);
+            return;
+        }
         autoloaderCarry.put(player.getUUID(), carry - bulletsToLoad);
         int remainingBudget = bulletsToLoad;
 
@@ -209,9 +214,10 @@ public final class PlayerPerkTickService {
 
             String gunIdStr = tag.getString("GunId");
             int current = tag.getInt("GunCurrentAmmoCount");
-            int baseMag = getBaseMagFromTacZ(gunIdStr, gun);
+            int baseMag = TacZMagazineHelper.getTacZBaseMagazineSize(gun,
+                com.levanilla.rogue.core.registry.TacZGunRegistry.getMagazineSize(gunIdStr));
             if (baseMag <= 0) continue;
-            int maxCap = getEffectiveBaseMag(baseMag, gunIdStr, tag);
+            int maxCap = TacZMagazineHelper.getEffectiveMagazineSize(gun, player, baseMag);
 
             if (current < maxCap) {
                 String ammoId = com.levanilla.rogue.core.registry.TacZGunRegistry.getAmmoForGun(gunIdStr);
@@ -256,7 +262,7 @@ public final class PlayerPerkTickService {
      * リロード完了を検出し、QUICK_FIX (回復) を適用する。
      */
     private static void detectReloadAndApplyQuickFix(ServerPlayer player, PerkSnapshot perks) {
-        float quickFixPercent = perks.effect(PerkDefinition.Category.QUICK_FIX);
+        float quickFixEffect = perks.effect(PerkDefinition.Category.QUICK_FIX);
 
         java.util.UUID uuid = player.getUUID();
         int[] prev = lastGunAmmo.computeIfAbsent(uuid, k -> new int[]{-1, -1});
@@ -274,13 +280,14 @@ public final class PlayerPerkTickService {
             }
 
             String gunIdStr = tag.getString("GunId");
-            int baseMag = getBaseMagFromTacZ(gunIdStr, gun);
+            int baseMag = TacZMagazineHelper.getTacZBaseMagazineSize(gun,
+                com.levanilla.rogue.core.registry.TacZGunRegistry.getMagazineSize(gunIdStr));
             if (baseMag <= 0) {
                 prev[slot] = -1;
                 continue;
             }
 
-            int effectiveBase = getEffectiveBaseMag(baseMag, gunIdStr, tag);
+            int effectiveBase = TacZMagazineHelper.getEffectiveMagazineSize(gun, player, baseMag);
             int current = tag.getInt("GunCurrentAmmoCount");
             int previousAmmo = prev[slot];
             boolean vanillaReloadJustCompleted = previousAmmo >= 0
@@ -305,59 +312,14 @@ public final class PlayerPerkTickService {
             // リロード完了検出: 前回の弾数が実効ベース未満 → 今回が実効ベース以上 = リロード完了
             boolean reloadJustCompleted = (previousAmmo >= 0 && previousAmmo < effectiveBase && current >= effectiveBase);
 
-            if (reloadJustCompleted && quickFixPercent > 0) {
-                player.heal(quickFixPercent / 10.0f);
+            if (reloadJustCompleted && quickFixEffect > 0) {
+                player.heal(PerkDefinition.getRecoveryHealAmount(quickFixEffect));
                 // 連続発動を防ぐため、1度のtickで1回処理したら抜ける
                 break;
             }
         }
     }
 
-    /**
-     * 拡張マガジンを考慮した実効ベースマガジンサイズを取得。
-     */
-    private static int getEffectiveBaseMag(int vanillaBaseMag, String gunIdStr, net.minecraft.nbt.CompoundTag tag) {
-        float rarityMagMult = tag.getFloat("RogueMagMult");
-        if (rarityMagMult <= 0) rarityMagMult = 1.0f;
-        try {
-            net.minecraft.resources.ResourceLocation gunId = new net.minecraft.resources.ResourceLocation(gunIdStr);
-            var optIndex = com.tacz.guns.api.TimelessAPI.getCommonGunIndex(gunId);
-            if (optIndex.isPresent()) {
-                int[] extMagAmounts = optIndex.get().getGunData().getExtendedMagAmmoAmount();
-                if (extMagAmounts != null && extMagAmounts.length > 0 && tag.contains("Attachments")) {
-                    net.minecraft.nbt.CompoundTag attachments = tag.getCompound("Attachments");
-                    if (attachments.contains("extended_mag")) {
-                        net.minecraft.nbt.CompoundTag magTag = attachments.getCompound("extended_mag");
-                        String extMagId = magTag.getString("id");
-                        int extLevel = getExtendedMagLevel(extMagId);
-                        int idx = Math.min(extLevel, extMagAmounts.length) - 1;
-                        if (idx >= 0) {
-                            return Math.max(1, Math.round(extMagAmounts[idx] * rarityMagMult));
-                        }
-                    }
-                }
-            }
-        } catch (Exception ignored) {}
-        return Math.max(1, Math.round(vanillaBaseMag * rarityMagMult));
-    }
-
-    private static int getExtendedMagLevel(String extMagId) {
-        if (extMagId == null || extMagId.isEmpty()) return 1;
-        if (extMagId.endsWith("_3")) return 3;
-        if (extMagId.endsWith("_2")) return 2;
-        return 1;
-    }
-
-    private static int getBaseMagFromTacZ(String gunIdStr, ItemStack gun) {
-        try {
-            net.minecraft.resources.ResourceLocation gunId = new net.minecraft.resources.ResourceLocation(gunIdStr);
-            var optIndex = com.tacz.guns.api.TimelessAPI.getCommonGunIndex(gunId);
-            if (optIndex.isPresent()) {
-                return optIndex.get().getGunData().getAmmoAmount();
-            }
-        } catch (Exception ignored) {}
-        return com.levanilla.rogue.core.registry.TacZGunRegistry.getMagazineSize(gunIdStr);
-    }
     /**
      * 以前の applyPerkEffect() が setBaseValue() で直接変更したベース属性値を
      * デフォルト値にリセットする。これにより TransientModifier が正しいベース値に

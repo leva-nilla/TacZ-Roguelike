@@ -10,7 +10,7 @@ import java.nio.file.Path;
 import java.util.Properties;
 
 public final class ClientStartupAssist {
-    public static final String MAKEUP_ULTRA_FAST = "MakeUp-UltraFast-9.4c.zip";
+    public static final String MAKEUP_ULTRA_FAST = "MakeUp-UltraFast-9.5a.zip";
 
     private ClientStartupAssist() {}
 

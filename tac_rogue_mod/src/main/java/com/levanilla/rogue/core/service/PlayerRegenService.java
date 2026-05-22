@@ -17,27 +17,48 @@ public final class PlayerRegenService {
 
         float currentHp = player.getHealth();
         float maxHp = player.getMaxHealth();
+        float maxAllowedHp = LowHealthChallengeService.isActive(player)
+            ? LowHealthChallengeService.capHealth(player)
+            : maxHp;
+        if (currentHp >= maxAllowedHp) {
+            LowHealthChallengeService.enforceCap(player);
+            return;
+        }
         if (currentHp >= maxHp) return;
 
-        float regenEffect = 0;
+        float regenEffect = 0.0f;
         for (String tag : player.getTags()) {
             if (tag.startsWith("perk:REGENERATION")) {
                 regenEffect += PerkDefinition.fromTag(tag).calculateEffect();
             }
         }
 
-        if (regenEffect > 0) {
-            player.heal(regenEffect / 10.0f);
+        float regenCapRatio = Math.min(1.0f,
+            GameConstants.REGEN_BASE_CAP_RATIO + PerkDefinition.getRegenerationCapUnlockRatio(regenEffect));
+        float regenCap = Math.min(maxAllowedHp, maxHp * regenCapRatio);
+        if (currentHp >= regenCap) {
+            LowHealthChallengeService.enforceCap(player);
             return;
         }
 
-        float regenCap = maxHp * GameConstants.REGEN_BASE_CAP_RATIO;
+        if (regenEffect > 0) {
+            applyCappedHeal(player, currentHp, regenCap, PerkDefinition.getRegenerationHealPerSecond(regenEffect));
+            LowHealthChallengeService.enforceCap(player);
+            return;
+        }
+
         if (currentHp < regenCap) {
             float stamina = StaminaManager.getStamina(player);
             float maxStamina = StaminaManager.getMaxStamina(player);
             if (maxStamina > 0 && (stamina / maxStamina) >= GameConstants.REGEN_STAMINA_THRESHOLD) {
-                player.heal(GameConstants.REGEN_BASE_HEAL);
+                applyCappedHeal(player, currentHp, regenCap, GameConstants.REGEN_BASE_HEAL);
+                LowHealthChallengeService.enforceCap(player);
             }
         }
+    }
+
+    private static void applyCappedHeal(ServerPlayer player, float currentHp, float capHp, float healAmount) {
+        if (healAmount <= 0.0f) return;
+        player.setHealth(Math.min(capHp, Math.min(player.getMaxHealth(), currentHp + healAmount)));
     }
 }

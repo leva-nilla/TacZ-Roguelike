@@ -111,7 +111,7 @@ public class DebugMenuScreen extends Screen {
     private void addTabButtons(int panelX, int panelY, int panelW) {
         Tab[] tabs = Tab.values();
         int gap = 5;
-        int tabW = Math.max(58, Math.min(88, (panelW - 24 - gap * (tabs.length - 1)) / tabs.length));
+        int tabW = Math.max(44, Math.min(88, (panelW - 24 - gap * (tabs.length - 1)) / tabs.length));
         int x = panelX + 12;
         for (Tab target : tabs) {
             addTabButton(x, panelY + 8, tabW, target);
@@ -132,7 +132,8 @@ public class DebugMenuScreen extends Screen {
     private void initWeapons(int panelX, int panelY, int panelW, int panelH) {
         int gridX = weaponGridX(panelX);
         int top = panelY + 32;
-        searchBox = new EditBox(this.font, gridX, top, 190, 18, Component.translatable("gui.tac_rogue.debug.search"));
+        int searchW = Math.max(86, Math.min(190, weaponDetailX(panelX) - gridX - 8));
+        searchBox = new EditBox(this.font, gridX, top, searchW, 18, Component.translatable("gui.tac_rogue.debug.search"));
         searchBox.setValue(weaponSearch);
         searchBox.setResponder(s -> {
             weaponSearch = s;
@@ -310,7 +311,7 @@ public class DebugMenuScreen extends Screen {
     private void initState(int panelX, int panelY, int panelW, int panelH) {
         int controlsY = Math.min(panelY + panelH - 100, panelY + 166);
         int usableW = panelW - 36;
-        int cols = panelW >= 650 ? 5 : 4;
+        int cols = panelW >= 650 ? 5 : panelW >= 500 ? 4 : 3;
         addButtonGrid(panelX + 18, controlsY, usableW, cols, List.of(
             new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.add_gold"), b ->
                 send(DebugActionMessage.ActionType.ADD_GOLD, "1000")),
@@ -324,6 +325,10 @@ public class DebugMenuScreen extends Screen {
                 send(DebugActionMessage.ActionType.SET_FLOOR_CLEARED, "false")),
             new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.floor_up"), b ->
                 send(DebugActionMessage.ActionType.SET_FLOOR, String.valueOf(Math.max(1, ClientRunState.getFloor() + 1)))),
+            new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.floor_up_5"), b ->
+                send(DebugActionMessage.ActionType.SET_FLOOR, String.valueOf(Math.max(1, ClientRunState.getFloor() + 5)))),
+            new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.floor_up_100"), b ->
+                send(DebugActionMessage.ActionType.SET_FLOOR, String.valueOf(Math.max(1, ClientRunState.getFloor() + 100)))),
             new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.max_floor"), b ->
                 send(DebugActionMessage.ActionType.SET_MAX_FLOOR, String.valueOf(Math.max(0, ClientRunState.getFloor())))),
             new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.flash_up"), b ->
@@ -332,6 +337,16 @@ public class DebugMenuScreen extends Screen {
                 send(DebugActionMessage.ActionType.RELOAD_INFO, "")),
             new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.boss_info"), b ->
                 send(DebugActionMessage.ActionType.BOSS_INFO, "")),
+            new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.kill_floor_enemies"), b ->
+                send(DebugActionMessage.ActionType.KILL_DUNGEON_ENEMIES, "")),
+            new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.deep_core"), b ->
+                send(DebugActionMessage.ActionType.ADD_DEEP_CORE, "25")),
+            new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.deep_gun"), b ->
+                send(DebugActionMessage.ActionType.GIVE_DEEP_GUN, "")),
+            new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.deep_task"), b ->
+                send(DebugActionMessage.ActionType.COMPLETE_DEEP_TASK, "")),
+            new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.prestige_set"), b ->
+                send(DebugActionMessage.ActionType.SET_PRESTIGE, "1")),
             new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.boss_breach"), b ->
                 send(DebugActionMessage.ActionType.SPAWN_BOSS, "BREACHER")),
             new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.boss_cmd"), b ->
@@ -349,7 +364,7 @@ public class DebugMenuScreen extends Screen {
         int x = panelX + 18;
         int y = panelY + 96;
         int usableW = panelW - 36;
-        int cols = panelW >= 600 ? 4 : 3;
+        int cols = panelW >= 600 ? 4 : panelW >= 460 ? 3 : 2;
 
         addButtonGrid(x, y, usableW, cols, List.of(
             new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.mp_state"), b ->
@@ -472,8 +487,10 @@ public class DebugMenuScreen extends Screen {
             if (hovered) hoveredWeaponIndex = index;
             ItemStack stack = previewWeaponStack(weapons.get(index));
             if (!stack.isEmpty()) {
-                graphics.renderItem(stack, sx + 2, sy + 2);
-                graphics.renderItemDecorations(this.font, stack, sx + 2, sy + 2);
+                if (!TacZGuiIconRenderer.renderLightweightIcon(graphics, this.font, stack, sx + 2, sy + 2)) {
+                    graphics.renderItem(stack, sx + 2, sy + 2);
+                    graphics.renderItemDecorations(this.font, stack, sx + 2, sy + 2);
+                }
             } else {
                 graphics.drawCenteredString(this.font, "?", sx + 10, sy + 6, 0xFF777777);
             }
@@ -706,11 +723,11 @@ public class DebugMenuScreen extends Screen {
     }
 
     private int panelW() {
-        return Math.min(720, Math.max(420, this.width - 24));
+        return Math.min(720, Math.max(300, this.width - 24));
     }
 
     private int panelH() {
-        return Math.min(330, Math.max(270, this.height - 24));
+        return Math.min(330, Math.max(200, this.height - 24));
     }
 
     private int panelX() {
@@ -734,7 +751,7 @@ public class DebugMenuScreen extends Screen {
     }
 
     private int visibleCategoryRows(int panelH) {
-        return Math.max(6, Math.min(11, (panelH - 84) / CATEGORY_ROW_H));
+        return Math.max(3, Math.min(11, (panelH - 84) / CATEGORY_ROW_H));
     }
 
     private boolean isInList(double mouseX, double mouseY, int x, int y, int w, int rows) {

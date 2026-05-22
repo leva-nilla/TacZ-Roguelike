@@ -53,9 +53,7 @@ public class ScalingEngine {
 
     /**
      * 通常の敵にプレフィックス + 階層スケーリングを適用する。
-     * v1.1: 二次多項式スケーリング — 後半の歯ごたえを維持。
-     *   HP  = base × (1 + 0.10*f + 0.001*f²) × diffHp × prefix
-     *   DMG = base × (1 + 0.05*f + 0.0005*f²) × diffDmg × prefix
+     * v1.2: HP二次項を丸め、100層以降でも弾薬作業になりすぎない伸びに調整。
      */
     public static void applyScaling(LivingEntity entity, int floor) {
         if (entity == null) return;
@@ -75,8 +73,12 @@ public class ScalingEngine {
         // 二次多項式: 序盤はリニアに近く、後半で加速（パーク累積に対抗）
         // v0.5: HP二次項 0.001→0.0005 に緩和（F50以降のHP膨張を抑制）
         double f = floor - 1;
-        double floorHpMult = (1.0 + f * 0.10 + f * f * 0.0005) * diffHp;
-        double floorDmgMult = (1.0 + f * 0.05 + f * f * 0.0005) * diffDmg * getEarlyDamageMult(floor);
+        double floorHpMult = (1.0
+            + f * GameConstants.ENEMY_HP_SCALE_LINEAR
+            + f * f * GameConstants.ENEMY_HP_SCALE_QUADRATIC) * diffHp;
+        double floorDmgMult = (1.0
+            + f * GameConstants.ENEMY_DMG_SCALE_LINEAR
+            + f * f * GameConstants.ENEMY_DMG_SCALE_QUADRATIC) * diffDmg * getEarlyDamageMult(floor);
 
         // プレフィックス固有の追加効果
         if (prefix != Prefix.NORMAL) {
@@ -108,16 +110,22 @@ public class ScalingEngine {
 
     /**
      * ボス専用のスケーリングを適用する。
-     * v1.1: 二次多項式 — 高階層ボスの圧倒的存在感。
-     *   HP  = base × (3.6 + 0.22*f + 0.0045*f²)
-     *   DMG = base × (3 + 0.15*f + 0.002*f²)
+     * v1.2: HPを少し丸め、火力は即死寄りを抑えて行動圧を残す。
      */
     public static void applyBossScaling(LivingEntity entity, int floor, int biomeIndex) {
         if (entity == null) return;
 
-        double f = floor - 1;
-        double bossHpMult = 3.6 + f * 0.22 + f * f * 0.0045;
-        double bossDmgMult = 3.0 + f * 0.15 + f * f * 0.002;
+        int safeFloor = Math.max(1, floor);
+        double f = safeFloor - 1;
+        double bossHpMult = (GameConstants.BOSS_HP_SCALE_BASE
+            + f * GameConstants.BOSS_HP_SCALE_LINEAR
+            + f * f * GameConstants.BOSS_HP_SCALE_QUADRATIC)
+            * DifficultyManager.getHpScale(safeFloor);
+        double bossDmgMult = (GameConstants.BOSS_DMG_SCALE_BASE
+            + f * GameConstants.BOSS_DMG_SCALE_LINEAR
+            + f * f * GameConstants.BOSS_DMG_SCALE_QUADRATIC)
+            * DifficultyManager.getDmgScale(safeFloor)
+            * getEarlyDamageMult(safeFloor);
 
         String bossName = BOSS_NAMES[biomeIndex % BOSS_NAMES.length];
         entity.setCustomName(Component.literal("§c§l[BOSS] §e" + bossName));
@@ -177,8 +185,16 @@ public class ScalingEngine {
         // 防御力
         AttributeInstance armor = entity.getAttribute(Attributes.ARMOR);
         if (armor != null) {
-            armor.setBaseValue(Math.min(30.0D, 7.0D + floor * 0.30D));
+            armor.setBaseValue(Math.min(30.0D, 7.0D + safeFloor * 0.30D));
         }
+    }
+
+    public static float getBossSpecialDamageMultiplier(int floor) {
+        int safeFloor = Math.max(1, floor);
+        double f = safeFloor - 1;
+        // 特殊技は通常攻撃より遅く伸ばす。無視できない圧だけ残して、即死源にはしない。
+        double floorMult = Math.min(2.60D, 1.0D + f * 0.025D + f * f * 0.00010D);
+        return (float) (floorMult * DifficultyManager.getDmgScale(safeFloor));
     }
 
     /** プレフィックス固有の追加効果 */

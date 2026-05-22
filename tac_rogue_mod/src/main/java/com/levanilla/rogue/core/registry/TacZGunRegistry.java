@@ -1,13 +1,20 @@
 package com.levanilla.rogue.core.registry;
 
+import com.levanilla.rogue.core.GameConstants;
 import com.tacz.guns.api.TimelessAPI;
 import com.tacz.guns.api.item.IGun;
 import com.tacz.guns.api.item.IAmmo;
 import com.tacz.guns.api.item.IAttachment;
 import com.tacz.guns.api.item.attachment.AttachmentType;
+import com.tacz.guns.config.common.GunConfig;
+import com.tacz.guns.resource.modifier.AttachmentPropertyManager;
+import com.tacz.guns.resource.modifier.AttachmentCacheProperty;
+import com.tacz.guns.resource.modifier.custom.SilenceModifier;
 import com.tacz.guns.resource.index.CommonGunIndex;
+import com.tacz.guns.resource.pojo.data.attachment.Modifier;
 import com.tacz.guns.resource.pojo.data.gun.BulletData;
 import com.tacz.guns.resource.pojo.data.gun.GunData;
+import it.unimi.dsi.fastutil.Pair;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 
@@ -29,6 +36,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public final class TacZGunRegistry {
 
     private TacZGunRegistry() {}
+
+    public record GunSoundProfile(boolean suppressed, double alertRadius) {}
 
     // ========== キャッシュ ==========
     private static List<GunProfile> cachedGuns = null;
@@ -234,14 +243,24 @@ public final class TacZGunRegistry {
      * </ol>
      */
     public static boolean hasSuppressor(ItemStack gunStack) {
+        return getGunSoundProfile(gunStack).suppressed();
+    }
+
+    /**
+     * TacZの消音modifierを評価し、自modの敵アラート用発砲音距離へ変換する。
+     * TacZ側の標準距離はpack/configで変わり得るため、ゲームバランス用に14〜40へ丸める。
+     */
+    public static GunSoundProfile getGunSoundProfile(ItemStack gunStack) {
         IGun igun = IGun.getIGunOrNull(gunStack);
-        if (igun == null) return false;
+        if (igun == null) return unsuppressedSoundProfile();
         ItemStack muzzle = igun.getAttachment(gunStack, AttachmentType.MUZZLE);
-        if (muzzle == null || muzzle.isEmpty()) return false;
+        if (muzzle == null || muzzle.isEmpty()) return unsuppressedSoundProfile();
 
         IAttachment att = IAttachment.getIAttachmentOrNull(muzzle);
-        if (att == null) return false;
+        if (att == null) return unsuppressedSoundProfile();
         ResourceLocation attId = att.getAttachmentId(muzzle);
+        boolean nameLooksSuppressed = isSuppressorName(attId);
+        boolean hasSilenceModifier = false;
 
         // === Check 1: TacZ API — SilenceModifier が登録されているか ===
         try {
@@ -252,8 +271,8 @@ public final class TacZGunRegistry {
                     if (data != null) {
                         var modifiers = data.getModifier();
                         if (modifiers != null && modifiers.containsKey(
-                            com.tacz.guns.resource.modifier.custom.SilenceModifier.ID)) {
-                            return true;
+                            SilenceModifier.ID)) {
+                            hasSilenceModifier = true;
                         }
                     }
                 }
@@ -262,12 +281,127 @@ public final class TacZGunRegistry {
             // TacZ API 未ロード時はフォールバック
         }
 
-        // === Check 2: フォールバック — アタッチメント ID の名前パターン ===
-        if (attId != null) {
-            String name = attId.getPath().toLowerCase();
-            return name.contains("silencer") || name.contains("suppressor");
+        if (!hasSilenceModifier && !nameLooksSuppressed) {
+            return unsuppressedSoundProfile();
         }
-        return false;
+
+        if (hasSilenceModifier) {
+            try {
+                ResourceLocation gunId = igun.getGunId(gunStack);
+                var gunIndex = TimelessAPI.getCommonGunIndex(gunId);
+                if (gunIndex.isPresent() && gunIndex.get().getGunData() != null) {
+                    AttachmentCacheProperty cache = new AttachmentCacheProperty();
+                    cache.eval(gunStack, gunIndex.get().getGunData());
+                    Pair<Integer, Boolean> silence = cache.getCache(SilenceModifier.ID);
+                    if (silence != null && silence.left() != null) {
+                        double rawRadius = silence.left();
+                        boolean usesSilenceSound = Boolean.TRUE.equals(silence.right());
+                        double alertRadius = convertTacZSoundDistanceToAlertRadius(rawRadius, usesSilenceSound);
+                        boolean actuallySuppressed = usesSilenceSound
+                            || rawRadius < tacZDefaultFireSoundDistance()
+                            || nameLooksSuppressed;
+                        return actuallySuppressed
+                            ? new GunSoundProfile(true, alertRadius)
+                            : unsuppressedSoundProfile();
+                    }
+                }
+            } catch (Exception ignored) {
+                // TacZ API/pack差異で評価できない場合は下の互換フォールバックへ落とす。
+            }
+        }
+
+        return new GunSoundProfile(true, GameConstants.SUPPRESSED_ALERT_RADIUS);
+    }
+
+    /**
+     * アタッチメント単体の静音性能を敵アラート用距離へ変換する。
+     * 銃に装着済みの評価は {@link #getGunSoundProfile(ItemStack)} を使う。
+     */
+    public static Optional<GunSoundProfile> getAttachmentSoundProfile(String attachmentId) {
+        if (attachmentId == null || attachmentId.isBlank()) return Optional.empty();
+        try {
+            return getAttachmentSoundProfile(new ResourceLocation(attachmentId));
+        } catch (Exception ignored) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * アタッチメント単体の静音性能を敵アラート用距離へ変換する。
+     * TacZ の SilenceModifier が取れる場合はその距離を優先し、無い場合は名前フォールバックだけ使う。
+     */
+    public static Optional<GunSoundProfile> getAttachmentSoundProfile(ResourceLocation attachmentId) {
+        if (attachmentId == null) return Optional.empty();
+        boolean nameLooksSuppressed = isSuppressorName(attachmentId);
+        try {
+            var index = TimelessAPI.getCommonAttachmentIndex(attachmentId).orElse(null);
+            if (index != null && index.getData() != null && index.getData().getModifier() != null) {
+                var property = index.getData().getModifier().get(SilenceModifier.ID);
+                if (property != null && property.getValue() instanceof Pair<?, ?> pair) {
+                    Object distanceObj = pair.left();
+                    Object silenceSoundObj = pair.right();
+                    if (distanceObj instanceof Modifier distance) {
+                        double rawRadius = AttachmentPropertyManager.eval(distance,
+                            GunConfig.DEFAULT_GUN_FIRE_SOUND_DISTANCE.get());
+                        boolean usesSilenceSound = Boolean.TRUE.equals(silenceSoundObj);
+                        double alertRadius = convertTacZSoundDistanceToAlertRadius(rawRadius, usesSilenceSound);
+                        boolean actuallySuppressed = usesSilenceSound
+                            || rawRadius < tacZDefaultFireSoundDistance()
+                            || nameLooksSuppressed;
+                        if (actuallySuppressed) {
+                            return Optional.of(new GunSoundProfile(true, alertRadius));
+                        }
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+            // TacZ API/pack差異で評価できない場合は名前フォールバックへ落とす。
+        }
+
+        return nameLooksSuppressed
+            ? Optional.of(new GunSoundProfile(true, GameConstants.SUPPRESSED_ALERT_RADIUS))
+            : Optional.empty();
+    }
+
+    /**
+     * 通常銃声距離からどれだけ検知距離を短縮するかを表示用に返す。
+     * 実際のAI判定は {@link GunSoundProfile#alertRadius()} を使う。
+     */
+    public static double getSoundReductionBlocks(GunSoundProfile profile) {
+        if (profile == null || !profile.suppressed()) return 0.0D;
+        return Math.max(0.0D, GameConstants.GUNSHOT_ALERT_RADIUS - profile.alertRadius());
+    }
+
+    private static GunSoundProfile unsuppressedSoundProfile() {
+        return new GunSoundProfile(false, GameConstants.GUNSHOT_ALERT_RADIUS);
+    }
+
+    private static boolean isSuppressorName(ResourceLocation attId) {
+        if (attId == null) return false;
+        String name = attId.getPath().toLowerCase(Locale.ROOT);
+        return name.contains("silencer") || name.contains("suppressor");
+    }
+
+    private static double clampGunshotRadius(double radius) {
+        if (!Double.isFinite(radius)) return GameConstants.SUPPRESSED_ALERT_RADIUS;
+        return Math.max(
+            GameConstants.SUPPRESSED_ALERT_RADIUS,
+            Math.min(GameConstants.GUNSHOT_ALERT_RADIUS, radius));
+    }
+
+    private static double convertTacZSoundDistanceToAlertRadius(double tacZSoundDistance, boolean usesSilenceSound) {
+        if (!Double.isFinite(tacZSoundDistance)) return GameConstants.SUPPRESSED_ALERT_RADIUS;
+        double reduction = Math.max(0.0D, tacZDefaultFireSoundDistance() - tacZSoundDistance);
+        if (reduction <= 0.0D && usesSilenceSound) return GameConstants.SUPPRESSED_ALERT_RADIUS;
+        return clampGunshotRadius(GameConstants.GUNSHOT_ALERT_RADIUS - reduction);
+    }
+
+    private static double tacZDefaultFireSoundDistance() {
+        try {
+            return Math.max(1.0D, GunConfig.DEFAULT_GUN_FIRE_SOUND_DISTANCE.get());
+        } catch (Exception ignored) {
+            return 64.0D;
+        }
     }
 
     /** 銃にスコープが装着されているか (API ベース) */
@@ -282,25 +416,26 @@ public final class TacZGunRegistry {
 
     /**
      * GunData のパラメータから自動価格を算出。
-     * DPS + マガジン容量 をベースに $200-$18,000 の範囲に正規化。
+     * フロアではなく DPS / 単発火力 / マガジン / カテゴリで制限する。
      */
     public static int calculatePrice(float damage, int rpm, int magSize, ShopCatalog.Category category) {
         float dps = damage * rpm / 60.0f;
-        int base;
-        switch (category) {
-            case PISTOL:  base = (int)(dps * 40) + magSize * 5 + 200; break;
-            case SMG:     base = (int)(dps * 35) + magSize * 8 + 500; break;
-            case SHOTGUN: base = (int)(dps * 30) + magSize * 15 + 400; break;
-            case RIFLE:   base = (int)(dps * 45) + magSize * 10 + 800; break;
-            case SNIPER:  base = (int)(dps * 60) + magSize * 20 + 1500; break;
-            case LMG:     base = (int)(dps * 50) + magSize * 5 + 1500; break;
-            case EXPLOSIVE: base = (int)(damage * 120) + 8000; break; // $16000〜$32000 を目指した極めて高額な設定
-            case SPECIAL: base = (int)(dps * 80) + 2000; break;
-            default:      base = (int)(dps * 40) + 500; break;
-        }
-        int clamped = Math.max(200, Math.min(40000, base));
-        // 値段を分かりやすく50単位で丸める
-        return (clamped / 50) * 50;
+        double base = 350.0D
+            + dps * 85.0D
+            + damage * 120.0D
+            + Math.min(magSize, 120) * 10.0D;
+        double categoryMultiplier = switch (category) {
+            case PISTOL -> 0.75D;
+            case SMG -> 0.90D;
+            case RIFLE -> 1.00D;
+            case SHOTGUN -> 1.05D;
+            case SNIPER -> 1.15D;
+            case LMG -> 1.20D;
+            case EXPLOSIVE -> 2.00D;
+            default -> 1.00D;
+        };
+        int rounded = (int) (Math.round((base * categoryMultiplier) / 50.0D) * 50);
+        return Math.max(400, Math.min(60000, rounded));
     }
 
     // ========== カテゴリ自動分類 ==========
@@ -339,6 +474,9 @@ public final class TacZGunRegistry {
             ResourceLocation ammoId = gunData.getAmmoId();
             List<AttachmentType> allowedAtt = gunData.getAllowAttachments();
             if (allowedAtt == null) allowedAtt = Collections.emptyList();
+            else allowedAtt = allowedAtt.stream()
+                .filter(Objects::nonNull)
+                .toList();
 
             String gunType = index.getType();
             ShopCatalog.Category category = categorizeFromType(gunType);

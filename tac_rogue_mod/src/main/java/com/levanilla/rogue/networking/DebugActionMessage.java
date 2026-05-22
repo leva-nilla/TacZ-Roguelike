@@ -9,6 +9,7 @@ import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.core.TacZRegistryHelper;
 import com.levanilla.rogue.core.WeaponRarity;
 import com.levanilla.rogue.core.ModEntities;
+import com.levanilla.rogue.core.registry.ShopCatalog;
 import com.levanilla.rogue.core.service.RogueItemFactory;
 import com.levanilla.rogue.core.service.ShopPlacementService;
 import com.levanilla.rogue.core.service.FloorInstanceManager;
@@ -44,7 +45,12 @@ public class DebugActionMessage {
         MP_START_NOW,
         MP_COMPLETE,
         MP_VIRTUAL_JOIN,
-        MP_LEAVE
+        MP_LEAVE,
+        KILL_DUNGEON_ENEMIES,
+        ADD_DEEP_CORE,
+        SET_PRESTIGE,
+        GIVE_DEEP_GUN,
+        COMPLETE_DEEP_TASK
     }
 
     private final ActionType action;
@@ -116,6 +122,11 @@ public class DebugActionMessage {
                         }
                     }
                     case MP_LEAVE -> FloorInstanceManager.debugLeave(player);
+                    case KILL_DUNGEON_ENEMIES -> FloorInstanceManager.debugKillDungeonEnemies(player);
+                    case ADD_DEEP_CORE -> handleAddDeepCore(player, msg.data);
+                    case SET_PRESTIGE -> handleSetPrestige(player, msg.data);
+                    case GIVE_DEEP_GUN -> handleGiveDeepGun(player);
+                    case COMPLETE_DEEP_TASK -> handleCompleteDeepTask(player);
                 }
             } catch (Exception ex) {
                 player.sendSystemMessage(Component.literal("\u00A7c[DEBUG] Action failed: " + ex.getMessage()));
@@ -145,6 +156,54 @@ public class DebugActionMessage {
 
         ShopPlacementService.placeRewardItem(player, stack, fullId);
         player.sendSystemMessage(Component.literal("\u00A7a[DEBUG] Gave " + fullId + " " + rarity.name()));
+    }
+
+    private static void handleAddDeepCore(ServerPlayer player, String data) {
+        int amount = Integer.parseInt(data == null || data.isBlank() ? "25" : data);
+        PlayerRunData run = RunManager.getData(player);
+        run.addDeepCore(amount);
+        RunManager.syncPlayer(player);
+        player.sendSystemMessage(Component.literal("\u00A7a[DEBUG] Deep Core +" + amount + " total=" + run.getDeepCore()));
+    }
+
+    private static void handleSetPrestige(ServerPlayer player, String data) {
+        int level = Math.max(0, Integer.parseInt(data == null || data.isBlank() ? "1" : data));
+        PlayerRunData run = RunManager.getData(player);
+        run.setPrestigeLevel(level);
+        run.updateHighestEverFloor(100);
+        RunManager.syncPlayer(player);
+        player.sendSystemMessage(Component.literal("\u00A7a[DEBUG] Prestige level=" + level));
+    }
+
+    private static void handleGiveDeepGun(ServerPlayer player) {
+        java.util.List<ShopCatalog.ShopItem> candidates = TacZRegistryHelper.getItemsByCategory(ShopCatalog.Category.RIFLE);
+        if (candidates.isEmpty()) candidates = TacZRegistryHelper.getAllShopItems();
+        ShopCatalog.ShopItem item = candidates.stream()
+            .filter(i -> i.category == ShopCatalog.Category.RIFLE || i.category == ShopCatalog.Category.SMG || i.category == ShopCatalog.Category.LMG)
+            .findFirst()
+            .orElse(candidates.get(0));
+        ItemStack stack = RogueItemFactory.createGunStack(item.id, WeaponRarity.Rarity.RARE);
+        com.levanilla.rogue.core.service.DeepProgressService.applyModifier(
+            stack,
+            com.levanilla.rogue.core.service.DeepProgressService.DeepModifier.BREACH);
+        ShopPlacementService.placeRewardItem(player, stack, item.id);
+        player.sendSystemMessage(Component.literal("\u00A7a[DEBUG] Gave Deep Modifier gun " + item.id));
+    }
+
+    private static void handleCompleteDeepTask(ServerPlayer player) {
+        PlayerRunData run = RunManager.getData(player);
+        if (run.getCurrentDeepTaskType().isBlank()) {
+            com.levanilla.rogue.core.service.DeepProgressService.ensureDeepTask(player, Math.max(101, run.getCurrentFloor()));
+        }
+        com.levanilla.rogue.core.service.DeepProgressService.DeepTaskType type;
+        try {
+            type = com.levanilla.rogue.core.service.DeepProgressService.DeepTaskType.valueOf(run.getCurrentDeepTaskType());
+        } catch (Exception ignored) {
+            type = com.levanilla.rogue.core.service.DeepProgressService.DeepTaskType.BAND_CLEAR;
+        }
+        int remain = Math.max(1, run.getDeepTaskTarget() - run.getDeepTaskProgress());
+        com.levanilla.rogue.core.service.DeepProgressService.advanceDeepTask(player, type, remain);
+        player.sendSystemMessage(Component.literal("\u00A7a[DEBUG] Completed current deep task."));
     }
 
     private static void handleAdvanceQuest(ServerPlayer player, String data) {

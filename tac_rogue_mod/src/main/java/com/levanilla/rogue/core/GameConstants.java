@@ -3,8 +3,8 @@ package com.levanilla.rogue.core;
 import java.util.UUID;
 
 /**
- * ゲーム全体のバランス定数を一元管理するクラス。
- * バランス調整はこのファイルのみを編集すれば完了する設計。
+ * ゲーム全体で共有する主要なバランス定数を管理するクラス。
+ * 生成、報酬、ショップ在庫などの局所的なテーブルは各サービス/レジストリ側にも持つ。
  *
  * セクション:
  *  1. 座標・境界
@@ -62,8 +62,8 @@ public final class GameConstants {
 
     /** 射撃音: サプレッサーなし時のアラート範囲 (ブロック) */
     public static final double GUNSHOT_ALERT_RADIUS = 40.0;
-    /** 射撃音: サプレッサー装着時のアラート範囲 */
-    public static final double SUPPRESSED_ALERT_RADIUS = 8.0;
+    /** 射撃音: TacZ消音距離が取れない時のサプレッサー最小アラート範囲 */
+    public static final double SUPPRESSED_ALERT_RADIUS = 14.0;
 
     /** 自然回復: ダメージ後のクールダウン (tick) — 5秒 */
     public static final int REGEN_DAMAGE_COOLDOWN_TICKS = 100;
@@ -77,7 +77,7 @@ public final class GameConstants {
     /** パーク「Fortune」によるクリティカルヒット時のダメージ倍率 */
     public static final float CRITICAL_DAMAGE_MULT = 1.5f;
 
-    /** ダガーのダメージ倍率 */
+    /** Dagger系のダメージ倍率。リーチ/速度と引き換えに単発火力を落とす */
     public static final float DAGGER_DAMAGE_MULT = 0.5f;
 
     /** ステーキ使用時の回復量 */
@@ -102,6 +102,10 @@ public final class GameConstants {
     public static final int KILL_REWARD_PER_FLOOR = 3;
     /** キル報酬の最大キャップ (v0.5: 100→150 高フロア報酬改善) */
     public static final int KILL_REWARD_MAX_CAP = 150;
+    /** 51-100層のキル報酬キャップ */
+    public static final int KILL_REWARD_HIGH_CAP = 220;
+    /** 101層以降のキル報酬キャップ */
+    public static final int KILL_REWARD_ENDLESS_CAP = 300;
 
     /** デスペナルティの割合 */
     public static final float DEATH_PENALTY_RATE = 0.05f;
@@ -152,14 +156,41 @@ public final class GameConstants {
     /** ランダムパークの初期価格 */
     public static final int RANDOM_PERK_BASE_PRICE = 2000;
     /** ランダムパーク購入ごとの価格上昇量 */
-    public static final int RANDOM_PERK_PRICE_STEP = 100;
+    public static final int RANDOM_PERK_PRICE_STEP = 400;
 
-    /** ローグライク内で許可するアーマー属性の上限 */
-    public static final double ROGUE_ARMOR_ATTRIBUTE_MAX = 60.0D;
+    /** パークLvごとの基礎効果量。全体の高Lvインフレを抑えるため10%から下げる */
+    public static final float PERK_EFFECT_PER_LEVEL = 7.5f;
+    /** パークLvソフトキャップ開始Lv */
+    public static final int PERK_LEVEL_SOFTCAP_START = 3;
+    /** ソフトキャップ以降のLv伸び率 */
+    public static final float PERK_LEVEL_POST_SOFTCAP_SCALE = 0.65f;
+    /** 強カテゴリの追加係数 */
+    public static final float PERK_STRONG_CATEGORY_SCALE = 0.85f;
+    /** 回復・自動化カテゴリの追加係数 */
+    public static final float PERK_RECOVERY_CATEGORY_SCALE = 0.90f;
+
+    /** ローグライク内で許可するアーマー属性の上限。高スタックでも無駄になりにくいよう高めに取る */
+    public static final double ROGUE_ARMOR_ATTRIBUTE_MAX = 1000.0D;
+    /** バニラ軽減上限を超えたアーマーが追加軽減に変換され始める値 */
+    public static final double ARMOR_OVERCAP_START = 20.0D;
+    /** 追加アーマー軽減の伸びを抑える係数 */
+    public static final double ARMOR_OVERCAP_SCALE = 80.0D;
+    /** 追加アーマー軽減の上限。バニラ軽減後に乗算される */
+    public static final float ARMOR_OVERCAP_MAX_EXTRA_REDUCTION = 0.45f;
     /** 弾薬節約率の最大値。100%化は戦闘リスクが消えるため禁止 */
     public static final float AMMO_SAVE_MAX_CHANCE = 0.85f;
     /** 特殊耐性の最大軽減率。完全耐性化を避ける */
     public static final float SPECIAL_RESISTANCE_MAX = 0.65f;
+    /** DODGE の最大回避率。無敵化を避けるため60%で止める */
+    public static final float DODGE_MAX_CHANCE = 0.60f;
+    /** DODGE の表示/判定に使う効果量係数。Lv上昇の価値を残しつつ序盤の過剰回避を抑える */
+    public static final float DODGE_EFFECT_SCALE = 0.65f;
+    /** AUTOLOADER の効果値から発/秒へ変換する除数 */
+    public static final float AUTOLOADER_EFFECT_DIVISOR = 20.0f;
+    /** AUTOLOADER が有効な場合の最低装填速度 */
+    public static final float AUTOLOADER_MIN_ROUNDS_PER_SECOND = 0.5f;
+    /** Vampire / Bloodlust / Quick Fix の効果値からHP回復量へ変換する除数 */
+    public static final float PERK_RECOVERY_HEAL_DIVISOR = 20.0f;
     /** レアリティ/パーク合算後のリロード時間倍率下限 */
     public static final float MIN_EFFECTIVE_RELOAD_MULT = 0.35f;
     /** レアリティ/パーク合算後の実効連射速度上限 */
@@ -170,6 +201,21 @@ public final class GameConstants {
     public static final float FIRE_RATE_POST_SOFTCAP_SCALE = 0.20f;
     /** FIRE_RATE パークの最大ボーナス */
     public static final float FIRE_RATE_HARD_CAP = 125.0f;
+
+    public static float getArmorOvercapExtraReduction(double armor) {
+        double extraArmor = Math.max(0.0D, armor - ARMOR_OVERCAP_START);
+        if (extraArmor <= 0.0D) {
+            return 0.0f;
+        }
+        return (float) (ARMOR_OVERCAP_MAX_EXTRA_REDUCTION
+            * (extraArmor / (extraArmor + ARMOR_OVERCAP_SCALE)));
+    }
+
+    public static float getArmorMitigationEstimate(double armor) {
+        double baseReduction = Math.min(0.80D, Math.max(0.0D, armor) / 25.0D);
+        float extraReduction = getArmorOvercapExtraReduction(armor);
+        return (float) (1.0D - (1.0D - baseReduction) * (1.0D - extraReduction));
+    }
 
     /** フロアクリア判定の間隔（ティック） — 0.5秒 */
     public static final int FLOOR_CLEAR_CHECK_INTERVAL = 10;
@@ -201,8 +247,14 @@ public final class GameConstants {
     /** スタミナ回復レート (tick あたり) */
     public static final float STAMINA_REGEN_RATE = 0.5f;
 
-    /** カスタム自然回復: パーク付き回復量 */
-    public static final float REGEN_PERK_HEAL = 0.15f;
+    /** カスタム自然回復: Regeneration 1スタックあたりの最大HP割合/秒 */
+    public static final float REGEN_PERK_HEAL_RATIO = 0.01f;
+    /** カスタム自然回復: Regeneration 1スタックあたりの自然回復上限解除割合 */
+    public static final float REGEN_PERK_CAP_UNLOCK_RATIO = 0.05f;
+    /** カスタム自然回復: Regeneration の効果値からHP/秒へ変換する除数 */
+    public static final float REGEN_EFFECT_HEAL_DIVISOR = 100.0f;
+    /** カスタム自然回復: Regeneration の効果値1あたりの回復上限解除割合 */
+    public static final float REGEN_CAP_UNLOCK_PER_EFFECT = 0.005f;
     /** カスタム自然回復: パークなし回復量 */
     public static final float REGEN_BASE_HEAL = 0.1f;
     /** カスタム自然回復: パークなし時のHP上限割合 */
@@ -330,6 +382,27 @@ public final class GameConstants {
     public static final double FLOOR_HP_SCALE_PER_LEVEL = 0.15;
     /** 階層攻撃力スケーリング: 1階層あたりの増加率 */
     public static final double FLOOR_DMG_SCALE_PER_LEVEL = 0.08;
+
+    /** 通常敵HPスケーリングの線形項 */
+    public static final double ENEMY_HP_SCALE_LINEAR = 0.10D;
+    /** 通常敵HPスケーリングの二次項。100層で約12.9倍に抑える */
+    public static final double ENEMY_HP_SCALE_QUADRATIC = 0.0002D;
+    /** 通常敵ダメージスケーリングの線形項 */
+    public static final double ENEMY_DMG_SCALE_LINEAR = 0.05D;
+    /** 通常敵ダメージスケーリングの二次項 */
+    public static final double ENEMY_DMG_SCALE_QUADRATIC = 0.0005D;
+    /** ボスHPスケーリングの基礎値 */
+    public static final double BOSS_HP_SCALE_BASE = 3.4D;
+    /** ボスHPスケーリングの線形項。100層で約50倍 */
+    public static final double BOSS_HP_SCALE_LINEAR = 0.20D;
+    /** ボスHPスケーリングの二次項 */
+    public static final double BOSS_HP_SCALE_QUADRATIC = 0.0028D;
+    /** ボス攻撃力スケーリングの基礎値 */
+    public static final double BOSS_DMG_SCALE_BASE = 2.8D;
+    /** ボス攻撃力スケーリングの線形項 */
+    public static final double BOSS_DMG_SCALE_LINEAR = 0.13D;
+    /** ボス攻撃力スケーリングの二次項。即死寄りを少し抑える */
+    public static final double BOSS_DMG_SCALE_QUADRATIC = 0.0015D;
 
     /** 発光開始フロア */
     public static final int GLOW_FLOOR_THRESHOLD = 10;

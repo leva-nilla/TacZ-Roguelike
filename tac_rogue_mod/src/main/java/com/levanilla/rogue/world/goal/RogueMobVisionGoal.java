@@ -1,6 +1,8 @@
 package com.levanilla.rogue.world.goal;
 
 import com.levanilla.rogue.core.RunManager;
+import com.levanilla.rogue.core.FlashlightManager;
+import com.levanilla.rogue.core.service.RogueMobAlertService;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
@@ -57,6 +59,13 @@ public class RogueMobVisionGoal extends TargetGoal {
         if (spotted != null) {
             targetPlayer = spotted;
             return true;
+        }
+        Player lightSource = findPlayerIlluminatingMob();
+        if (lightSource != null) {
+            if (RogueMobAlertService.reactToFlashlight(mob, lightSource)) {
+                targetPlayer = lightSource;
+                return true;
+            }
         }
         return false;
     }
@@ -164,5 +173,27 @@ public class RogueMobVisionGoal extends TargetGoal {
 
         // LOS チェック (レイキャスト)
         return mob.hasLineOfSight(player);
+    }
+
+    private Player findPlayerIlluminatingMob() {
+        for (Player player : mob.level().players()) {
+            if (!player.isAlive() || player.isSpectator()) continue;
+            if (!FlashlightManager.isEnabled(player.getUUID())) continue;
+            int level = player.getPersistentData().getInt("TacRogueFlashlightLevel");
+            double range = 8.0D + level * 2.0D;
+            if (mob.distanceTo(player) > range) continue;
+            if (!player.hasLineOfSight(mob)) continue;
+            if (isPlayerLookingAtMob(player, 0.90D)) return player;
+        }
+        return null;
+    }
+
+    private boolean isPlayerLookingAtMob(Player player, double threshold) {
+        Vec3 look = player.getLookAngle().normalize();
+        Vec3 toMob = mob.position()
+            .add(0.0D, mob.getBbHeight() * 0.55D, 0.0D)
+            .subtract(player.getEyePosition(1.0F))
+            .normalize();
+        return look.dot(toMob) >= threshold;
     }
 }

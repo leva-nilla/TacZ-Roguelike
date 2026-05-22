@@ -1,0 +1,82 @@
+plugins {
+    id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+    id 'org.spongepowered.mixin' version '0.7.+'
+}
+
+group = 'com.levanilla'
+version = project.rootProject.mod_version
+
+java.toolchain.languageVersion = JavaLanguageVersion.of(17)
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+minecraft {
+    mappings channel: 'official', version: '1.20.1'
+    copyIdeResources = true
+}
+
+mixin {
+    add sourceSets.main, "tacz_startup_helper.refmap.json"
+    config "tacz_startup_helper.mixins.json"
+    disableAnnotationProcessorCheck()
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'MinecraftForge'
+        url = 'https://maven.minecraftforge.net/'
+    }
+    maven {
+        name = 'Modrinth'
+        url = 'https://api.modrinth.com/maven'
+        content {
+            includeGroup "maven.modrinth"
+        }
+    }
+}
+
+dependencies {
+    minecraft 'net.minecraftforge:forge:1.20.1-47.4.18'
+    implementation fg.deobf("maven.modrinth:timeless-and-classics-zero:1.1.8")
+    annotationProcessor 'org.spongepowered:mixin:0.8.5:processor'
+    implementation 'org.spongepowered:mixin:0.8.5'
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    var replaceProperties = [
+            minecraft_version: '1.20.1',
+            minecraft_version_range: '[1.20.1, 1.21)',
+            forge_version_range: '[47.4.18,)',
+            loader_version_range: '[47,)',
+            mod_id: 'tacz_startup_helper',
+            mod_name: 'TacZ Startup Helper',
+            mod_license: 'MIT',
+            mod_version: project.version,
+            mod_authors: 'levanilla',
+            mod_description: 'Startup profiling and conservative TacZ loading optimizations.'
+    ]
+
+    inputs.properties replaceProperties
+
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties + [project: project]
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    archiveBaseName = 'tacz_startup_helper'
+    manifest {
+        attributes([
+                "Specification-Title"     : "tacz_startup_helper",
+                "Specification-Vendor"    : "levanilla",
+                "Specification-Version"   : "1",
+                "Implementation-Title"    : project.name,
+                "Implementation-Version"  : project.jar.archiveVersion,
+                "Implementation-Vendor"   : "levanilla",
+                "MixinConfigs"            : "tacz_startup_helper.mixins.json"
+        ])
+    }
+}

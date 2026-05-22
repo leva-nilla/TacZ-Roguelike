@@ -54,11 +54,14 @@ public final class NotificationManager {
 
     private static class HudNotification {
         final String text;
+        final int textWidth;
         final int color;
         int ticksAlive;
         final int maxTicks;
         HudNotification(String text, int color, int durationTicks) {
-            this.text = text; this.color = color;
+            this.text = text;
+            this.textWidth = Minecraft.getInstance().font.width(stripFormatting(text));
+            this.color = color;
             this.ticksAlive = 0; this.maxTicks = durationTicks;
         }
     }
@@ -70,6 +73,8 @@ public final class NotificationManager {
         final int color;
         int ticksAlive;
         final int maxTicks;
+        int cachedTextWidth = -1;
+        List<FormattedCharSequence> cachedBodyLines = List.of();
 
         PopupNotification(String type, Component title, Component body, int color, int durationTicks) {
             this.type = type;
@@ -78,6 +83,14 @@ public final class NotificationManager {
             this.color = color;
             this.ticksAlive = 0;
             this.maxTicks = durationTicks;
+        }
+
+        List<FormattedCharSequence> bodyLines(Minecraft mc, int textWidth) {
+            if (cachedTextWidth != textWidth) {
+                cachedTextWidth = textWidth;
+                cachedBodyLines = mc.font.split(body, textWidth);
+            }
+            return cachedBodyLines;
         }
     }
 
@@ -217,7 +230,7 @@ public final class NotificationManager {
             int color = (alphaInt << 24) | (n.color & 0xFFFFFF);
             int bgColor = (Math.max(4, alphaInt / 2) << 24) | 0x000000;
             String text = n.text;
-            int textWidth = mc.font.width(text.replaceAll("§.", ""));
+            int textWidth = n.textWidth;
             int nx = (width - textWidth) / 2;
             int ny = baseY - idx * 12;
             graphics.fill(nx - 4, ny - 1, nx + textWidth + 4, ny + 10, bgColor);
@@ -239,7 +252,7 @@ public final class NotificationManager {
         int textWidth = Math.max(24, Math.round((boxW - 16) / textScale));
         int lineH = Math.max(7, Math.round(8 * uiScale));
         for (PopupNotification popup : popups) {
-            List<FormattedCharSequence> bodyLines = mc.font.split(popup.body, textWidth);
+            List<FormattedCharSequence> bodyLines = popup.bodyLines(mc, textWidth);
             int boxH = Math.round(22 * uiScale) + Math.min(2, bodyLines.size()) * lineH;
             layouts.add(new PopupLayout(popup, bodyLines, boxH));
             totalHeight += boxH + gap;
@@ -294,6 +307,26 @@ public final class NotificationManager {
 
             idx += boxH + gap;
         }
+    }
+
+    public static int getAboveHudPopupHeight(Minecraft mc, int width) {
+        if (popups.isEmpty()) return 0;
+        ensureSettingsLoaded();
+        if (popupPosition != PopupPosition.ABOVE_HUD) return 0;
+
+        float uiScale = popupScale;
+        float textScale = Math.max(0.72f, 0.82f * uiScale);
+        int boxW = Math.min(Math.round(196 * uiScale), width - 18);
+        int gap = Math.max(3, Math.round(4 * uiScale));
+        int textWidth = Math.max(24, Math.round((boxW - 16) / textScale));
+        int lineH = Math.max(7, Math.round(8 * uiScale));
+        int totalHeight = 0;
+        for (PopupNotification popup : popups) {
+            List<FormattedCharSequence> bodyLines = popup.bodyLines(mc, textWidth);
+            int boxH = Math.round(22 * uiScale) + Math.min(2, bodyLines.size()) * lineH;
+            totalHeight += boxH + gap;
+        }
+        return totalHeight > 0 ? totalHeight : 0;
     }
 
     private static void ensureSettingsLoaded() {
@@ -409,6 +442,20 @@ public final class NotificationManager {
 
     private static int clampInt(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private static String stripFormatting(String text) {
+        if (text == null || text.indexOf('§') < 0) return text == null ? "" : text;
+        StringBuilder builder = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '§' && i + 1 < text.length()) {
+                i++;
+                continue;
+            }
+            builder.append(c);
+        }
+        return builder.toString();
     }
 
     private static final class PopupLayout {

@@ -22,7 +22,8 @@ class PriceManagerTest {
     void killRewardScalesWithFloorAndCaps() {
         assertEquals(23, PriceManager.getKillReward(1));
         assertEquals(50, PriceManager.getKillReward(10));
-        assertEquals(GameConstants.KILL_REWARD_MAX_CAP, PriceManager.getKillReward(100));
+        assertEquals(GameConstants.KILL_REWARD_HIGH_CAP, PriceManager.getKillReward(100));
+        assertEquals(GameConstants.KILL_REWARD_ENDLESS_CAP, PriceManager.getKillReward(120));
     }
 
     @Test

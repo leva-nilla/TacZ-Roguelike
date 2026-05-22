@@ -1,5 +1,6 @@
 package com.levanilla.rogue.client.hud;
 
+import com.levanilla.rogue.client.ClientPerformanceProfiler;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.Camera;
@@ -78,34 +79,42 @@ public final class DamageIndicatorRenderer {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_PARTICLES) return;
         if (isEmpty()) return;
 
+        long perfStart = ClientPerformanceProfiler.onHudSectionStart();
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.level == null || mc.options.hideGui) return;
-
-        Camera camera = event.getCamera();
-        Vec3 cameraPos = camera.getPosition();
-        PoseStack poseStack = event.getPoseStack();
-        MultiBufferSource.BufferSource buffer = mc.renderBuffers().bufferSource();
-        long nowTick = mc.level.getGameTime();
-        float partialTick = clamp(event.getPartialTick(), 0.0F, 1.0F);
-
-        RenderSystem.enableBlend();
-        RenderSystem.defaultBlendFunc();
-
-        for (DamageIndicator indicator : damageIndicators) {
-            float age = ageTicks(indicator.createdTick(), nowTick, partialTick);
-            if (age <= DAMAGE_LIFE_TICKS) {
-                renderDamage(mc, poseStack, buffer, camera, cameraPos, indicator, age);
-            }
-        }
-        for (DropIndicator indicator : dropIndicators) {
-            float age = ageTicks(indicator.createdTick(), nowTick, partialTick);
-            if (age <= DROP_LIFE_TICKS) {
-                renderDrop(mc, poseStack, buffer, camera, cameraPos, indicator, age);
-            }
+        if (mc.player == null || mc.level == null || mc.options.hideGui) {
+            ClientPerformanceProfiler.onHudSectionEnd(ClientPerformanceProfiler.HudSection.WORLD_DAMAGE, perfStart);
+            return;
         }
 
-        buffer.endBatch();
-        RenderSystem.disableBlend();
+        try {
+            Camera camera = event.getCamera();
+            Vec3 cameraPos = camera.getPosition();
+            PoseStack poseStack = event.getPoseStack();
+            MultiBufferSource.BufferSource buffer = mc.renderBuffers().bufferSource();
+            long nowTick = mc.level.getGameTime();
+            float partialTick = clamp(event.getPartialTick(), 0.0F, 1.0F);
+
+            RenderSystem.enableBlend();
+            RenderSystem.defaultBlendFunc();
+
+            for (DamageIndicator indicator : damageIndicators) {
+                float age = ageTicks(indicator.createdTick(), nowTick, partialTick);
+                if (age <= DAMAGE_LIFE_TICKS) {
+                    renderDamage(mc, poseStack, buffer, camera, cameraPos, indicator, age);
+                }
+            }
+            for (DropIndicator indicator : dropIndicators) {
+                float age = ageTicks(indicator.createdTick(), nowTick, partialTick);
+                if (age <= DROP_LIFE_TICKS) {
+                    renderDrop(mc, poseStack, buffer, camera, cameraPos, indicator, age);
+                }
+            }
+
+            buffer.endBatch();
+            RenderSystem.disableBlend();
+        } finally {
+            ClientPerformanceProfiler.onHudSectionEnd(ClientPerformanceProfiler.HudSection.WORLD_DAMAGE, perfStart);
+        }
     }
 
     public static void renderGui(GuiGraphics graphics, Minecraft mc, int width, int height) {
@@ -247,7 +256,9 @@ public final class DamageIndicatorRenderer {
     }
 
     private static <T> void trim(CopyOnWriteArrayList<T> list, int max) {
-        while (list.size() > max) {
+        // 1回の add で最大1個しか増えないので if で十分。
+        // CopyOnWriteArrayList.remove(0) は内部配列を毎回コピーするため、while ループを避ける。
+        if (list.size() > max) {
             list.remove(0);
         }
     }

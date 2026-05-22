@@ -19,6 +19,12 @@ final class ClientHudEventDelegate {
     static void onRenderGuiOverlay(RenderGuiOverlayEvent.Pre event) {
         Minecraft mc = Minecraft.getInstance();
         if (!ClientInputEventDelegate.isRogueContext(mc)) return;
+        if (event.getOverlay().id().equals(VanillaGuiOverlay.CROSSHAIR.id())
+            && mc.options != null
+            && !mc.options.getCameraType().isFirstPerson()) {
+            event.setCanceled(true);
+            return;
+        }
         if (event.getOverlay().id().equals(VanillaGuiOverlay.PLAYER_HEALTH.id()) ||
             event.getOverlay().id().equals(VanillaGuiOverlay.FOOD_LEVEL.id()) ||
             event.getOverlay().id().equals(VanillaGuiOverlay.ARMOR_LEVEL.id()) ||
@@ -52,16 +58,31 @@ final class ClientHudEventDelegate {
             NotificationManager.render(graphics, mc, width, height);
             NotificationManager.renderPopups(graphics, mc, width, height);
             renderBackgroundLoadIndicator(graphics, mc, width);
-            renderThirdPersonAdsCrosshair(graphics, mc, player, width, height);
+            renderThirdPersonCrosshair(graphics, mc, player, width, height);
         }
     }
 
-    private static void renderThirdPersonAdsCrosshair(GuiGraphics graphics, Minecraft mc, Player player, int width, int height) {
+    private static void renderThirdPersonCrosshair(GuiGraphics graphics, Minecraft mc, Player player, int width, int height) {
         if (mc.options.getCameraType().isFirstPerson()) return;
         net.minecraft.world.item.ItemStack mainHand = player.getMainHandItem();
-        if (mainHand.isEmpty() || !mainHand.hasTag()) return;
-        net.minecraft.nbt.CompoundTag tag = mainHand.getTag();
-        if (tag == null || !tag.contains("GunId")) return;
+        if (isTacZGunStack(mainHand)) {
+            renderThirdPersonGunCrosshair(graphics, mc, width, height);
+        } else {
+            renderThirdPersonInteractionCrosshair(graphics, mc, width, height);
+        }
+    }
+
+    private static boolean isTacZGunStack(net.minecraft.world.item.ItemStack stack) {
+        if (stack.isEmpty()) return false;
+        try {
+            if (com.tacz.guns.api.item.IGun.getIGunOrNull(stack) != null) return true;
+        } catch (Throwable ignored) {
+        }
+        net.minecraft.nbt.CompoundTag tag = stack.getTag();
+        return tag != null && tag.contains("GunId");
+    }
+
+    private static void renderThirdPersonGunCrosshair(GuiGraphics graphics, Minecraft mc, int width, int height) {
         try {
             net.minecraft.resources.ResourceLocation crosshairLoc =
                 com.tacz.guns.client.renderer.crosshair.CrosshairType.getTextureLocation(
@@ -72,29 +93,14 @@ final class ClientHudEventDelegate {
             int cx = width / 2;
             int cy = height / 2;
 
-            net.minecraft.world.phys.Vec3 targetPos =
-                LeaWindsCompat.resolveThirdPersonAimTargetForRender(mc, 96.0D);
-            if (targetPos == null) return;
+            LeaWindsCompat.GunAimResult aim =
+                LeaWindsCompat.resolveThirdPersonGunAimForRender(mc, 96.0D);
+            if (aim == null || aim.target() == null) return;
 
-            net.minecraft.client.Camera camera = mc.gameRenderer.getMainCamera();
-            net.minecraft.world.phys.Vec3 camPos = camera.getPosition();
-
-            org.joml.Vector4f pos = new org.joml.Vector4f(
-                (float)(targetPos.x - camPos.x),
-                (float)(targetPos.y - camPos.y),
-                (float)(targetPos.z - camPos.z),
-                1.0f
-            );
-
-            ClientEventHandler.lastViewMatrix.transform(pos);
-            ClientEventHandler.lastProjectionMatrix.transform(pos);
-
-            if (pos.w() > 0.0f) {
-                pos.div(pos.w());
-                if (pos.z() > -1.0f && pos.z() < 1.0f) {
-                    cx = (int) ((pos.x() + 1.0f) / 2.0f * width);
-                    cy = (int) ((1.0f - pos.y()) / 2.0f * height);
-                }
+            ScreenPoint targetPoint = projectToScreen(mc, aim.target(), width, height);
+            if (targetPoint != null) {
+                cx = targetPoint.x();
+                cy = targetPoint.y();
             }
 
             com.mojang.blaze3d.systems.RenderSystem.enableBlend();
@@ -102,6 +108,14 @@ final class ClientHudEventDelegate {
                 com.mojang.blaze3d.platform.GlStateManager.SourceFactor.SRC_ALPHA,
                 com.mojang.blaze3d.platform.GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA
             );
+
+            if (aim.cameraObstructed() && aim.cameraHit() != null) {
+                ScreenPoint cameraHitPoint = projectToScreen(mc, aim.cameraHit(), width, height);
+                if (cameraHitPoint != null) {
+                    drawCameraObstructionMarker(graphics, cameraHitPoint.x(), cameraHitPoint.y());
+                }
+            }
+
             com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 0.9f);
 
             graphics.blit(crosshairLoc, cx - texSize / 2, cy - texSize / 2, 0, 0, texSize, texSize, texSize, texSize);
@@ -111,6 +125,73 @@ final class ClientHudEventDelegate {
             // フォールバック
         }
     }
+
+    private static void renderThirdPersonInteractionCrosshair(GuiGraphics graphics, Minecraft mc, int width, int height) {
+        try {
+            LeaWindsCompat.InteractionAimResult aim = LeaWindsCompat.resolveThirdPersonInteractionTargetForRender(mc);
+            if (aim == null || aim.target() == null) return;
+            ScreenPoint point = projectToScreen(mc, aim.target(), width, height);
+            if (point == null) return;
+
+            com.mojang.blaze3d.systems.RenderSystem.enableBlend();
+            com.mojang.blaze3d.systems.RenderSystem.blendFunc(
+                com.mojang.blaze3d.platform.GlStateManager.SourceFactor.SRC_ALPHA,
+                com.mojang.blaze3d.platform.GlStateManager.DestFactor.ONE_MINUS_SRC_ALPHA
+            );
+            drawInteractionMarker(graphics, point.x(), point.y(), aim.reachable());
+            com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+        } catch (Exception ignored) {
+        }
+    }
+
+    private static ScreenPoint projectToScreen(Minecraft mc, net.minecraft.world.phys.Vec3 worldPos, int width, int height) {
+        net.minecraft.client.Camera camera = mc.gameRenderer.getMainCamera();
+        net.minecraft.world.phys.Vec3 camPos = camera.getPosition();
+        org.joml.Vector4f pos = new org.joml.Vector4f(
+            (float)(worldPos.x - camPos.x),
+            (float)(worldPos.y - camPos.y),
+            (float)(worldPos.z - camPos.z),
+            1.0f
+        );
+
+        ClientEventHandler.lastViewMatrix.transform(pos);
+        ClientEventHandler.lastProjectionMatrix.transform(pos);
+
+        if (pos.w() <= 0.0f) return null;
+        pos.div(pos.w());
+        if (pos.z() <= -1.0f || pos.z() >= 1.0f) return null;
+        int x = (int) ((pos.x() + 1.0f) / 2.0f * width);
+        int y = (int) ((1.0f - pos.y()) / 2.0f * height);
+        return new ScreenPoint(x, y);
+    }
+
+    private static void drawCameraObstructionMarker(GuiGraphics graphics, int x, int y) {
+        int outer = 0xCC101820;
+        int inner = 0xDDE7E1D5;
+        graphics.fill(x - 5, y - 1, x - 2, y + 1, outer);
+        graphics.fill(x + 3, y - 1, x + 6, y + 1, outer);
+        graphics.fill(x - 1, y - 5, x + 1, y - 2, outer);
+        graphics.fill(x - 1, y + 3, x + 1, y + 6, outer);
+        graphics.fill(x - 4, y, x - 2, y + 1, inner);
+        graphics.fill(x + 3, y, x + 5, y + 1, inner);
+        graphics.fill(x, y - 4, x + 1, y - 2, inner);
+        graphics.fill(x, y + 3, x + 1, y + 5, inner);
+    }
+
+    private static void drawInteractionMarker(GuiGraphics graphics, int x, int y, boolean reachable) {
+        int outer = reachable ? 0xCC101820 : 0xAA101820;
+        int inner = reachable ? 0xDDE7E1D5 : 0x887D8792;
+        graphics.fill(x - 4, y, x - 1, y + 1, outer);
+        graphics.fill(x + 2, y, x + 5, y + 1, outer);
+        graphics.fill(x, y - 4, x + 1, y - 1, outer);
+        graphics.fill(x, y + 2, x + 1, y + 5, outer);
+        graphics.fill(x - 3, y, x - 1, y + 1, inner);
+        graphics.fill(x + 2, y, x + 4, y + 1, inner);
+        graphics.fill(x, y - 3, x + 1, y - 1, inner);
+        graphics.fill(x, y + 2, x + 1, y + 4, inner);
+    }
+
+    private record ScreenPoint(int x, int y) {}
 
     private static void renderBackgroundLoadIndicator(GuiGraphics graphics, Minecraft mc, int screenWidth) {
         if (mc.level == null || !"tac_rogue:lobby_dimension".equals(mc.level.dimension().location().toString())) return;

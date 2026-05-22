@@ -37,6 +37,10 @@ public final class DynamicLightManager {
     private static final double LOOK_THRESHOLD_SQ = 0.005;
 
     /** フラッシュライトのON/OFFを切り替え */
+    public static int getActiveLightCount() {
+        return lightPositions.size();
+    }
+
     public static boolean toggle() {
         var mc = Minecraft.getInstance();
         if (mc.player == null) return false;

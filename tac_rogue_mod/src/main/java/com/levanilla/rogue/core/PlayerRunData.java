@@ -64,6 +64,68 @@ public class PlayerRunData {
         supplyChestTracker.markClaimed(key);
     }
 
+    public int updateSupplyChestMaxClaims(int floor, int generatedCount) {
+        return supplyChestTracker.updateMaxClaims(floor, generatedCount);
+    }
+
+    public int getSupplyChestMaxClaims(int floor) {
+        return supplyChestTracker.getMaxClaims(floor);
+    }
+
+    public void setSupplyChestMaxClaims(int floor, int generatedCount) {
+        supplyChestTracker.setMaxClaims(floor, generatedCount);
+    }
+
+    public int getClaimedSupplyChestCount(int floor) {
+        return supplyChestTracker.getClaimedCount(floor);
+    }
+
+    public int claimNextSupplyChest(int floor, int maxClaims) {
+        return supplyChestTracker.claimNext(floor, maxClaims);
+    }
+
+    public void clearRunRewardClaims() {
+        progressData.clearRunRewardClaims();
+        supplyChestTracker.clear();
+    }
+
+    public int getDeepCore() { return progressData.getDeepCore(); }
+    public void setDeepCore(int value) { progressData.setDeepCore(value); }
+    public void addDeepCore(int amount) { progressData.addDeepCore(amount); }
+    public boolean consumeDeepCore(int amount) { return progressData.consumeDeepCore(amount); }
+
+    public int getPrestigeLevel() { return progressData.getPrestigeLevel(); }
+    public void setPrestigeLevel(int value) { progressData.setPrestigeLevel(value); }
+    public void addPrestigeLevel(int amount) { progressData.addPrestigeLevel(amount); }
+
+    public int getHighestEverFloor() { return progressData.getHighestEverFloor(); }
+    public void updateHighestEverFloor(int floor) { progressData.updateHighestEverFloor(floor); }
+
+    public boolean hasCompletedDeepBand(int band) { return progressData.hasCompletedDeepBand(band); }
+    public void markDeepBandCompleted(int band) { progressData.markDeepBandCompleted(band); }
+    public boolean hasCompletedDeepTaskBand(int band) { return progressData.hasCompletedDeepTaskBand(band); }
+    public void markDeepTaskBandCompleted(int band) { progressData.markDeepTaskBandCompleted(band); }
+
+    public int getCurrentDeepBand() { return progressData.getCurrentDeepBand(); }
+    public void setCurrentDeepBand(int value) { progressData.setCurrentDeepBand(value); }
+    public String getCurrentDeepTaskType() { return progressData.getCurrentDeepTaskType(); }
+    public void setCurrentDeepTaskType(String value) { progressData.setCurrentDeepTaskType(value); }
+    public int getDeepTaskProgress() { return progressData.getDeepTaskProgress(); }
+    public void setDeepTaskProgress(int value) { progressData.setDeepTaskProgress(value); }
+    public int getDeepTaskTarget() { return progressData.getDeepTaskTarget(); }
+    public void setDeepTaskTarget(int value) { progressData.setDeepTaskTarget(value); }
+    public void clearCurrentDeepTask() { progressData.clearCurrentDeepTask(); }
+
+    public int getProvisionLevel() { return progressData.getProvisionLevel(); }
+    public int getPreparedLevel() { return progressData.getPreparedLevel(); }
+    public int getSelectionLevel() { return progressData.getSelectionLevel(); }
+    public int getSupplyLineLevel() { return progressData.getSupplyLineLevel(); }
+    public int getBlackMarketLevel() { return progressData.getBlackMarketLevel(); }
+    public boolean isFirstPrestigeCacheClaimed() { return progressData.isFirstPrestigeCacheClaimed(); }
+    public void setFirstPrestigeCacheClaimed(boolean value) { progressData.setFirstPrestigeCacheClaimed(value); }
+    public int getPrestigeUnlockLevel(String key) { return progressData.getPrestigeUnlockLevel(key); }
+    public void setPrestigeUnlockLevel(String key, int level) { progressData.setPrestigeUnlockLevel(key, level); }
+
     // ===== ライフサイクル =====
 
     /** 新規ランを開始する */

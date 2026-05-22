@@ -16,12 +16,20 @@ public final class ShopStockManager {
     }
 
     public static List<ShopCatalog.ShopItem> filterAvailable(List<ShopCatalog.ShopItem> items, int floor) {
+        return filterAvailable(items, floor, 0);
+    }
+
+    public static List<ShopCatalog.ShopItem> filterAvailable(List<ShopCatalog.ShopItem> items, int floor, int blackMarketLevel) {
         return items.stream()
-            .filter(item -> isAvailable(item, floor))
+            .filter(item -> isAvailable(item, floor, blackMarketLevel))
             .toList();
     }
 
     public static boolean isAvailable(ShopCatalog.ShopItem item, int floor) {
+        return isAvailable(item, floor, 0);
+    }
+
+    public static boolean isAvailable(ShopCatalog.ShopItem item, int floor, int blackMarketLevel) {
         if (item == null) {
             return false;
         }
@@ -33,7 +41,7 @@ public final class ShopStockManager {
         }
 
         boolean preferred = isPreferredForPhase(item.category, RogueActManager.getPhase(floor));
-        int threshold = preferred ? 85 : 35;
+        int threshold = availabilityThreshold(item, floor, preferred, Math.max(0, blackMarketLevel));
         int score = Math.floorMod(item.id.hashCode() ^ (floor * 1103515245), 100);
         return score < threshold;
     }
@@ -51,14 +59,43 @@ public final class ShopStockManager {
     }
 
     public static boolean isUnlockedByFloor(ShopCatalog.Category category, int floor) {
-        return switch (category) {
-            case PISTOL, SMG, MELEE, TACTICAL, ATTACHMENT, AMMO, SPECIAL -> true;
-            case SHOTGUN -> floor >= 4;
-            case RIFLE -> floor >= 8;
-            case SNIPER -> floor >= 10;
-            case LMG -> floor >= 15;
-            case EXPLOSIVE -> floor >= 20;
-        };
+        return true;
+    }
+
+    private static int availabilityThreshold(ShopCatalog.ShopItem item, int floor, boolean preferred, int blackMarketLevel) {
+        int threshold = (preferred ? 85 : 35) + blackMarketLevel * 4;
+        if (!isGunCategory(item.category)) {
+            return Math.min(96, threshold + blackMarketLevel * 2);
+        }
+
+        int safeFloor = Math.max(1, floor);
+        int stableCap = stableWeaponPriceCap(safeFloor, blackMarketLevel);
+        int luxuryCap = luxuryWeaponPriceCap(safeFloor, blackMarketLevel);
+        if (item.price <= stableCap) {
+            return Math.min(97, threshold + 15 + blackMarketLevel * 2);
+        }
+        if (item.price >= luxuryCap) {
+            return Math.min(45, (preferred ? 18 : 8) + blackMarketLevel * 5);
+        }
+        return Math.min(92, threshold);
+    }
+
+    private static int stableWeaponPriceCap(int floor, int blackMarketLevel) {
+        return 1200 + Math.max(1, floor) * 130 + Math.max(0, blackMarketLevel) * 650;
+    }
+
+    private static int luxuryWeaponPriceCap(int floor, int blackMarketLevel) {
+        return 4500 + Math.max(1, floor) * 260 + Math.max(0, blackMarketLevel) * 1400;
+    }
+
+    private static boolean isGunCategory(ShopCatalog.Category category) {
+        return category == ShopCatalog.Category.PISTOL
+            || category == ShopCatalog.Category.RIFLE
+            || category == ShopCatalog.Category.SMG
+            || category == ShopCatalog.Category.SHOTGUN
+            || category == ShopCatalog.Category.SNIPER
+            || category == ShopCatalog.Category.LMG
+            || category == ShopCatalog.Category.EXPLOSIVE;
     }
 
     private static boolean isPreferredForPhase(ShopCatalog.Category category, RogueActManager.FloorPhase phase) {

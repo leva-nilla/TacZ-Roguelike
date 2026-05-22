@@ -13,9 +13,11 @@ import com.levanilla.rogue.core.StaminaManager;
 import com.levanilla.rogue.core.TacZRegistryHelper;
 import com.levanilla.rogue.core.WeaponRarity;
 import com.levanilla.rogue.core.registry.ShopCatalog;
+import com.levanilla.rogue.core.service.FloorService;
 import com.levanilla.rogue.core.service.FloorInstanceManager;
 import com.levanilla.rogue.core.service.RogueItemFactory;
 import com.levanilla.rogue.core.service.ShopPlacementService;
+import com.levanilla.rogue.core.smoke.SmokeTestService;
 import com.levanilla.rogue.networking.TacRogueNetworking;
 import com.levanilla.rogue.world.LobbyGenerator;
 import com.mojang.brigadier.CommandDispatcher;
@@ -81,6 +83,37 @@ public class RogueAdminCommand {
                     .then(Commands.literal("quests")
                         .executes(context -> debugQuests(context.getSource()))
                     )
+                    .then(Commands.literal("smoke")
+                        .executes(context -> debugSmoke(context.getSource(), "quick"))
+                        .then(Commands.literal("quick")
+                            .executes(context -> debugSmoke(context.getSource(), "quick")))
+                        .then(Commands.literal("floor")
+                            .executes(context -> debugSmoke(context.getSource(), "floor")))
+                        .then(Commands.literal("combat")
+                            .executes(context -> debugSmoke(context.getSource(), "combat")))
+                        .then(Commands.literal("economy")
+                            .executes(context -> debugSmoke(context.getSource(), "economy")))
+                        .then(Commands.literal("quest")
+                            .executes(context -> debugSmoke(context.getSource(), "quest")))
+                        .then(Commands.literal("deep")
+                            .executes(context -> debugSmoke(context.getSource(), "deep")))
+                        .then(Commands.literal("ui")
+                            .executes(context -> debugSmoke(context.getSource(), "ui")))
+                        .then(Commands.literal("registry")
+                            .executes(context -> debugSmoke(context.getSource(), "registry")))
+                        .then(Commands.literal("world")
+                            .executes(context -> debugSmoke(context.getSource(), "world")))
+                        .then(Commands.literal("thirdperson")
+                            .executes(context -> debugSmoke(context.getSource(), "thirdperson")))
+                        .then(Commands.literal("shooting")
+                            .executes(context -> debugSmoke(context.getSource(), "shooting")))
+                        .then(Commands.literal("monster")
+                            .executes(context -> debugSmoke(context.getSource(), "monster")))
+                        .then(Commands.literal("all")
+                            .executes(context -> debugSmoke(context.getSource(), "all")))
+                        .then(Commands.literal("full")
+                            .executes(context -> debugSmoke(context.getSource(), "full")))
+                    )
                     .then(Commands.literal("floorcleared")
                         .then(Commands.argument("value", BoolArgumentType.bool())
                             .executes(context -> debugSetFloorCleared(
@@ -94,6 +127,9 @@ public class RogueAdminCommand {
                                 context.getSource(),
                                 IntegerArgumentType.getInteger(context, "floor")))
                         )
+                    )
+                    .then(Commands.literal("enterfloor")
+                        .executes(context -> debugEnterFloor(context.getSource()))
                     )
                     .then(Commands.literal("setmaxfloor")
                         .then(Commands.argument("floor", IntegerArgumentType.integer(0, 999))
@@ -324,6 +360,10 @@ public class RogueAdminCommand {
         return 1;
     }
 
+    private static int debugSmoke(CommandSourceStack source, String suite) {
+        return SmokeTestService.runSuite(source, suite);
+    }
+
     private static int debugSetFloorCleared(CommandSourceStack source, boolean cleared) {
         ServerPlayer player = getPlayer(source);
         if (player == null) return 0;
@@ -349,6 +389,15 @@ public class RogueAdminCommand {
         RunManager.syncPlayer(player);
         send(source, "Current floor=" + floor);
         return debugState(source);
+    }
+
+    private static int debugEnterFloor(CommandSourceStack source) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        FloorService.handleStartNextFloor(player);
+        send(source, "Requested floor entry.");
+        return 1;
     }
 
     private static int debugSetMaxFloor(CommandSourceStack source, int floor) {

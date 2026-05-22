@@ -23,6 +23,7 @@ public class TacRogueNpcEntity extends PathfinderMob {
         this.setNoAi(true);
         this.setPersistenceRequired();
         this.setInvulnerable(true);
+        this.addTag("tac_rogue_npc");
     }
 
     public static AttributeSupplier.Builder createAttributes() {
@@ -40,7 +41,24 @@ public class TacRogueNpcEntity extends PathfinderMob {
 
     public void setRole(NpcManager.NpcRole role) {
         this.entityData.set(ROLE, role.id);
+        for (String tag : new java.util.ArrayList<>(this.getTags())) {
+            if (tag.startsWith("npc_role:")) {
+                this.removeTag(tag);
+            }
+        }
         this.addTag("npc_role:" + role.id);
+    }
+
+    public void markLobbyNpc(NpcManager.NpcRole role) {
+        this.addTag("tac_rogue_npc");
+        this.addTag("tac_rogue_lobby_npc");
+        this.getPersistentData().putBoolean("TacRogueLobbyNpc", true);
+        this.getPersistentData().putString("TacRogueLobbyRole", role.id);
+    }
+
+    public boolean isLobbyNpc() {
+        return this.getPersistentData().getBoolean("TacRogueLobbyNpc")
+            || this.getTags().contains("tac_rogue_lobby_npc");
     }
 
     public NpcManager.NpcRole getRole() {
@@ -77,6 +95,10 @@ public class TacRogueNpcEntity extends PathfinderMob {
     public void addAdditionalSaveData(CompoundTag tag) {
         super.addAdditionalSaveData(tag);
         tag.putString("TacRogueRole", this.entityData.get(ROLE));
+        if (this.getPersistentData().getBoolean("TacRogueLobbyNpc")) {
+            tag.putBoolean("TacRogueLobbyNpc", true);
+            tag.putString("TacRogueLobbyRole", this.getPersistentData().getString("TacRogueLobbyRole"));
+        }
     }
 
     @Override
@@ -86,6 +108,12 @@ public class TacRogueNpcEntity extends PathfinderMob {
             this.entityData.set(ROLE, tag.getString("TacRogueRole"));
             this.addTag("npc_role:" + tag.getString("TacRogueRole"));
         }
+        if (tag.getBoolean("TacRogueLobbyNpc")) {
+            this.getPersistentData().putBoolean("TacRogueLobbyNpc", true);
+            this.getPersistentData().putString("TacRogueLobbyRole", tag.getString("TacRogueLobbyRole"));
+            this.addTag("tac_rogue_lobby_npc");
+        }
+        this.addTag("tac_rogue_npc");
         this.setNoAi(true);
         this.setInvulnerable(true);
     }

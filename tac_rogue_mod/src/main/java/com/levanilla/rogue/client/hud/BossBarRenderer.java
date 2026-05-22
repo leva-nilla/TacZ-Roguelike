@@ -1,10 +1,12 @@
 package com.levanilla.rogue.client.hud;
 
+import com.levanilla.rogue.core.ClientRunState;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 
 /**
  * ボス体力バー描画。
+ * サーバー同期された状態だけを読む。描画中にワールド内エンティティを走査しない。
  */
 public final class BossBarRenderer {
 
@@ -13,21 +15,11 @@ public final class BossBarRenderer {
     public static void render(GuiGraphics graphics, Minecraft mc, int screenWidth) {
         if (mc.level == null || mc.player == null) return;
 
-        net.minecraft.world.entity.Mob nearestBoss = null;
-        double nearestDist = Double.MAX_VALUE;
-        for (net.minecraft.world.entity.Entity entity : mc.level.entitiesForRendering()) {
-            if (!(entity instanceof net.minecraft.world.entity.Mob mob) || !mob.isAlive()) continue;
-            if (!mob.getTags().contains("rogue:boss")) continue;
-            double dist = mob.distanceToSqr(mc.player);
-            if (dist < nearestDist) {
-                nearestDist = dist;
-                nearestBoss = mob;
-            }
-        }
-        if (nearestBoss == null) return;
+        ClientRunState.BossBarState boss = ClientRunState.getBossBarState();
+        if (boss == null) return;
 
-        String name = nearestBoss.getCustomName() != null ? nearestBoss.getCustomName().getString() : "[BOSS]";
-        float ratio = Math.max(0.0f, Math.min(1.0f, nearestBoss.getHealth() / nearestBoss.getMaxHealth()));
+        String name = boss.name();
+        float ratio = boss.ratio();
 
         int bw = 200;
         int bh = 12;

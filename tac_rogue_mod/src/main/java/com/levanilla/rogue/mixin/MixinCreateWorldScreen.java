@@ -3,24 +3,36 @@ package com.levanilla.rogue.mixin;
 import com.levanilla.rogue.client.TacticalScreenStyle;
 import com.levanilla.rogue.core.DifficultyManager;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
+import net.minecraft.client.gui.screens.worldselection.WorldCreationUiState;
 import net.minecraft.network.chat.Component;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import java.lang.reflect.Method;
+
 @Mixin(CreateWorldScreen.class)
 public abstract class MixinCreateWorldScreen extends net.minecraft.client.gui.screens.Screen {
+    @Unique
+    private static final String[] TAC_ROGUE$OPERATION_NAMES = {
+        "KESTREL", "IRON VEIL", "BLACKWATER", "NIGHTFALL", "FALCON", "ASHLINE",
+        "SABLE GATE", "CINDER WARD", "GLASS SPEAR", "RAVEN LOCK", "DUST HARBOR", "VOID LANCE"
+    };
+
+    @Unique
+    private boolean tacRogue$operationNameApplied;
+    @Unique
+    private static Method tacRogue$onCreateMethod;
 
     protected MixinCreateWorldScreen(Component title) {
         super(title);
     }
 
-    @Shadow protected abstract void onCreate();
-
     @Inject(method = "init()V", at = @At("TAIL"))
     private void onInitTail(CallbackInfo ci) {
+        tacRogue$applyDefaultOperationName();
         this.clearWidgets();
 
         int centerX = this.width / 2;
@@ -48,7 +60,7 @@ public abstract class MixinCreateWorldScreen extends net.minecraft.client.gui.sc
         int startButtonY = Math.min(this.height - 46, startY + diffs.length * (btnHeight + gap) + 24);
         this.addRenderableWidget(net.minecraft.client.gui.components.Button.builder(
             Component.translatable("gui.tac_rogue.difficulty.start"),
-            (button) -> this.onCreate()
+            (button) -> tacRogue$invokeOnCreate()
         ).bounds(centerX - startW / 2, startButtonY, startW, btnHeight + 2).build());
     }
 
@@ -103,5 +115,57 @@ public abstract class MixinCreateWorldScreen extends net.minecraft.client.gui.sc
 
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    @Unique
+    private void tacRogue$applyDefaultOperationName() {
+        if (this.tacRogue$operationNameApplied) return;
+        this.tacRogue$operationNameApplied = true;
+        WorldCreationUiState state = ((CreateWorldScreen) (Object) this).getUiState();
+        String current = state.getName();
+        if (current != null && !current.isBlank()
+                && !current.equals("New World")
+                && !current.equals("新規ワールド")) {
+            return;
+        }
+        state.setName(tacRogue$generateOperationName());
+    }
+
+    @Unique
+    private static String tacRogue$generateOperationName() {
+        long seed = System.nanoTime() ^ java.time.Instant.now().toEpochMilli();
+        java.util.Random random = new java.util.Random(seed);
+        String code = TAC_ROGUE$OPERATION_NAMES[random.nextInt(TAC_ROGUE$OPERATION_NAMES.length)];
+        int number = random.nextInt(99) + 1;
+        return String.format(java.util.Locale.ROOT, "LR-TAC OP %s-%02d", code, number);
+    }
+
+    @Unique
+    private void tacRogue$invokeOnCreate() {
+        if (tacRogue$onCreateMethod == null) {
+            tacRogue$onCreateMethod = tacRogue$findOnCreateMethod();
+        }
+        if (tacRogue$onCreateMethod == null) return;
+        try {
+            tacRogue$onCreateMethod.invoke((CreateWorldScreen) (Object) this);
+        } catch (ReflectiveOperationException ignored) {
+        }
+    }
+
+    @Unique
+    private static Method tacRogue$findOnCreateMethod() {
+        for (String name : new String[] { "onCreate", "m_100972_" }) {
+            Class<?> type = CreateWorldScreen.class;
+            while (type != null) {
+                try {
+                    Method method = type.getDeclaredMethod(name);
+                    method.setAccessible(true);
+                    return method;
+                } catch (NoSuchMethodException ignored) {
+                    type = type.getSuperclass();
+                }
+            }
+        }
+        return null;
     }
 }

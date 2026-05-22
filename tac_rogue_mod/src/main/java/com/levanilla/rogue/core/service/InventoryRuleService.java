@@ -102,25 +102,16 @@ public final class InventoryRuleService {
             if (stack.isEmpty()) continue;
 
             if (isGunItem(stack)) {
-                for (int gunSlot = GameConstants.SLOT_GUN_START; gunSlot <= GameConstants.SLOT_GUN_END; gunSlot++) {
-                    if (player.getInventory().getItem(gunSlot).isEmpty()) {
-                        player.getInventory().setItem(gunSlot, stack.copy());
-                        player.getInventory().setItem(slot, ItemStack.EMPTY);
-                        break;
-                    }
-                }
+                moveWeaponOrEject(player, slot, true);
             } else if (isMeleeItem(stack)) {
-                if (player.getInventory().getItem(GameConstants.SLOT_MELEE).isEmpty()) {
-                    player.getInventory().setItem(GameConstants.SLOT_MELEE, stack.copy());
-                    player.getInventory().setItem(slot, ItemStack.EMPTY);
-                }
+                moveWeaponOrEject(player, slot, false);
             }
         }
 
         for (int slot = GameConstants.SLOT_AMMO_GUN1_START; slot <= GameConstants.SLOT_AMMO_GUN2_END; slot++) {
             ItemStack stack = player.getInventory().getItem(slot);
             if (!stack.isEmpty() && (isGunItem(stack) || isMeleeItem(stack))) {
-                ejectFromSlot(player, slot);
+                moveWeaponOrEject(player, slot, isGunItem(stack));
             }
         }
     }
@@ -199,7 +190,7 @@ public final class InventoryRuleService {
                     player.getInventory().setItem(slot, ItemStack.EMPTY);
                 }
                 if (!stack.isEmpty() && !isLockedVisual && (isGunItem(stack) || isMeleeItem(stack))) {
-                    ejectFromSlot(player, slot);
+                    moveWeaponOrEject(player, slot, isGunItem(stack));
                 }
             }
         }
@@ -414,6 +405,25 @@ public final class InventoryRuleService {
         return stack.is(Items.BARRIER)
             && stack.hasTag()
             && stack.getOrCreateTag().getBoolean("rogue_item_locked");
+    }
+
+    private static void moveWeaponOrEject(ServerPlayer player, int fromSlot, boolean gun) {
+        ItemStack stack = player.getInventory().getItem(fromSlot);
+        if (stack.isEmpty()) return;
+        int start = gun ? GameConstants.SLOT_GUN_START : GameConstants.SLOT_MELEE;
+        int end = gun ? GameConstants.SLOT_GUN_END : GameConstants.SLOT_MELEE;
+        for (int slot = start; slot <= end; slot++) {
+            if (slot == fromSlot) continue;
+            if (player.getInventory().getItem(slot).isEmpty()) {
+                player.getInventory().setItem(slot, stack.copy());
+                player.getInventory().setItem(fromSlot, ItemStack.EMPTY);
+                return;
+            }
+        }
+        if (!ShopPlacementService.sendToStash(player, stack)) {
+            player.drop(stack.copy(), true, false);
+        }
+        player.getInventory().setItem(fromSlot, ItemStack.EMPTY);
     }
 
     public static void clearMemory() {

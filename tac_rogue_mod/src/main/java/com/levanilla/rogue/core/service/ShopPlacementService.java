@@ -35,9 +35,26 @@ public final class ShopPlacementService {
         StashSavedData data = StashSavedData.get(player.serverLevel());
         StashSavedData.PlayerStash stash = data.getStash(player.getUUID());
         int maxSlots = stash.unlockedLines * 9;
+        ItemStack remaining = stack.copy();
+
+        for (int i = 0; i < maxSlots; i++) {
+            ItemStack existing = stash.getItem(i);
+            if (existing.isEmpty() || !ItemStack.isSameItemSameTags(existing, remaining)) continue;
+            int space = existing.getMaxStackSize() - existing.getCount();
+            if (space <= 0) continue;
+            int move = Math.min(space, remaining.getCount());
+            existing.grow(move);
+            remaining.shrink(move);
+            stash.setItem(i, existing);
+            if (remaining.isEmpty()) {
+                data.setDirty();
+                return true;
+            }
+        }
+
         for (int i = 0; i < maxSlots; i++) {
             if (stash.getItem(i).isEmpty()) {
-                stash.setItem(i, stack.copy());
+                stash.setItem(i, remaining.copy());
                 data.setDirty();
                 return true;
             }
@@ -55,9 +72,6 @@ public final class ShopPlacementService {
             boolean slot1Full = !player.getInventory().items.get(GameConstants.SLOT_GUN_END).isEmpty();
             if (!slot0Full || !slot1Full) {
                 player.getInventory().setItem(slot0Full ? GameConstants.SLOT_GUN_END : GameConstants.SLOT_GUN_START, stack);
-                return;
-            }
-            if (placeInCombatItemSlots(player, stack)) {
                 return;
             }
         } else if (isMelee && player.getInventory().items.get(GameConstants.SLOT_MELEE).isEmpty()) {
@@ -91,37 +105,31 @@ public final class ShopPlacementService {
         boolean slot0Full = !player.getInventory().items.get(GameConstants.SLOT_GUN_START).isEmpty();
         boolean slot1Full = !player.getInventory().items.get(GameConstants.SLOT_GUN_END).isEmpty();
         if (slot0Full && slot1Full) {
-            if (placeInCombatItemSlots(player, stack)) {
-                player.sendSystemMessage(Component.translatable("message.tac_rogue.shop_purchased", itemId.toUpperCase()));
-                return;
-            }
             if (sendToStash(player, stack)) {
-                player.sendSystemMessage(Component.literal(
-                    "\u00A7e[SHOP] Gun slots full -> Sent to stash: " + itemId.toUpperCase()));
+                notify(player, PopupNotificationMessage.PopupType.REWARD, "STASH", "Gun slots full. Sent to stash: " + itemId.toUpperCase());
             } else {
                 refundPurchase(player, price, itemId);
             }
         } else {
             player.getInventory().setItem(slot0Full ? GameConstants.SLOT_GUN_END : GameConstants.SLOT_GUN_START, stack);
-            player.sendSystemMessage(Component.translatable("message.tac_rogue.shop_purchased", itemId.toUpperCase()));
+            notifyPurchased(player, itemId);
         }
     }
 
     private static void placeMelee(ServerPlayer player, ItemStack stack, String itemId, int price) {
         if (!player.getInventory().items.get(GameConstants.SLOT_MELEE).isEmpty()) {
             if (placeInCombatItemSlots(player, stack)) {
-                player.sendSystemMessage(Component.translatable("message.tac_rogue.shop_purchased", itemId.toUpperCase()));
+                notifyPurchased(player, itemId);
                 return;
             }
             if (sendToStash(player, stack)) {
-                player.sendSystemMessage(Component.literal(
-                    "\u00A7e[SHOP] Melee slot full -> Sent to stash: " + itemId.toUpperCase()));
+                notify(player, PopupNotificationMessage.PopupType.REWARD, "STASH", "Melee slot full. Sent to stash: " + itemId.toUpperCase());
             } else {
                 refundPurchase(player, price, itemId);
             }
         } else {
             player.getInventory().setItem(GameConstants.SLOT_MELEE, stack);
-            player.sendSystemMessage(Component.translatable("message.tac_rogue.shop_purchased", itemId.toUpperCase()));
+            notifyPurchased(player, itemId);
         }
     }
 
@@ -156,38 +164,76 @@ public final class ShopPlacementService {
 
         if (!placed) {
             if (sendToStash(player, stack)) {
-                player.sendSystemMessage(Component.literal("\u00A7e[SHOP] Ammo overflow -> Sent to stash"));
+                notify(player, PopupNotificationMessage.PopupType.REWARD, "STASH", "Ammo overflow. Sent to stash.");
             } else {
                 refundPurchase(player, price, itemId);
             }
         } else {
-            player.sendSystemMessage(Component.translatable("message.tac_rogue.shop_purchased", itemId.toUpperCase()));
+            notifyPurchased(player, itemId);
         }
     }
 
     private static void placeGeneralItem(ServerPlayer player, ItemStack stack, String itemId, int price) {
         if (placeInUnlockedItemSlots(player, stack)) {
-            player.sendSystemMessage(Component.translatable("message.tac_rogue.shop_purchased", itemId.toUpperCase()));
+            notifyPurchased(player, itemId);
             return;
         }
 
         if (sendToStash(player, stack)) {
-            player.sendSystemMessage(Component.literal("\u00A7e[SHOP] Item slots full -> Sent to stash"));
+            notify(player, PopupNotificationMessage.PopupType.REWARD, "STASH", "Item slots full. Sent to stash.");
         } else {
             refundPurchase(player, price, itemId);
         }
     }
 
     private static boolean placeInUnlockedItemSlots(ServerPlayer player, ItemStack stack) {
+        if (stack.isEmpty()) return true;
+        if (!canFitInUnlockedItemSlots(player, stack)) return false;
+
+        int invLevel = player.getPersistentData().getInt("TacRogue_InvLevel");
+        int maxAllowedIndex = Math.min(GameConstants.SLOT_AMMO_GUN2_END + (invLevel * 2), 35);
+        ItemStack remaining = stack.copy();
+
+        for (int slot = GameConstants.SLOT_ITEM_START; slot <= maxAllowedIndex; slot++) {
+            if (slot >= GameConstants.SLOT_AMMO_GUN1_START && slot <= GameConstants.SLOT_AMMO_GUN2_END) continue;
+            ItemStack existing = player.getInventory().items.get(slot);
+            if (existing.isEmpty() || !ItemStack.isSameItemSameTags(existing, remaining)) continue;
+            int space = existing.getMaxStackSize() - existing.getCount();
+            if (space <= 0) continue;
+            int move = Math.min(space, remaining.getCount());
+            existing.grow(move);
+            remaining.shrink(move);
+            if (remaining.isEmpty()) {
+                player.getInventory().setChanged();
+                return true;
+            }
+        }
+
+        for (int slot = GameConstants.SLOT_ITEM_START; slot <= maxAllowedIndex; slot++) {
+            if (slot >= GameConstants.SLOT_AMMO_GUN1_START && slot <= GameConstants.SLOT_AMMO_GUN2_END) continue;
+            if (player.getInventory().items.get(slot).isEmpty()) {
+                player.getInventory().setItem(slot, remaining);
+                player.getInventory().setChanged();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean canFitInUnlockedItemSlots(ServerPlayer player, ItemStack stack) {
+        int remaining = stack.getCount();
         int invLevel = player.getPersistentData().getInt("TacRogue_InvLevel");
         int maxAllowedIndex = Math.min(GameConstants.SLOT_AMMO_GUN2_END + (invLevel * 2), 35);
 
         for (int slot = GameConstants.SLOT_ITEM_START; slot <= maxAllowedIndex; slot++) {
             if (slot >= GameConstants.SLOT_AMMO_GUN1_START && slot <= GameConstants.SLOT_AMMO_GUN2_END) continue;
-            if (player.getInventory().items.get(slot).isEmpty()) {
-                player.getInventory().setItem(slot, stack);
-                return true;
+            ItemStack existing = player.getInventory().items.get(slot);
+            if (existing.isEmpty()) {
+                remaining -= stack.getMaxStackSize();
+            } else if (ItemStack.isSameItemSameTags(existing, stack)) {
+                remaining -= Math.max(0, existing.getMaxStackSize() - existing.getCount());
             }
+            if (remaining <= 0) return true;
         }
         return false;
     }
@@ -204,8 +250,8 @@ public final class ShopPlacementService {
 
     private static void refundPurchase(ServerPlayer player, int price, String itemId) {
         CurrencyManager.addGoldNoQuest(player, price);
-        player.sendSystemMessage(Component.literal(
-            "\u00A7c[SHOP] All slots & stash full! Refunded \u00A76$" + price + "\u00A7c for " + itemId.toUpperCase()));
+        notify(player, PopupNotificationMessage.PopupType.WARNING, "REFUNDED",
+            "All slots and stash are full. Refunded $" + price + " for " + itemId.toUpperCase());
     }
 
     private static int findAmmoSlotForAmmo(ServerPlayer player, String ammoId) {
@@ -221,5 +267,13 @@ public final class ShopPlacementService {
             if (gunAmmo.equals(ammoId)) return GameConstants.SLOT_AMMO_GUN2_START;
         }
         return -1;
+    }
+
+    private static void notifyPurchased(ServerPlayer player, String itemId) {
+        notify(player, PopupNotificationMessage.PopupType.REWARD, "PURCHASED", itemId.toUpperCase());
+    }
+
+    private static void notify(ServerPlayer player, PopupNotificationMessage.PopupType type, String title, String body) {
+        PopupNotificationMessage.send(player, type, Component.literal(title), Component.literal(body), 120);
     }
 }

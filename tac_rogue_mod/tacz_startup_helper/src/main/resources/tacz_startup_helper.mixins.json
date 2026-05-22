@@ -1,0 +1,20 @@
+{
+  "required": false,
+  "minVersion": "0.8",
+  "package": "com.levanilla.taczstartuphelper.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "tacz_startup_helper.refmap.json",
+  "mixins": [
+    "MixinGetJarResources",
+    "MixinGunPackLoader",
+    "MixinResourceManager",
+    "MixinResourceScanner"
+  ],
+  "client": [
+    "MixinClientIndexManager",
+    "MixinGunDisplayInstance"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

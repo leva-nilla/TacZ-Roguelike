@@ -25,7 +25,9 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.phys.AABB;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -44,6 +46,7 @@ public final class FloorInstanceManager {
     private static final int PUBLIC_ORIGIN_STRIDE = RunManager.FLOOR_OFFSET_Z;
     private static final int WAIT_TICKS = 15 * 20;
     private static final int TRACK_AUDIT_INTERVAL_TICKS = 100;
+    private static final int BOSS_BAR_SYNC_INTERVAL_TICKS = 10;
     static final double BOSS_JOIN_HP_RATIO = 0.70D;
 
     static final Map<String, FloorInstance> INSTANCES = new ConcurrentHashMap<>();
@@ -75,6 +78,7 @@ public final class FloorInstanceManager {
         public final int floor;
         public final EntryMode mode;
         public final UUID ownerUuid;
+        public final boolean questEligible;
         public final Set<UUID> participants = ConcurrentHashMap.newKeySet();
         private final Set<UUID> trackedEntityUuids = ConcurrentHashMap.newKeySet();
         private final Set<UUID> trackedMobUuids = ConcurrentHashMap.newKeySet();
@@ -88,16 +92,20 @@ public final class FloorInstanceManager {
         public volatile long activeTick;
         public volatile long lastWaitSyncTick;
         public volatile long lastTrackingAuditTick;
+        public volatile long lastBossBarSyncTick;
+        public volatile long lastEnemyLocatorSyncTick;
         public volatile int initialParticipantCount;
+        public volatile int generatedSupplyChestTotal;
         public volatile BlockPos spawnPos;
         public volatile MapGenerator.GenerationJob generationJob;
 
         FloorInstance(String id, int floor, EntryMode mode, UUID ownerUuid, BlockPos origin,
-                              long createdTick, long runSeed, long floorSeedSalt) {
+                              long createdTick, long runSeed, long floorSeedSalt, boolean questEligible) {
             this.id = id;
             this.floor = floor;
             this.mode = mode;
             this.ownerUuid = ownerUuid;
+            this.questEligible = questEligible;
             this.origin = origin;
             this.createdTick = createdTick;
             this.runSeed = runSeed;
@@ -118,6 +126,7 @@ public final class FloorInstanceManager {
 
     public static void enterFloor(ServerPlayer player, int floor, EntryMode mode) {
         if (player == null || player.server == null || floor <= 0) return;
+        RunManager.restorePerkTags(player);
         PlayerRunData data = RunManager.getData(player);
         if (floor > Math.max(1, data.getMaxReachedFloor())) {
             player.sendSystemMessage(Component.literal("§c[LR-TAC] This floor is not unlocked for you."));
@@ -125,6 +134,15 @@ public final class FloorInstanceManager {
         }
 
         FloorEntryModeHandler.enterFloor(player, floor, mode);
+    }
+
+    public static boolean isQuestEligibleFloor(int floor, int maxReachedFloor) {
+        if (floor <= 0 || maxReachedFloor <= 0) return false;
+        return floorBand(floor) == floorBand(maxReachedFloor);
+    }
+
+    private static int floorBand(int floor) {
+        return Math.floorDiv(Math.max(1, floor) - 1, 5);
     }
 
     public static void tick(MinecraftServer server) {
@@ -139,6 +157,9 @@ public final class FloorInstanceManager {
             } else if (instance.state == State.WAITING && tick - instance.lastWaitSyncTick >= 20) {
                 syncWaitingParticipants(server, instance);
                 instance.lastWaitSyncTick = tick;
+            } else if (instance.state == State.ACTIVE) {
+                syncBossBar(server, instance, false);
+                syncEnemyLocator(server, instance, false);
             }
         }
 
@@ -160,6 +181,8 @@ public final class FloorInstanceManager {
         if (player == null) return;
         String id = PLAYER_INSTANCES.remove(player.getUUID());
         syncWaitClear(player);
+        syncBossBarClear(player);
+        LowHealthChallengeService.clearActive(player);
         if (id == null) {
             if (markRunInactive) {
                 RunManager.getData(player).setRunActive(false);
@@ -318,7 +341,9 @@ public final class FloorInstanceManager {
             instance.floorSeedSalt,
             instance.id,
             instance.mode.name(),
-            instance.initialParticipantCount);
+            instance.initialParticipantCount,
+            maxClaimableSupplyChests(server, instance));
+        syncGenerationUpdate(server, instance, instance.generationJob);
     }
 
     private static void tickPreparingInstance(MinecraftServer server, FloorInstance instance) {
@@ -332,7 +357,9 @@ public final class FloorInstanceManager {
             destroyInstance(server, instance);
             return;
         }
-        if (!job.tick(MapGenerator.DEFAULT_GENERATION_BLOCKS_PER_TICK)) {
+        boolean complete = job.tick(MapGenerator.DEFAULT_GENERATION_BLOCKS_PER_TICK);
+        syncGenerationUpdate(server, instance, job);
+        if (!complete) {
             if (instance.mode == EntryMode.PUBLIC && server.getTickCount() - instance.lastWaitSyncTick >= 20) {
                 for (UUID uuid : List.copyOf(instance.participants)) {
                     ServerPlayer participant = server.getPlayerList().getPlayer(uuid);
@@ -343,8 +370,35 @@ public final class FloorInstanceManager {
             return;
         }
         instance.spawnPos = job.getSpawnPos();
+        instance.generatedSupplyChestTotal = job.supplyChestTotal();
+        applyGeneratedSupplyChestClaims(server, instance, instance.generatedSupplyChestTotal);
         instance.generationJob = null;
         finalizeActivation(server, instance);
+    }
+
+    private static int maxClaimableSupplyChests(MinecraftServer server, FloorInstance instance) {
+        if (server == null || instance == null) return 0;
+        int maxAvailable = 0;
+        for (UUID uuid : List.copyOf(instance.participants)) {
+            ServerPlayer participant = server.getPlayerList().getPlayer(uuid);
+            if (participant == null) continue;
+            PlayerRunData data = RunManager.getData(participant);
+            int knownMax = data.getSupplyChestMaxClaims(instance.floor);
+            int claimed = data.getClaimedSupplyChestCount(instance.floor);
+            int available = knownMax <= 0 ? 2 : Math.max(0, knownMax - claimed);
+            maxAvailable = Math.max(maxAvailable, available);
+        }
+        return Math.min(2, maxAvailable);
+    }
+
+    private static void applyGeneratedSupplyChestClaims(MinecraftServer server, FloorInstance instance, int generatedTotal) {
+        if (server == null || instance == null || generatedTotal <= 0) return;
+        for (UUID uuid : List.copyOf(instance.participants)) {
+            ServerPlayer participant = server.getPlayerList().getPlayer(uuid);
+            if (participant == null) continue;
+            RunManager.getData(participant).setSupplyChestMaxClaims(instance.floor, generatedTotal);
+            RunManager.syncPlayer(participant);
+        }
     }
 
     private static void finalizeActivation(MinecraftServer server, FloorInstance instance) {
@@ -368,7 +422,10 @@ public final class FloorInstanceManager {
             PlayerPerkTickService.invalidateSnapshot(participant);
             PlayerPerkTickService.applyPerkStats(participant);
             syncWaitClear(participant);
+            syncGenerationClear(participant);
+            syncBossBarClear(participant);
             teleportParticipant(participant, instance);
+            schedulePostTeleportSync(server, participant);
 
             long seed = server.getWorldData().worldGenOptions().seed();
             ThemeManager.ThemeInstance theme = ThemeManager.getThemeForFloor(instance.floor, seed);
@@ -382,6 +439,8 @@ public final class FloorInstanceManager {
 
         if (instance.participants.isEmpty()) {
             destroyInstance(server, instance);
+        } else {
+            syncBossBar(server, instance, true);
         }
     }
 
@@ -389,6 +448,17 @@ public final class FloorInstanceManager {
         ServerLevel rogueLevel = player.server.getLevel(CommonEventHandler.ROGUE_DIM);
         if (rogueLevel == null || instance.spawnPos == null) return;
         RunManager.safeTeleport(player, rogueLevel, instance.spawnPos);
+        LowHealthChallengeService.applyEntryHealth(player);
+    }
+
+    private static void schedulePostTeleportSync(MinecraftServer server, ServerPlayer player) {
+        if (server == null || player == null) return;
+        server.tell(new net.minecraft.server.TickTask(server.getTickCount() + 5, () -> {
+            if (player.isAlive()) {
+                RunManager.restorePerkTags(player);
+                RunManager.syncPlayer(player);
+            }
+        }));
     }
 
     private static void syncWaitingParticipants(MinecraftServer server, FloorInstance instance) {
@@ -421,6 +491,105 @@ public final class FloorInstanceManager {
             new com.levanilla.rogue.networking.SyncDataMessage("coop_wait_clear"));
     }
 
+    private static void syncGenerationUpdate(MinecraftServer server, FloorInstance instance, MapGenerator.GenerationJob job) {
+        if (server == null || instance == null || job == null) return;
+        int total = Math.max(1, job.totalBlockUpdates());
+        int remaining = Math.max(0, Math.min(job.remainingBlockUpdates(), total));
+        String payload = String.format(java.util.Locale.ROOT, "generation:%d:%d:%d:%.4f",
+            instance.floor, remaining, total, job.progress());
+        for (UUID uuid : List.copyOf(instance.participants)) {
+            ServerPlayer participant = server.getPlayerList().getPlayer(uuid);
+            if (participant != null) {
+                com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
+                    net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> participant),
+                    new com.levanilla.rogue.networking.SyncDataMessage(payload));
+            }
+        }
+    }
+
+    private static void syncGenerationClear(ServerPlayer player) {
+        if (player == null) return;
+        com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
+            net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+            new com.levanilla.rogue.networking.SyncDataMessage("generation_clear"));
+    }
+
+    static void syncBossBar(MinecraftServer server, FloorInstance instance, boolean force) {
+        if (server == null || instance == null || !ThemeManager.isBossFloor(instance.floor)) return;
+        long tick = server.getTickCount();
+        if (!force && tick - instance.lastBossBarSyncTick < BOSS_BAR_SYNC_INTERVAL_TICKS) return;
+        instance.lastBossBarSyncTick = tick;
+
+        ServerLevel level = server.getLevel(CommonEventHandler.ROGUE_DIM);
+        LivingEntity boss = findBoss(level, instance);
+        if (boss == null || !boss.isAlive()) {
+            syncBossBarClear(server, instance);
+            return;
+        }
+
+        String name = boss.getCustomName() != null ? boss.getCustomName().getString() : "[BOSS]";
+        String encodedName = Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(name.getBytes(StandardCharsets.UTF_8));
+        String payload = String.format(java.util.Locale.ROOT, "boss_bar:%d:%.4f:%.4f:%s",
+            instance.floor, boss.getHealth(), boss.getMaxHealth(), encodedName);
+        for (UUID uuid : List.copyOf(instance.participants)) {
+            ServerPlayer participant = server.getPlayerList().getPlayer(uuid);
+            if (participant != null) {
+                com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
+                    net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> participant),
+                    new com.levanilla.rogue.networking.SyncDataMessage(payload));
+            }
+        }
+    }
+
+    private static void syncBossBarClear(MinecraftServer server, FloorInstance instance) {
+        if (server == null || instance == null) return;
+        for (UUID uuid : List.copyOf(instance.participants)) {
+            ServerPlayer participant = server.getPlayerList().getPlayer(uuid);
+            if (participant != null) syncBossBarClear(participant);
+        }
+    }
+
+    private static void syncBossBarClear(ServerPlayer player) {
+        if (player == null) return;
+        com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
+            net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+            new com.levanilla.rogue.networking.SyncDataMessage("boss_bar_clear"));
+    }
+
+    private static void syncEnemyLocator(MinecraftServer server, FloorInstance instance, boolean force) {
+        if (server == null || instance == null) return;
+        long tick = server.getTickCount();
+        if (!force && tick - instance.lastEnemyLocatorSyncTick < 20) return;
+        instance.lastEnemyLocatorSyncTick = tick;
+
+        ServerLevel level = server.getLevel(CommonEventHandler.ROGUE_DIM);
+        if (level == null) return;
+        List<Mob> alive = getAliveSpawnedMobs(level, instance);
+        for (UUID uuid : List.copyOf(instance.participants)) {
+            ServerPlayer player = server.getPlayerList().getPlayer(uuid);
+            if (player == null) continue;
+
+            Mob nearest = null;
+            double best = Double.MAX_VALUE;
+            for (Mob mob : alive) {
+                double dist = mob.distanceToSqr(player);
+                if (dist < best) {
+                    best = dist;
+                    nearest = mob;
+                }
+            }
+
+            String payload = nearest == null
+                ? "enemy_dir_clear"
+                : String.format(java.util.Locale.ROOT, "enemy_dir:%.3f:%.3f:%d",
+                    nearest.getX() - player.getX(), nearest.getZ() - player.getZ(), alive.size());
+            com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
+                net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+                new com.levanilla.rogue.networking.SyncDataMessage(payload));
+        }
+    }
+
     private static boolean isInstanceCleared(ServerLevel level, FloorInstance instance) {
         List<Mob> alive = getAliveSpawnedMobs(level, instance);
         boolean bossFloor = ThemeManager.isBossFloor(instance.floor);
@@ -430,6 +599,7 @@ public final class FloorInstanceManager {
 
     private static void completeInstance(MinecraftServer server, ServerLevel level, FloorInstance instance) {
         instance.state = State.CLEARED;
+        syncBossBarClear(server, instance);
 
         for (UUID uuid : List.copyOf(instance.participants)) {
             ServerPlayer player = server.getPlayerList().getPlayer(uuid);
@@ -438,9 +608,13 @@ public final class FloorInstanceManager {
             stampEntity(npc, instance.id, instance.floor, instance.mode, null);
 
             PlayerRunData data = RunManager.getData(player);
+            boolean questEligible = instance.questEligible && isQuestEligibleFloor(instance.floor, data.getMaxReachedFloor());
             data.setFloorCleared(true);
             data.setRunActive(true);
             data.setMaxReachedFloor(Math.max(data.getMaxReachedFloor(), instance.floor + 1));
+            DeepProgressService.ensureDeepTask(player, instance.floor);
+            DeepProgressService.awardBandClear(player, instance.floor);
+            DeepProgressService.advanceDeepTask(player, DeepProgressService.DeepTaskType.BAND_CLEAR, 1);
             RunManager.syncPlayer(player);
 
             PopupNotificationMessage.send(
@@ -450,22 +624,27 @@ public final class FloorInstanceManager {
                 Component.translatable("message.tac_rogue.extraction_arrived"),
                 150);
 
-            QuestManager.advanceQuest(player, QuestManager.QuestType.FLOOR_CLEAR, 1);
+            if (questEligible) {
+                QuestManager.advanceQuest(player, QuestManager.QuestType.FLOOR_CLEAR, 1);
 
-            int speedrunLimitTicks = (120 + instance.floor * 10) * 20;
-            long elapsedTicks = server.getTickCount() - data.getFloorStartTick();
-            if (elapsedTicks <= speedrunLimitTicks) {
-                QuestManager.advanceQuest(player, QuestManager.QuestType.SPEEDRUN, 1);
-            }
-            if (player.getHealth() >= player.getMaxHealth() * 0.5f) {
-                QuestManager.advanceQuest(player, QuestManager.QuestType.SURVIVE, 1);
-            }
-            if (player.getHealth() <= player.getMaxHealth() * 0.35f) {
-                QuestManager.advanceQuest(player, QuestManager.QuestType.LOW_HEALTH_CLEAR, 1);
-            }
-            long lastDmg = CombatEventHandler.getLastDamageTick(player.getUUID());
-            if (lastDmg <= data.getFloorStartTick()) {
-                QuestManager.advanceQuest(player, QuestManager.QuestType.NO_DAMAGE, 1);
+                int speedrunLimitTicks = (120 + instance.floor * 10) * 20;
+                long elapsedTicks = server.getTickCount() - data.getFloorStartTick();
+                if (elapsedTicks <= speedrunLimitTicks) {
+                    QuestManager.advanceQuest(player, QuestManager.QuestType.SPEEDRUN, 1);
+                    DeepProgressService.advanceDeepTask(player, DeepProgressService.DeepTaskType.SPEEDRUN, 1);
+                }
+                if (player.getHealth() >= player.getMaxHealth() * 0.5f) {
+                    QuestManager.advanceQuest(player, QuestManager.QuestType.SURVIVE, 1);
+                }
+                if (player.getHealth() <= player.getMaxHealth() * 0.35f) {
+                    QuestManager.advanceQuest(player, QuestManager.QuestType.LOW_HEALTH_CLEAR, 1);
+                    DeepProgressService.advanceDeepTask(player, DeepProgressService.DeepTaskType.LOW_HEALTH_CLEAR, 1);
+                }
+                long lastDmg = CombatEventHandler.getLastDamageTick(player.getUUID());
+                if (lastDmg <= data.getFloorStartTick()) {
+                    QuestManager.advanceQuest(player, QuestManager.QuestType.NO_DAMAGE, 1);
+                    DeepProgressService.advanceDeepTask(player, DeepProgressService.DeepTaskType.NO_DAMAGE, 1);
+                }
             }
         }
     }
@@ -511,6 +690,7 @@ public final class FloorInstanceManager {
                 + " floor=" + instance.floor
                 + " mode=" + instance.mode
                 + " state=" + instance.state
+                + " questEligible=" + instance.questEligible
                 + " participants=" + instance.participants.size()
                 + " initial=" + instance.initialParticipantCount
                 + " ageTicks=" + age
@@ -560,6 +740,36 @@ public final class FloorInstanceManager {
         return true;
     }
 
+    public static int debugKillDungeonEnemies(ServerPlayer player) {
+        FloorInstance instance = getInstanceForPlayer(player);
+        if (player == null || player.server == null || instance == null) {
+            if (player != null) {
+                player.sendSystemMessage(Component.literal("§e[DEBUG] No active floor instance."));
+            }
+            return 0;
+        }
+        ServerLevel level = player.server.getLevel(CommonEventHandler.ROGUE_DIM);
+        if (level == null) {
+            player.sendSystemMessage(Component.literal("§c[DEBUG] Rogue dimension unavailable."));
+            return 0;
+        }
+
+        auditTrackedEntities(level, instance, true);
+        int removed = 0;
+        for (Mob mob : List.copyOf(level.getEntitiesOfClass(Mob.class, instanceSearchArea(instance), mob ->
+            mob.isAlive()
+                && instance.id.equals(mob.getPersistentData().getString(INSTANCE_ID_KEY))
+                && (mob.getTags().contains("tac_rogue_spawned") || mob.getTags().contains("rogue:boss"))))) {
+            UUID uuid = mob.getUUID();
+            mob.remove(Entity.RemovalReason.DISCARDED);
+            forgetTrackedEntity(instance, uuid);
+            removed++;
+        }
+
+        player.sendSystemMessage(Component.literal("§a[DEBUG] Removed " + removed + " floor enemy/entities from " + shortId(instance.id)));
+        return removed;
+    }
+
     public static boolean debugLeave(ServerPlayer player) {
         if (player == null) return false;
         boolean hadInstance = getInstanceForPlayer(player) != null;
@@ -601,6 +811,8 @@ public final class FloorInstanceManager {
         }
         for (UUID uuid : List.copyOf(instance.participants)) {
             PLAYER_INSTANCES.remove(uuid, instance.id);
+            ServerPlayer player = server == null ? null : server.getPlayerList().getPlayer(uuid);
+            if (player != null) syncBossBarClear(player);
         }
 
         if (server == null) return;

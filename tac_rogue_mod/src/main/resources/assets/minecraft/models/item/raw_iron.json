@@ -1,0 +1,9 @@
+{
+    "parent": "minecraft:item/generated",
+    "textures": {
+        "layer0": "minecraft:item/raw_iron"
+    },
+    "overrides": [
+        {"predicate": {"custom_model_data": 39006}, "model": "minecraft:item/rogue/scrap_metal"}
+    ]
+}

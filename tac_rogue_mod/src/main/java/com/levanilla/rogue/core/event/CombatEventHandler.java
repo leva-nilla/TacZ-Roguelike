@@ -5,12 +5,15 @@ import com.levanilla.rogue.core.service.RoguePickupService;
 import com.levanilla.rogue.networking.TacRogueNetworking;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.Mob;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
+import net.minecraftforge.event.entity.living.LivingDamageEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -29,6 +32,8 @@ public class CombatEventHandler {
     // Used by regen logic to delay natural healing after damage.
     private static final java.util.Map<java.util.UUID, Long> lastDamageTickMap = new java.util.concurrent.ConcurrentHashMap<>();
     private static final java.util.Map<java.util.UUID, Long> lastKillTick = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final String STEALTH_TAKEDOWN_BY = "TacRogueStealthTakedownBy";
+    private static final String STEALTH_TAKEDOWN_TICK = "TacRogueStealthTakedownTick";
 
     // TacZ damage context is registered by TacZEventHandler and consumed by LivingHurtEvent.
     public static class GunDamageContext {
@@ -106,11 +111,9 @@ public class CombatEventHandler {
         if (event.getSource().getDirectEntity() instanceof ServerPlayer srcPlayer) {
             net.minecraft.world.item.ItemStack hand = srcPlayer.getMainHandItem();
             net.minecraft.nbt.CompoundTag handTag = hand.getTag();
-            if (handTag != null && handTag.contains("MeleeWeaponId")) {
-                float dmgMul = 1.0f;
-                if ("lrtactical:dagger".equals(handTag.getString("MeleeWeaponId"))) {
-                    dmgMul *= GameConstants.DAGGER_DAMAGE_MULT;
-                }
+            if ((handTag != null && handTag.contains("MeleeWeaponId"))
+                    || com.levanilla.rogue.core.registry.LrTacticalRegistry.isMeleeWeapon(hand)) {
+                float dmgMul = WeaponRarity.getDamageMult(hand);
                 int meleeLevel = srcPlayer.getPersistentData().getInt("TacRogueMeleeLevel");
                 if (meleeLevel > 0) {
                     dmgMul *= (1.0f + meleeLevel * 0.5f);
@@ -129,36 +132,27 @@ public class CombatEventHandler {
         }
 
         if (event.getEntity() instanceof Mob mob) {
-            mob.getPersistentData().putLong("LastAlertTick", mob.level().getGameTime());
-            
-            if (event.getSource().getDirectEntity() instanceof ServerPlayer srcPlayer && event.getSource().getDirectEntity() == event.getSource().getEntity()) {
-                if (mob.getTarget() == null) {
-                    double dist = mob.distanceTo(srcPlayer);
-                    if (dist <= 2.8) {
-                        net.minecraft.world.phys.Vec3 lookVec = mob.getViewVector(1.0F).normalize();
-                        net.minecraft.world.phys.Vec3 toPlayer = srcPlayer.position().subtract(mob.position()).normalize();
-                        double dotProduct = lookVec.dot(toPlayer);
-                        if (dotProduct < -0.5) {
-                            event.setAmount((event.getAmount() * 10.0f) + 50.0f);
-                            srcPlayer.displayClientMessage(net.minecraft.network.chat.Component.literal("\u00A7c\u00A7l* STEALTH TAKEDOWN *"), true);
-                            srcPlayer.level().playSound(null, mob.blockPosition(), net.minecraft.sounds.SoundEvents.PLAYER_ATTACK_CRIT, net.minecraft.sounds.SoundSource.PLAYERS, 1.0f, 0.8f);
-                            com.levanilla.rogue.core.QuestManager.advanceQuest(srcPlayer, com.levanilla.rogue.core.QuestManager.QuestType.STEALTH_KILL, 1);
-                        }
-                    }
-                }
+            if (isStealthTakedownHit(event, mob)) {
+                ServerPlayer srcPlayer = (ServerPlayer) event.getSource().getEntity();
+                event.setAmount(Math.max((event.getAmount() * 10.0f) + 50.0f, mob.getHealth() + 2.0f));
+                mob.getPersistentData().putString(STEALTH_TAKEDOWN_BY, srcPlayer.getUUID().toString());
+                mob.getPersistentData().putLong(STEALTH_TAKEDOWN_TICK, mob.level().getGameTime());
+                srcPlayer.displayClientMessage(net.minecraft.network.chat.Component.literal("\u00A7c\u00A7l* STEALTH TAKEDOWN *"), true);
+                srcPlayer.level().playSound(null, mob.blockPosition(), net.minecraft.sounds.SoundEvents.PLAYER_ATTACK_CRIT, net.minecraft.sounds.SoundSource.PLAYERS, 1.0f, 0.8f);
             }
+            mob.getPersistentData().putLong("LastAlertTick", mob.level().getGameTime());
         }
 
         if (event.getEntity() instanceof ServerPlayer damagedPlayer) {
-            // DODGE stacks multiplicatively through player perk tags and caps at 75%.
+            // DODGE stacks multiplicatively through player perk tags and caps at the shared balance limit.
             float hitChance = 1.0f;
             for (String tag : damagedPlayer.getTags()) {
                 if (tag.startsWith("perk:DODGE")) {
                     PerkDefinition perk = PerkDefinition.fromTag(tag);
-                    hitChance *= (1.0f - perk.calculateEffect() / 100.0f);
+                    hitChance *= (1.0f - PerkDefinition.getDodgeChancePercent(perk.calculateEffect()) / 100.0f);
                 }
             }
-            float dodgeChance = Math.min(0.60f, 1.0f - hitChance);
+            float dodgeChance = Math.min(GameConstants.DODGE_MAX_CHANCE, 1.0f - hitChance);
             if (dodgeChance > 0 && damagedPlayer.getRandom().nextFloat() < dodgeChance) {
                 event.setCanceled(true);
                 damagedPlayer.displayClientMessage(net.minecraft.network.chat.Component.literal("\u00A7a* DODGE! *"), true);
@@ -264,13 +258,14 @@ public class CombatEventHandler {
             int penalty = (int)(currentGold * DifficultyManager.getDeathPenaltyRate());
             if (penalty > 0) {
                 CurrencyManager.consumeGold(player, penalty);
-                player.sendSystemMessage(net.minecraft.network.chat.Component.translatable("message.tac_rogue.death_penalty", penalty));
+                player.sendSystemMessage(net.minecraft.network.chat.Component.translatable("message.tac_rogue.death_penalty", penalty), true);
             }
 
             DifficultyManager.Difficulty diff = DifficultyManager.getDifficulty();
             int perksToLose = switch (diff) {
                 case HARD -> 1;
-                case EXTREME -> 3;
+                case EXTREME -> 2;
+                case IRONMAN -> Integer.MAX_VALUE;
                 default -> 0;
             };
             if (perksToLose > 0) {
@@ -286,44 +281,18 @@ public class CombatEventHandler {
                     removed++;
                 }
                 if (removed > 0) {
+                    RunManager.savePerkTags(player);
                     player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
-                        "message.tac_rogue.perk_lost", removed));
+                        "message.tac_rogue.perk_lost", removed), true);
                 }
-            }
-
-            if (diff == DifficultyManager.Difficulty.EXTREME) {
-                int[] protectedSlots = {
-                    GameConstants.SLOT_GUN_START, GameConstants.SLOT_GUN_END,
-                    GameConstants.SLOT_MELEE,
-                    GameConstants.SLOT_AMMO_GUN1_START, GameConstants.SLOT_AMMO_GUN1_END,
-                    GameConstants.SLOT_AMMO_GUN2_START, GameConstants.SLOT_AMMO_GUN2_END
-                };
-                for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
-                    boolean isProtected = false;
-                    for (int pSlot : protectedSlots) {
-                        if (i == pSlot) {
-                            isProtected = true;
-                            break;
-                        }
-                    }
-                    if (!isProtected) {
-                        net.minecraft.world.item.ItemStack stack = player.getInventory().getItem(i);
-                        if (!stack.isEmpty()) {
-                            String regName = "";
-                            net.minecraft.resources.ResourceLocation rl = net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(stack.getItem());
-                            if (rl != null) regName = rl.toString();
-                            if (!regName.startsWith("tacz:")) {
-                                player.getInventory().setItem(i, net.minecraft.world.item.ItemStack.EMPTY);
-                            }
-                        }
-                    }
-                }
-                player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
-                    "message.tac_rogue.items_lost"));
             }
 
             PlayerRunData data = RunManager.getData(player);
-            if (data.isRunActive() && player.level().dimension() == ROGUE_DIM) {
+            boolean shouldReturnToLobby = data.isRunActive() && player.level().dimension() == ROGUE_DIM;
+            if (diff == DifficultyManager.Difficulty.IRONMAN) {
+                resetIronmanRun(player, data);
+            }
+            if (shouldReturnToLobby) {
                 event.setCanceled(true);
                 player.setHealth(player.getMaxHealth());
                 com.levanilla.rogue.core.service.FloorInstanceManager.leaveInstance(player, false);
@@ -336,7 +305,7 @@ public class CombatEventHandler {
                     player.teleportTo(lobbyLevel,
                         GameConstants.LOBBY_X, GameConstants.LOBBY_Y, GameConstants.LOBBY_Z, 0, 0);
                 }
-                player.sendSystemMessage(net.minecraft.network.chat.Component.translatable("message.tac_rogue.mission_failed"));
+                player.sendSystemMessage(net.minecraft.network.chat.Component.translatable("message.tac_rogue.mission_failed"), true);
                 RunManager.syncPlayer(player);
             }
         }
@@ -355,22 +324,21 @@ public class CombatEventHandler {
                         com.levanilla.rogue.core.service.BossRewardService.handleBossKill(killer, event.getEntity());
                     }
 
-                    int reward = PriceManager.getKillReward(RunManager.getData(killer).getCurrentFloor());
-                    float goldBonus = sumPerkEffect(killer, "perk:GOLD_RUSH") / 100.0f;
-                    reward = (int)(reward * (1.0f + goldBonus));
-                    CurrencyManager.addGold(killer, (int)(reward * DifficultyManager.getGoldMultiplier()));
-                    RunManager.syncPlayer(killer);
+                    com.levanilla.rogue.core.service.KillGoldRewardService.award(killer, event.getEntity(), false);
 
-                    float totalVampHeal = sumPerkEffect(killer, "perk:VAMPIRE") / 10.0f;
+                    float totalVampHeal = PerkDefinition.getRecoveryHealAmount(sumPerkEffect(killer, "perk:VAMPIRE"));
                     if (totalVampHeal > 0) killer.heal(totalVampHeal);
 
-                    float bloodlust = sumPerkEffect(killer, "perk:BLOODLUST") / 10.0f;
-                    if (bloodlust > 0) {
-                        killer.heal(bloodlust * 0.5f);
+                    float bloodlustHeal = PerkDefinition.getRecoveryHealAmount(sumPerkEffect(killer, "perk:BLOODLUST"));
+                    if (bloodlustHeal > 0) {
+                        killer.heal(bloodlustHeal);
                         killer.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.MOVEMENT_SPEED, 60, 0, false, false));
                     }
 
                     QuestManager.advanceQuest(killer, QuestManager.QuestType.KILL_COUNT, 1);
+                    if (isMarkedStealthKill(event.getEntity(), killer)) {
+                        QuestManager.advanceQuest(killer, QuestManager.QuestType.STEALTH_KILL, 1);
+                    }
                     if (event.getEntity().getTags().contains("tac_rogue_variant")) {
                         QuestManager.advanceQuest(killer, QuestManager.QuestType.ELITE_HUNT, 1);
                     }
@@ -410,6 +378,65 @@ public class CombatEventHandler {
                 event.setCanceled(true);
             }
         }
+    }
+
+    private static void resetIronmanRun(ServerPlayer player, PlayerRunData data) {
+        data.updateHighestEverFloor(data.getMaxReachedFloor());
+        data.updateHighestEverFloor(data.getCurrentFloor());
+        data.setCurrentFloor(0);
+        data.setMaxReachedFloor(0);
+        data.setRunActive(false);
+        data.setFloorCleared(false);
+        data.clearCurrentDeepTask();
+        data.clearRunRewardClaims();
+        player.removeTag("rogue:gear_selected");
+        for (String tag : new ArrayList<>(player.getTags())) {
+            if (tag.startsWith("perk:")) {
+                player.removeTag(tag);
+            }
+        }
+        RunManager.savePerkTags(player);
+        player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+            "message.tac_rogue.ironman_run_reset"), true);
+    }
+
+    @SubscribeEvent
+    public static void onLivingDamage(LivingDamageEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        if (player.level().isClientSide || player.level().dimension() != ROGUE_DIM) return;
+        if (event.getSource().is(DamageTypeTags.BYPASSES_ARMOR)) return;
+
+        double armor = player.getAttributeValue(Attributes.ARMOR);
+        float extraReduction = GameConstants.getArmorOvercapExtraReduction(armor);
+        if (extraReduction <= 0.0f) return;
+
+        event.setAmount(event.getAmount() * (1.0f - extraReduction));
+    }
+
+    private static boolean isStealthTakedownHit(LivingHurtEvent event, Mob mob) {
+        if (mob.level().isClientSide || mob.level().dimension() != ROGUE_DIM) return false;
+        if (mob.getTags().contains("rogue:boss")) return false;
+        if (!(event.getSource().getEntity() instanceof ServerPlayer srcPlayer)) return false;
+        if (event.getSource().getDirectEntity() != srcPlayer) return false;
+        if (mob.getTarget() != null) return false;
+        if (mob.distanceTo(srcPlayer) > 3.0D) return false;
+
+        long now = mob.level().getGameTime();
+        long lastAlert = mob.getPersistentData().getLong("LastAlertTick");
+        if (lastAlert > 0L && now - lastAlert < 80L) return false;
+
+        net.minecraft.world.phys.Vec3 lookVec = mob.getViewVector(1.0F).normalize();
+        net.minecraft.world.phys.Vec3 toPlayer = srcPlayer.position().subtract(mob.position()).normalize();
+        if (lookVec.dot(toPlayer) >= -0.55D) return false;
+        return mob.hasLineOfSight(srcPlayer);
+    }
+
+    private static boolean isMarkedStealthKill(net.minecraft.world.entity.LivingEntity killed, ServerPlayer killer) {
+        if (!(killed instanceof Mob)) return false;
+        String id = killed.getPersistentData().getString(STEALTH_TAKEDOWN_BY);
+        if (!killer.getUUID().toString().equals(id)) return false;
+        long tick = killed.getPersistentData().getLong(STEALTH_TAKEDOWN_TICK);
+        return tick > 0L && killed.level().getGameTime() - tick <= 40L;
     }
 
     // Rogue-dimension pickups are routed into dedicated inventory, ammo, and stash slots.
@@ -528,21 +555,23 @@ public class CombatEventHandler {
                 : com.levanilla.rogue.core.service.RogueItemFactory.createRecoveryItem("rogue:field_ration");
         } else if (roll < GameConstants.DROP_GOLD_CACHE_BASE + (int)(diffMul * 5)) {
             var stack = new net.minecraft.world.item.ItemStack(Items.RAW_GOLD, 1);
-            applyRogueLore(stack, "\u00a7e* GOLD CACHE", new String[]{
-                "\u00a77A small cache of gold.",
-                "\u00a77Right click to gain \u00a7e250 G\u00a77.",
-                "\u00a78\u00a7oRarity: \u00a77COMMON"
-            }, 39004);
+            applyRogueLore(stack,
+                net.minecraft.network.chat.Component.translatable("item.tac_rogue.gold_cache"),
+                39004,
+                net.minecraft.network.chat.Component.translatable("item.tac_rogue.gold_cache.lore.0"),
+                net.minecraft.network.chat.Component.translatable("item.tac_rogue.gold_cache.lore.1", GameConstants.GOLD_CACHE_VALUE),
+                net.minecraft.network.chat.Component.translatable("item.tac_rogue.rarity.common"));
             return stack;
         } else if (roll < GameConstants.DROP_STAMINA_BASE + rareBonus / 2) {
             return com.levanilla.rogue.core.service.RogueItemFactory.createRecoveryItem("rogue:stamina_shot");
         } else {
             var stack = new net.minecraft.world.item.ItemStack(Items.RAW_IRON, 1 + random.nextInt(3));
-            applyRogueLore(stack, "\u00a78* SCRAP METAL", new String[]{
-                "\u00a77Usable scrap material.",
-                "\u00a77Right click to gain \u00a7e50 G\u00a77.",
-                "\u00a78\u00a7oRarity: \u00a77COMMON"
-            }, 39006);
+            applyRogueLore(stack,
+                net.minecraft.network.chat.Component.translatable("item.tac_rogue.scrap_metal"),
+                39006,
+                net.minecraft.network.chat.Component.translatable("item.tac_rogue.scrap_metal.lore.0"),
+                net.minecraft.network.chat.Component.translatable("item.tac_rogue.scrap_metal.lore.1", GameConstants.SCRAP_SELL_VALUE),
+                net.minecraft.network.chat.Component.translatable("item.tac_rogue.rarity.common"));
             return stack;
         }
     }
@@ -567,24 +596,25 @@ public class CombatEventHandler {
             return com.levanilla.rogue.core.service.RogueItemFactory.createRecoveryItem("rogue:armor_plate");
         }
         var stack = new net.minecraft.world.item.ItemStack(Items.GOLDEN_APPLE);
-        applyRogueLore(stack, "\u00a76* EMERGENCY RATION", new String[]{
-            "\u00a77Restores health in an emergency.",
-            "\u00a77Right click to recover HP.",
-            "\u00a78\u00a7oRarity: \u00a7eRARE"
-        }, 39001);
+        applyRogueLore(stack,
+            net.minecraft.network.chat.Component.translatable("item.tac_rogue.emergency_ration"),
+            39001,
+            net.minecraft.network.chat.Component.translatable("item.tac_rogue.emergency_ration.lore.0"),
+            net.minecraft.network.chat.Component.translatable("item.tac_rogue.emergency_ration.lore.1"),
+            net.minecraft.network.chat.Component.translatable("item.tac_rogue.rarity.rare"));
         stack.enchant(net.minecraft.world.item.enchantment.Enchantments.UNBREAKING, 1);
         stack.getOrCreateTag().putInt("HideFlags", 1);
         return stack;
     }
 
-    private static void applyRogueLore(net.minecraft.world.item.ItemStack stack, String name, String[] lore, int customModelData) {
-        stack.setHoverName(net.minecraft.network.chat.Component.literal(name));
+    private static void applyRogueLore(net.minecraft.world.item.ItemStack stack, net.minecraft.network.chat.Component name,
+                                       int customModelData, net.minecraft.network.chat.Component... lore) {
+        stack.setHoverName(name);
         net.minecraft.nbt.CompoundTag display = stack.getOrCreateTagElement("display");
         net.minecraft.nbt.ListTag loreList = new net.minecraft.nbt.ListTag();
-        for (String line : lore) {
+        for (net.minecraft.network.chat.Component line : lore) {
             loreList.add(net.minecraft.nbt.StringTag.valueOf(
-                net.minecraft.network.chat.Component.Serializer.toJson(
-                    net.minecraft.network.chat.Component.literal(line))));
+                net.minecraft.network.chat.Component.Serializer.toJson(line)));
         }
         display.put("Lore", loreList);
         stack.getOrCreateTag().putBoolean("rogue_item", true);
@@ -627,13 +657,17 @@ public class CombatEventHandler {
         if (weapons.isEmpty()) return new net.minecraft.world.item.ItemStack(Items.AIR);
 
         var chosen = weapons.get(random.nextInt(weapons.size()));
-        net.minecraft.world.item.ItemStack stack = com.levanilla.rogue.core.service.ShopService.createItemStack(null, chosen.id);
+        WeaponRarity.Rarity rarity = WeaponRarity.rollRarity(floor, random);
+        net.minecraft.world.item.ItemStack stack = chosen.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.MELEE
+            ? com.levanilla.rogue.core.service.RogueItemFactory.createMeleeStack(chosen.id, rarity)
+            : com.levanilla.rogue.core.service.ShopService.createItemStack(null, chosen.id);
 
         if (stack.isEmpty()) return stack;
 
         // Weapon drops receive rarity and may roll attachments based on floor depth.
-        WeaponRarity.Rarity rarity = WeaponRarity.rollRarity(floor, random);
-        WeaponRarity.applyRarity(stack, rarity);
+        if (chosen.category != com.levanilla.rogue.core.registry.ShopCatalog.Category.MELEE) {
+            WeaponRarity.applyRarity(stack, rarity);
+        }
 
         if (stack.hasTag() && stack.getTag().contains("GunId")) {
             java.util.List<String> allAtt = TacZRegistryHelper.getAllAttachmentIds();

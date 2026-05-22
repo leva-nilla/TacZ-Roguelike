@@ -17,10 +17,11 @@
     "MixinModernKineticGunScriptAPI",
     "MixinPlayerAdvancements",
     "MixinRangedAttribute",
+    "MixinSpider",
     "SlotAccessor"
   ],
   "client": [
-    "MixinClientLevel",
+    "CreateWorldScreenAccessor",
     "MixinCreateWorldScreen",
     "MixinInventoryScreen",
     "MixinAbstractContainerScreen",

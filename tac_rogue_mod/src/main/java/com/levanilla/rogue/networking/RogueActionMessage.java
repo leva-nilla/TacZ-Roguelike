@@ -5,6 +5,7 @@ import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.core.service.FloorInstanceManager;
 import com.levanilla.rogue.core.service.FloorService;
 import com.levanilla.rogue.core.service.GearService;
+import com.levanilla.rogue.core.service.LowHealthChallengeService;
 import com.levanilla.rogue.core.service.ShopService;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
@@ -109,7 +110,7 @@ public class RogueActionMessage {
                 case SET_DIFFICULTY -> {
                     if (!player.hasPermissions(2)) {
                         player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                            "\u00A7c[ERROR] OP permission required to change difficulty."));
+                            "\u00A7c[ERROR] OP permission required to change difficulty."), true);
                         return;
                     }
                     try {
@@ -119,7 +120,7 @@ public class RogueActionMessage {
                         com.levanilla.rogue.core.DifficultyManager.Difficulty diff =
                             com.levanilla.rogue.core.DifficultyManager.getDifficulty();
                         player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
-                            "message.tac_rogue.difficulty_set", diff.displayName));
+                            "message.tac_rogue.difficulty_set", diff.displayName), true);
                     } catch (Exception ignored) {}
                 }
 
@@ -132,12 +133,18 @@ public class RogueActionMessage {
                         RunManager.syncPlayer(player);
                         if ("floor_clear".equals(msg.data)) {
                             OpenFloorClearScreenMessage.sendFloorClear(player, false);
+                        } else if ("initial".equals(msg.data)) {
+                            OpenPerkChoiceMessage.sendPerkChoices(player,
+                                OpenPerkChoiceMessage.PerkScreenType.INITIAL);
+                        } else if ("boss".equals(msg.data)) {
+                            OpenPerkChoiceMessage.sendPerkChoices(player,
+                                OpenPerkChoiceMessage.PerkScreenType.BOSS);
                         } else {
                             OpenPerkChoiceMessage.sendPerkChoices(player,
                                 OpenPerkChoiceMessage.PerkScreenType.NORMAL);
                         }
                     } else {
-                        player.sendSystemMessage(net.minecraft.network.chat.Component.translatable("gui.tac_rogue.inventory.insufficient_funds"));
+                        player.sendSystemMessage(net.minecraft.network.chat.Component.translatable("gui.tac_rogue.inventory.insufficient_funds"), true);
                     }
                 }
 
@@ -152,7 +159,7 @@ public class RogueActionMessage {
                 case FLASHLIGHT_TOGGLE -> {
                     boolean enabled = com.levanilla.rogue.core.FlashlightManager.toggle(player.getUUID());
                     player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                        "§e[FLASHLIGHT] " + (enabled ? "§aON" : "§cOFF")));
+                        enabled ? "§eFlashlight ON" : "§7Flashlight OFF"), true);
                 }
                 case INTERACT_STASH -> {
                     try {
@@ -187,11 +194,17 @@ public class RogueActionMessage {
                 case SELECT_GEAR_CLASSIC  -> GearService.applyClassic(player);
 
                 // --- フロア管理 ---
-                case START_NEXT_FLOOR -> FloorService.handleStartNextFloor(player, FloorInstanceManager.EntryMode.parse(msg.data));
-                case RETRY_FLOOR      -> FloorService.handleRetryFloor(player, FloorInstanceManager.EntryMode.parse(msg.data));
+                case START_NEXT_FLOOR -> {
+                    LowHealthChallengeService.setRequested(player, LowHealthChallengeService.isRequestedPayload(msg.data));
+                    FloorService.handleStartNextFloor(player, FloorInstanceManager.EntryMode.parse(msg.data));
+                }
+                case RETRY_FLOOR      -> {
+                    LowHealthChallengeService.setRequested(player, LowHealthChallengeService.isRequestedPayload(msg.data));
+                    FloorService.handleRetryFloor(player, FloorInstanceManager.EntryMode.parse(msg.data));
+                }
                 case START_WAITING_FLOOR -> {
                     if (!FloorInstanceManager.requestStartWaitingInstance(player)) {
-                        player.sendSystemMessage(net.minecraft.network.chat.Component.literal("§e[CO-OP] No public waiting instance to start."));
+                        player.sendSystemMessage(net.minecraft.network.chat.Component.literal("§e[CO-OP] No public waiting instance to start."), true);
                     }
                 }
                 case RETURN_TO_LOBBY  -> RunManager.returnToLobby(player);
@@ -199,6 +212,7 @@ public class RogueActionMessage {
                     try {
                         String[] parts = msg.data == null ? new String[0] : msg.data.split("[:|]", 2);
                         int f = Integer.parseInt(parts.length > 0 ? parts[0] : msg.data);
+                        LowHealthChallengeService.setRequested(player, LowHealthChallengeService.isRequestedPayload(msg.data));
                         FloorService.handleGotoFloor(player, f, FloorInstanceManager.EntryMode.parse(msg.data));
                     } catch (NumberFormatException ignored) {}
                 }
@@ -212,7 +226,12 @@ public class RogueActionMessage {
 
     private static boolean requireQuartermaster(ServerPlayer player) {
         if (com.levanilla.rogue.world.NpcManager.canUseQuartermaster(player)) return true;
-        player.sendSystemMessage(net.minecraft.network.chat.Component.translatable("gui.tac_rogue.npc_menu.too_far"));
+        PopupNotificationMessage.send(
+            player,
+            PopupNotificationMessage.PopupType.WARNING,
+            net.minecraft.network.chat.Component.literal("QUARTERMASTER"),
+            net.minecraft.network.chat.Component.translatable("gui.tac_rogue.npc_menu.too_far"),
+            100);
         return false;
     }
 }

@@ -24,7 +24,7 @@ class PerkDefinitionTest {
             4
         );
 
-        assertEquals(120.0f, perk.calculateEffect(), 0.0001f);
+        assertEquals(69.80625f, perk.calculateEffect(), 0.0001f);
     }
 
     @Test

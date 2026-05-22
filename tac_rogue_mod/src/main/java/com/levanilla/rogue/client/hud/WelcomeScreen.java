@@ -27,6 +27,7 @@ public class WelcomeScreen extends Screen {
     private Button shaderStartupBtn;
     private AbstractWidget fovBtn;
     private AbstractWidget sensitivityBtn;
+    private AbstractWidget guiScaleBtn;
 
     private KeyMapping activeKeybind;
     private KeyMapping taczInteractKeyBtnMapping;
@@ -137,6 +138,10 @@ public class WelcomeScreen extends Screen {
         y += 12;
         y += 15;
         y += wrappedHeight("gui.tac_rogue.welcome.tut7", textWidth);
+        y += 12;
+        y += 15;
+        y += wrappedHeight("gui.tac_rogue.welcome.tut9", textWidth);
+        y += wrappedHeight("gui.tac_rogue.welcome.tut10", textWidth);
         y += 20;
         return y;
     }
@@ -159,6 +164,10 @@ public class WelcomeScreen extends Screen {
 
         this.sensitivityBtn = this.minecraft.options.sensitivity().createButton(this.minecraft.options, this.layout.buttonX(), 0, this.layout.buttonW());
         addExistingRow(Component.translatable("options.sensitivity"), this.sensitivityBtn, null, y);
+        y += 24;
+
+        this.guiScaleBtn = this.minecraft.options.guiScale().createButton(this.minecraft.options, this.layout.buttonX(), 0, this.layout.buttonW());
+        addExistingRow(Component.translatable("gui.tac_rogue.welcome.gui_scale"), this.guiScaleBtn, null, y);
         y += 24;
 
         y = addKeyRows(y);
@@ -457,7 +466,12 @@ public class WelcomeScreen extends Screen {
         y += 12;
         graphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.tut6").withStyle(net.minecraft.ChatFormatting.YELLOW), x, y, 0xFFFFFFFF, false);
         y += 15;
-        drawWrapped(graphics, "gui.tac_rogue.welcome.tut7", x, y, w, 0xFFD8DEE9);
+        y = drawWrapped(graphics, "gui.tac_rogue.welcome.tut7", x, y, w, 0xFFD8DEE9);
+        y += 12;
+        graphics.drawString(this.font, Component.translatable("gui.tac_rogue.welcome.tut8").withStyle(net.minecraft.ChatFormatting.GREEN), x, y, 0xFFFFFFFF, false);
+        y += 15;
+        y = drawWrapped(graphics, "gui.tac_rogue.welcome.tut9", x, y, w, 0xFFD8DEE9);
+        drawWrapped(graphics, "gui.tac_rogue.welcome.tut10", x, y, w, 0xFFD8DEE9);
 
         for (Row row : this.rows) {
             int rowY = this.layout.viewportTop() + row.baseY - (int)Math.round(this.scrollY);

@@ -21,10 +21,15 @@ public class PerkGenerator {
      * @param overclockedCount 現在プレイヤーが所持しているOVERCLOCKEDパークの数
      */
     public static List<PerkDefinition> generateChoices(int floor, boolean isBoss, Set<String> existingPerks, int overclockedCount) {
+        return generateChoices(floor, isBoss, existingPerks, overclockedCount, 3);
+    }
+
+    public static List<PerkDefinition> generateChoices(int floor, boolean isBoss, Set<String> existingPerks, int overclockedCount, int choiceCount) {
         List<PerkDefinition> choices = new ArrayList<>();
         int attempts = 0;
+        int targetChoices = Math.max(3, Math.min(5, choiceCount));
 
-        while (choices.size() < 3 && attempts < 100) {
+        while (choices.size() < targetChoices && attempts < 140) {
             attempts++;
             PerkDefinition perk = generateSingle(floor, isBoss, overclockedCount);
             // 重複チェック（同一カテゴリ+修飾子の組み合わせは除外）
@@ -37,7 +42,7 @@ public class PerkGenerator {
         }
 
         // フォールバック: 3 つ埋まらなかった場合
-        while (choices.size() < 3) {
+        while (choices.size() < targetChoices) {
             PerkDefinition.Category cat = PerkDefinition.Category.values()[RANDOM.nextInt(PerkDefinition.Category.values().length)];
             choices.add(new PerkDefinition(cat, PerkDefinition.Modifier.NONE, 1));
         }
@@ -50,12 +55,17 @@ public class PerkGenerator {
      * Lv.1-2, 修飾子なしの低品質パーク。
      */
     public static List<PerkDefinition> generateInitialChoices() {
+        return generateInitialChoices(3);
+    }
+
+    public static List<PerkDefinition> generateInitialChoices(int choiceCount) {
         List<PerkDefinition> choices = new ArrayList<>();
         PerkDefinition.Category[] cats = PerkDefinition.Category.values();
+        int targetChoices = Math.max(3, Math.min(5, choiceCount));
 
         // 異なるカテゴリから 3 つ選出
         List<Integer> usedIndices = new ArrayList<>();
-        while (choices.size() < 3) {
+        while (choices.size() < targetChoices) {
             int idx = RANDOM.nextInt(cats.length);
             if (!usedIndices.contains(idx)) {
                 usedIndices.add(idx);

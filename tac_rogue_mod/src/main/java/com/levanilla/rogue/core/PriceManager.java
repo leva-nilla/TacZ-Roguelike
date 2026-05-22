@@ -1,6 +1,10 @@
 package com.levanilla.rogue.core;
 
+import com.levanilla.rogue.core.registry.ShopCatalog;
 import com.levanilla.rogue.core.registry.TacZGunRegistry;
+import com.tacz.guns.api.TimelessAPI;
+import com.tacz.guns.resource.pojo.data.attachment.AttachmentData;
+import net.minecraft.resources.ResourceLocation;
 
 /**
  * Dynamic price manager for shop items (v0.4.0 balanced)
@@ -16,7 +20,13 @@ public class PriceManager {
 
     public static int getKillReward(int floor) {
         int reward = GameConstants.KILL_REWARD_BASE + floor * GameConstants.KILL_REWARD_PER_FLOOR;
-        return Math.min(reward, GameConstants.KILL_REWARD_MAX_CAP);
+        return Math.min(reward, getKillRewardCap(floor));
+    }
+
+    public static int getKillRewardCap(int floor) {
+        if (floor >= 101) return GameConstants.KILL_REWARD_ENDLESS_CAP;
+        if (floor >= 51) return GameConstants.KILL_REWARD_HIGH_CAP;
+        return GameConstants.KILL_REWARD_MAX_CAP;
     }
 
     /** 初期ゴールド */
@@ -62,6 +72,49 @@ public class PriceManager {
         return getHashBasedPrice(gunId);
     }
 
+    public static int getShopBuyPrice(ShopCatalog.ShopItem item, int shopFloor) {
+        if (item == null) return 0;
+        int basePrice = item.price;
+        if (isRarityPricedWeapon(item.category)) {
+            if (isGunCategory(item.category)) {
+                basePrice = getPrice(item.id);
+            }
+            WeaponRarity.Rarity rarity = WeaponRarity.rollShopRarity(Math.max(1, shopFloor), item.id);
+            return roundPrice(basePrice * getRarityPriceMultiplier(rarity));
+        }
+        return basePrice;
+    }
+
+    public static double getRarityPriceMultiplier(WeaponRarity.Rarity rarity) {
+        if (rarity == null) return 1.0D;
+        return switch (rarity) {
+            case COMMON -> 1.00D;
+            case UNCOMMON -> 1.35D;
+            case RARE -> 1.85D;
+            case EPIC -> 2.60D;
+            case LEGENDARY -> 3.60D;
+        };
+    }
+
+    private static boolean isGunCategory(ShopCatalog.Category category) {
+        return category == ShopCatalog.Category.PISTOL
+            || category == ShopCatalog.Category.RIFLE
+            || category == ShopCatalog.Category.SMG
+            || category == ShopCatalog.Category.SHOTGUN
+            || category == ShopCatalog.Category.SNIPER
+            || category == ShopCatalog.Category.LMG
+            || category == ShopCatalog.Category.EXPLOSIVE;
+    }
+
+    private static boolean isRarityPricedWeapon(ShopCatalog.Category category) {
+        return isGunCategory(category) || category == ShopCatalog.Category.MELEE;
+    }
+
+    private static int roundPrice(double price) {
+        int rounded = (int) (Math.round(price / 50.0D) * 50);
+        return Math.max(400, Math.min(60000, rounded));
+    }
+
     /** Hash-based price estimation (fallback when reflection fails) */
     private static int getHashBasedPrice(String gunId) {
         String lower = gunId.toLowerCase();
@@ -88,32 +141,73 @@ public class PriceManager {
     }
 
     public static int getAttachmentBuyPrice(String attachmentId) {
-        String name = com.levanilla.rogue.core.registry.ShopCatalog.extractName(attachmentId).toUpperCase();
+        if (attachmentId == null || attachmentId.isBlank()) return 0;
+        try {
+            ResourceLocation id = new ResourceLocation(attachmentId);
+            var index = TimelessAPI.getCommonAttachmentIndex(id).orElse(null);
+            if (index != null) {
+                String slot = index.getType() == null
+                    ? null
+                    : index.getType().name().toLowerCase(java.util.Locale.ROOT);
+                return getAttachmentBuyPrice(attachmentId, slot, index.getData());
+            }
+        } catch (Throwable ignored) {
+        }
+        return getAttachmentFallbackPrice(attachmentId);
+    }
+
+    public static int getAttachmentBuyPrice(String attachmentId, String slot, AttachmentData data) {
+        int price = getAttachmentSlotBasePrice(slot);
+        if (data != null) {
+            int extLevel = Math.max(0, data.getExtendedMagLevel());
+            if (extLevel > 0) price += 500 + extLevel * 650;
+
+            float weight = data.getWeight();
+            if (weight < 0.0F) {
+                price += Math.min(2000, Math.round(Math.abs(weight) * 420.0F));
+            } else if (weight > 0.0F) {
+                price -= Math.min(350, Math.round(weight * 60.0F));
+            }
+
+            int modifierCount = data.getModifier() == null ? 0 : data.getModifier().size();
+            price += modifierCount * 420;
+        }
+        return roundAttachmentPrice(price);
+    }
+
+    private static int getAttachmentSlotBasePrice(String slot) {
+        String normalized = slot == null ? "unknown" : slot.toLowerCase(java.util.Locale.ROOT);
+        return switch (normalized) {
+            case "scope" -> 1300;
+            case "muzzle" -> 1000;
+            case "grip" -> 850;
+            case "laser" -> 700;
+            case "extended_mag", "extendedmag" -> 1050;
+            case "stock" -> 800;
+            default -> 650;
+        };
+    }
+
+    private static int getAttachmentFallbackPrice(String attachmentId) {
         String slot = com.levanilla.rogue.core.registry.AttachmentDatabase.getSlotType(attachmentId);
         if (slot == null) slot = com.levanilla.rogue.core.registry.AttachmentDatabase.guessSlotType(attachmentId);
-        if (slot == null) slot = "unknown";
-        
-        int price = 300;
-        if (slot.equals("scope")) {
-            if (name.contains("4X") || name.contains("6X") || name.contains("8X") || name.contains("SR") || name.contains("SNIPER")) price = 1000;
-            else price = 300;
-        } else if (slot.equals("muzzle")) {
-            if (name.contains("SILENCER") || name.contains("SUPPRESSOR")) price = 500;
-            else price = 350;
-        } else if (slot.equals("grip")) {
-            price = 300;
-        } else if (slot.equals("laser")) {
-            price = 250;
-        } else if (slot.equals("extended_mag")) {
-            if (name.contains("3") || name.contains("III")) price = 800;
-            else if (name.contains("2") || name.contains("II")) price = 600;
-            else price = 400;
-        } else if (slot.equals("stock")) {
-            price = 350;
-        } else if (slot.equals("ammo_mod")) {
-            price = 450;
+        String name = com.levanilla.rogue.core.registry.ShopCatalog.extractName(attachmentId).toUpperCase(java.util.Locale.ROOT);
+        int price = getAttachmentSlotBasePrice(slot);
+        if ("extended_mag".equals(slot)) {
+            if (name.contains("3") || name.contains("III")) price += 1800;
+            else if (name.contains("2") || name.contains("II")) price += 1200;
+            else price += 800;
+        } else if (name.contains("4X") || name.contains("6X") || name.contains("8X") || name.contains("SR") || name.contains("SNIPER")) {
+            price += 900;
+        } else if (name.contains("SILENCER") || name.contains("SUPPRESSOR")) {
+            price += 900;
         }
-        return price;
+        return roundAttachmentPrice(price);
+    }
+
+    private static int roundAttachmentPrice(double price) {
+        int rounded = (int) (Math.round(price / 50.0D) * 50);
+        return Math.max(650, Math.min(12000, rounded));
     }
 
     public static int getAmmoBuyPrice(String ammoId) {
@@ -171,8 +265,8 @@ public class PriceManager {
         // ローグアイテム（消耗品）
         if (tag.getBoolean("rogue_item")) {
             int unitPrice;
-            if (stack.is(net.minecraft.world.item.Items.RAW_IRON)) unitPrice = 30;  // SCRAP METAL
-            else if (stack.is(net.minecraft.world.item.Items.RAW_GOLD)) unitPrice = 150; // GOLD CACHE
+            if (stack.is(net.minecraft.world.item.Items.RAW_IRON)) unitPrice = GameConstants.SCRAP_SELL_VALUE;
+            else if (stack.is(net.minecraft.world.item.Items.RAW_GOLD)) unitPrice = GameConstants.GOLD_CACHE_VALUE;
             else if (stack.is(net.minecraft.world.item.Items.COOKED_BEEF)) unitPrice = 20; // FIELD RATION
             else if (stack.is(net.minecraft.world.item.Items.HONEY_BOTTLE)) unitPrice = 80; // STAMINA BOOST
             else if (stack.is(net.minecraft.world.item.Items.GOLDEN_APPLE)) unitPrice = 120; // EMERGENCY RATION

@@ -200,6 +200,7 @@ public class WeaponRarity {
         if (perkBonus > 0.0f) {
             mult *= 1.0f + perkBonus / 100.0f;
         }
+        mult *= com.levanilla.rogue.core.service.DeepProgressService.fireRateMultiplier(gun);
         return Math.max(1.0f, mult);
     }
 

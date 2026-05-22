@@ -1,5 +1,6 @@
 package com.levanilla.rogue.client;
 
+import com.levanilla.rogue.core.WeaponRarity;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
@@ -82,7 +83,7 @@ public class StashScreen extends AbstractContainerScreen<ChestMenu> {
             String name = stack.isEmpty() ? "EMPTY SLOT" : stack.getHoverName().getString();
             int color = stack.isEmpty() ? 0xFF54616A : rarityColor(stack);
             g.drawString(this.font, trimToWidth(name, 116), ex + 32, ey + 3, color, false);
-            String meta = stack.isEmpty() ? classifyEmpty(slotIndex) : classify(stack) + (stack.getCount() > 1 ? " x" + stack.getCount() : "");
+            String meta = stack.isEmpty() ? classifyEmpty(slotIndex) : meta(stack);
             g.drawString(this.font, trimToWidth(meta, 116), ex + 32, ey + 13, 0xFF91A0A8, false);
         }
 
@@ -138,13 +139,7 @@ public class StashScreen extends AbstractContainerScreen<ChestMenu> {
 
     private static int rarityColor(ItemStack stack) {
         if (stack.hasTag() && stack.getTag().contains("RogueRarity")) {
-            return switch (stack.getTag().getString("RogueRarity")) {
-                case "RARE" -> 0xFF55AAFF;
-                case "EPIC" -> 0xFFC060FF;
-                case "LEGENDARY" -> 0xFFFFD45A;
-                case "UNCOMMON" -> 0xFF66FF99;
-                default -> 0xFFE8F4F8;
-            };
+            return WeaponRarity.getRarity(stack).color;
         }
         return 0xFFE8F4F8;
     }
@@ -163,5 +158,14 @@ public class StashScreen extends AbstractContainerScreen<ChestMenu> {
         if (id.contains("attachment") || id.contains("scope") || id.contains("muzzle") || id.contains("grip") || id.contains("stock")) return "ATTACHMENT";
         if (stack.isEdible()) return "SUPPLY";
         return "ITEM";
+    }
+
+    private static String meta(ItemStack stack) {
+        String meta = classify(stack);
+        if (stack.hasTag() && stack.getTag().contains("RogueRarity")) {
+            meta += " " + WeaponRarity.getRarity(stack).getStarsDisplay();
+        }
+        if (stack.getCount() > 1) meta += " x" + stack.getCount();
+        return meta;
     }
 }

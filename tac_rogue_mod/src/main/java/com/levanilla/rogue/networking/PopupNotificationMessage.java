@@ -54,6 +54,10 @@ public class PopupNotificationMessage {
     public static void handle(PopupNotificationMessage msg, Supplier<NetworkEvent.Context> ctx) {
         ctx.get().enqueueWork(() -> {
             if (ctx.get().getDirection().getReceptionSide().isClient()) {
+                if (com.levanilla.rogue.client.DeepOperationsScreen.offerDeepPopup(
+                    msg.type.name(), msg.title, msg.body, msg.type.color, msg.durationTicks)) {
+                    return;
+                }
                 com.levanilla.rogue.client.ClientEventHandler.addPopupNotification(
                     msg.type.name(), msg.title, msg.body, msg.type.color, msg.durationTicks);
             }

@@ -40,6 +40,7 @@ public final class BossRewardService {
         if (!runData.hasClaimedBossReward(floor)) {
             runData.markBossRewardClaimed(floor);
             CurrencyManager.addGold(player, 1000);
+            DeepProgressService.awardDeepBossFirstKill(player, floor);
             PopupNotificationMessage.send(
                 player,
                 PopupNotificationMessage.PopupType.REWARD,
@@ -70,6 +71,7 @@ public final class BossRewardService {
         ShopCatalog.ShopItem reward = candidates.get(player.getRandom().nextInt(candidates.size()));
         ItemStack stack = RogueItemFactory.createRewardWeaponStack(player, reward.id, Math.max(10, floor + 10), player.getRandom());
         if (stack.isEmpty()) return;
+        DeepProgressService.maybeApplyDeepModifier(stack, floor, player.getRandom(), 0.45f);
 
         ShopPlacementService.placeRewardItem(player, stack, reward.id);
         PopupNotificationMessage.send(

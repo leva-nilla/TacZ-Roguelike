@@ -173,6 +173,18 @@ public class TacRogueNetworking {
                 .consumerMainThread(AdsInputMessage::handle)
                 .add();
 
+        CHANNEL.messageBuilder(QuestSelectionMessage.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(QuestSelectionMessage::encode)
+                .decoder(QuestSelectionMessage::decode)
+                .consumerMainThread(QuestSelectionMessage::handle)
+                .add();
+
+        CHANNEL.messageBuilder(DeepOperationMessage.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(DeepOperationMessage::encode)
+                .decoder(DeepOperationMessage::decode)
+                .consumerMainThread(DeepOperationMessage::handle)
+                .add();
+
         // プレイヤー強化メタデータ同期 (S -> C)
         CHANNEL.messageBuilder(SyncMetaMessage.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
                 .encoder(SyncMetaMessage::encode)

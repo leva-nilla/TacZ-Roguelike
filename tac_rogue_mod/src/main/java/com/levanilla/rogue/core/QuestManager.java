@@ -93,6 +93,10 @@ public class QuestManager {
         public int currentChapter = 1;
         public final Map<String, Integer> questProgress = new LinkedHashMap<>();
         public final Set<String> completedQuests = new LinkedHashSet<>();
+        public final List<String> candidateQuestIds = new ArrayList<>();
+        public final List<String> selectedQuestIds = new ArrayList<>();
+        public int selectionLockedChapter = 0;
+        public int candidateChapter = 0;
         public int ngPlusLevel = 0;
 
         public CompoundTag saveToNbt() {
@@ -111,6 +115,20 @@ public class QuestManager {
                 completedTag.add(StringTag.valueOf(id));
             }
             tag.put("Completed", completedTag);
+
+            ListTag candidateTag = new ListTag();
+            for (String id : candidateQuestIds) {
+                candidateTag.add(StringTag.valueOf(id));
+            }
+            tag.put("CandidateQuestIds", candidateTag);
+
+            ListTag selectedTag = new ListTag();
+            for (String id : selectedQuestIds) {
+                selectedTag.add(StringTag.valueOf(id));
+            }
+            tag.put("SelectedQuestIds", selectedTag);
+            tag.putInt("SelectionLockedChapter", selectionLockedChapter);
+            tag.putInt("CandidateChapter", candidateChapter);
             return tag;
         }
 
@@ -134,13 +152,33 @@ public class QuestManager {
                     completedQuests.add(completedTag.getString(i));
                 }
             }
+
+            candidateQuestIds.clear();
+            if (tag.contains("CandidateQuestIds")) {
+                ListTag candidateTag = tag.getList("CandidateQuestIds", 8);
+                for (int i = 0; i < candidateTag.size(); i++) {
+                    candidateQuestIds.add(candidateTag.getString(i));
+                }
+            }
+
+            selectedQuestIds.clear();
+            if (tag.contains("SelectedQuestIds")) {
+                ListTag selectedTag = tag.getList("SelectedQuestIds", 8);
+                for (int i = 0; i < selectedTag.size(); i++) {
+                    selectedQuestIds.add(selectedTag.getString(i));
+                }
+            }
+            selectionLockedChapter = tag.getInt("SelectionLockedChapter");
+            candidateChapter = tag.getInt("CandidateChapter");
         }
     }
 
     private static final Map<UUID, QuestProgress> playerProgress = new ConcurrentHashMap<>();
     private static final List<Quest> ALL_QUESTS = new ArrayList<>();
     public static final int MAX_CHAPTERS = 20;
-    private static final int REQUIRED_SIDE_QUESTS = 2;
+    public static final int REQUIRED_SIDE_QUESTS = 3;
+    public static final int CANDIDATE_SIDE_QUESTS = 5;
+    public static final double RARE_QUEST_DIFFICULTY_MULTIPLIER = 1.35D;
 
     public static final String[][] CHAPTER_STORIES = {
         {"chapter.tac_rogue.1.title",  "chapter.tac_rogue.1.summary"},
@@ -177,6 +215,11 @@ public class QuestManager {
     public static String getChapterSummaryKey(int chapter) {
         int idx = Math.max(0, Math.min(chapter - 1, CHAPTER_STORIES.length - 1));
         return CHAPTER_STORIES[idx][1];
+    }
+
+    public static String getChapterBackgroundKey(int chapter) {
+        int idx = Math.max(0, Math.min(chapter - 1, CHAPTER_STORIES.length - 1));
+        return "chapter.tac_rogue." + (idx + 1) + ".background";
     }
 
     private static void generateQuests() {
@@ -217,6 +260,9 @@ public class QuestManager {
                 QuestPlan plan = plans.get(q);
                 int baseDifficulty = ch * 5 + q * 2;
                 int target = calculateTarget(ch, baseDifficulty, plan.type);
+                if (plan.rareWeaponReward) {
+                    target = scaleRareTarget(target, plan.type);
+                }
                 int goldReward = calculateReward(ch, q, plan.role, plan.rareWeaponReward);
                 int xpReward = ch * 10 + q * 5;
 
@@ -234,7 +280,7 @@ public class QuestManager {
         RogueActManager.FloorPhase phase = RogueActManager.getPhase(chapter);
         List<QuestPlan> plans = new ArrayList<>();
 
-        plans.add(new QuestPlan(QuestRole.CONTRACT, pickContractType(phase, chapter), true));
+        plans.add(new QuestPlan(QuestRole.CONTRACT, pickRareQuestType(phase, chapter), true));
         plans.add(new QuestPlan(QuestRole.BOUNTY, pickBountyType(phase, chapter), false));
         plans.add(new QuestPlan(QuestRole.SUPPLY, pickSupplyType(phase, chapter), false));
 
@@ -287,6 +333,16 @@ public class QuestManager {
         };
     }
 
+    private static QuestType pickRareQuestType(RogueActManager.FloorPhase phase, int chapter) {
+        return switch (phase) {
+            case SCOUT -> chapter <= 2 ? QuestType.WEAPON_MASTERY : QuestType.RARITY_KILL;
+            case SUPPLY -> chapter < 7 ? QuestType.SPEEDRUN : QuestType.NO_DAMAGE;
+            case ELITE -> chapter % 2 == 0 ? QuestType.ELITE_HUNT : QuestType.RARITY_KILL;
+            case DANGER -> chapter % 2 == 0 ? QuestType.LOW_HEALTH_CLEAR : QuestType.SPEEDRUN;
+            case BOSS -> QuestType.BOSS_KILL;
+        };
+    }
+
     private static int calculateTarget(int chapter, int baseDifficulty, QuestType type) {
         return switch (type) {
             case KILL_COUNT -> 10 + baseDifficulty * 2;
@@ -316,6 +372,15 @@ public class QuestManager {
         };
         if (rareWeaponReward) base += 250 + chapter * 30;
         return base + index * 20;
+    }
+
+    private static int scaleRareTarget(int target, QuestType type) {
+        int scaled = Math.max(target + 1, (int) Math.ceil(target * RARE_QUEST_DIFFICULTY_MULTIPLIER));
+        return switch (type) {
+            case NO_DAMAGE, SPEEDRUN, LOW_HEALTH_CLEAR -> Math.max(target, scaled);
+            case BOSS_KILL -> Math.max(1, scaled);
+            default -> scaled;
+        };
     }
 
     public static QuestProgress getProgress(ServerPlayer player) {
@@ -350,9 +415,120 @@ public class QuestManager {
             .toList();
     }
 
+    public static List<Quest> getVisibleChapterQuests(ServerPlayer player) {
+        QuestProgress progress = getProgress(player);
+        ensureChapterPlan(player, progress);
+        List<Quest> visible = new ArrayList<>();
+        for (Quest quest : getChapterQuests(progress.currentChapter)) {
+            if (quest.role == QuestRole.STORY || progress.candidateQuestIds.contains(quest.id)) {
+                visible.add(quest);
+            }
+        }
+        return visible;
+    }
+
+    public static List<Quest> getActiveChapterQuests(ServerPlayer player) {
+        QuestProgress progress = getProgress(player);
+        ensureChapterPlan(player, progress);
+        return getActiveChapterQuests(progress);
+    }
+
+    private static List<Quest> getActiveChapterQuests(QuestProgress progress) {
+        List<Quest> active = new ArrayList<>();
+        for (Quest quest : getChapterQuests(progress.currentChapter)) {
+            if (quest.role == QuestRole.STORY || progress.selectedQuestIds.contains(quest.id)) {
+                active.add(quest);
+            }
+        }
+        return active;
+    }
+
+    public static void ensureChapterPlan(ServerPlayer player, QuestProgress progress) {
+        if (progress.candidateChapter == progress.currentChapter
+            && progress.candidateQuestIds.size() == CANDIDATE_SIDE_QUESTS
+            && candidatesAreValid(progress)) {
+            return;
+        }
+
+        progress.candidateQuestIds.clear();
+        progress.selectedQuestIds.clear();
+        progress.selectionLockedChapter = 0;
+        progress.candidateChapter = progress.currentChapter;
+
+        List<Quest> sideQuests = getChapterQuests(progress.currentChapter).stream()
+            .filter(q -> q.role != QuestRole.STORY)
+            .toList();
+        List<Quest> pool = new ArrayList<>(sideQuests);
+        List<Quest> selectedCandidates = new ArrayList<>();
+
+        Quest rare = removeRandom(pool.stream().filter(q -> q.rareWeaponReward).toList(), pool, player);
+        if (rare != null) {
+            selectedCandidates.add(rare);
+        }
+
+        for (QuestRole role : new QuestRole[] {QuestRole.CONTRACT, QuestRole.BOUNTY, QuestRole.SUPPLY}) {
+            if (selectedCandidates.size() >= CANDIDATE_SIDE_QUESTS) break;
+            if (selectedCandidates.stream().anyMatch(q -> q.role == role)) continue;
+            Quest picked = removeRandom(pool.stream().filter(q -> q.role == role && !q.rareWeaponReward).toList(), pool, player);
+            if (picked != null) selectedCandidates.add(picked);
+        }
+
+        while (selectedCandidates.size() < CANDIDATE_SIDE_QUESTS && !pool.isEmpty()) {
+            Quest picked = pool.remove(player.getRandom().nextInt(pool.size()));
+            if (picked.rareWeaponReward && selectedCandidates.stream().anyMatch(q -> q.rareWeaponReward)) continue;
+            selectedCandidates.add(picked);
+        }
+
+        for (Quest quest : selectedCandidates) {
+            progress.candidateQuestIds.add(quest.id);
+        }
+        markDirty(player);
+    }
+
+    private static Quest removeRandom(List<Quest> candidates, List<Quest> pool, ServerPlayer player) {
+        if (candidates.isEmpty()) return null;
+        Quest picked = candidates.get(player.getRandom().nextInt(candidates.size()));
+        pool.removeIf(q -> q.id.equals(picked.id));
+        return picked;
+    }
+
+    private static boolean candidatesAreValid(QuestProgress progress) {
+        Set<String> valid = new LinkedHashSet<>();
+        for (Quest quest : getChapterQuests(progress.currentChapter)) {
+            if (quest.role != QuestRole.STORY) valid.add(quest.id);
+        }
+        if (!valid.containsAll(progress.candidateQuestIds)) return false;
+        if (progress.selectionLockedChapter == progress.currentChapter) {
+            return progress.selectedQuestIds.size() == REQUIRED_SIDE_QUESTS
+                && progress.candidateQuestIds.containsAll(progress.selectedQuestIds);
+        }
+        return progress.selectedQuestIds.isEmpty();
+    }
+
+    public static boolean selectChapterQuests(ServerPlayer player, List<String> questIds) {
+        QuestProgress progress = getProgress(player);
+        ensureChapterPlan(player, progress);
+        if (progress.selectionLockedChapter == progress.currentChapter) return false;
+
+        LinkedHashSet<String> unique = new LinkedHashSet<>(questIds);
+        if (unique.size() != REQUIRED_SIDE_QUESTS) return false;
+        if (!progress.candidateQuestIds.containsAll(unique)) return false;
+
+        progress.selectedQuestIds.clear();
+        progress.selectedQuestIds.addAll(unique);
+        progress.selectionLockedChapter = progress.currentChapter;
+        if (canAdvanceChapter(getActiveChapterQuests(progress), progress)) {
+            advanceChapter(player, progress);
+        }
+        markDirty(player);
+        RunManager.syncPlayer(player);
+        return true;
+    }
+
     public static void advanceQuest(ServerPlayer player, QuestType type, int amount) {
         QuestProgress progress = getProgress(player);
-        List<Quest> chapterQuests = getChapterQuests(progress.currentChapter);
+        ensureChapterPlan(player, progress);
+        List<Quest> chapterQuests = getActiveChapterQuests(progress);
 
         for (Quest quest : chapterQuests) {
             if (quest.type != type) continue;
@@ -386,14 +562,16 @@ public class QuestManager {
     }
 
     private static boolean canAdvanceChapter(List<Quest> chapterQuests, QuestProgress progress) {
+        if (progress.selectionLockedChapter != progress.currentChapter
+            || progress.selectedQuestIds.size() < REQUIRED_SIDE_QUESTS) {
+            return false;
+        }
         boolean storyDone = chapterQuests.stream()
             .filter(q -> q.role == QuestRole.STORY)
             .allMatch(q -> progress.completedQuests.contains(q.id));
-        long sideDone = chapterQuests.stream()
-            .filter(q -> q.role != QuestRole.STORY)
-            .filter(q -> progress.completedQuests.contains(q.id))
-            .count();
-        return storyDone && sideDone >= REQUIRED_SIDE_QUESTS;
+        boolean sideDone = progress.selectedQuestIds.stream()
+            .allMatch(progress.completedQuests::contains);
+        return storyDone && sideDone;
     }
 
     private static void grantRareWeaponReward(ServerPlayer player, Quest quest) {
@@ -454,6 +632,7 @@ public class QuestManager {
     private static void advanceChapter(ServerPlayer player, QuestProgress progress) {
         if (progress.currentChapter < MAX_CHAPTERS) {
             progress.currentChapter++;
+            resetChapterSelection(progress);
             PopupNotificationMessage.send(
                 player,
                 PopupNotificationMessage.PopupType.SYSTEM,
@@ -466,6 +645,7 @@ public class QuestManager {
             progress.currentChapter = 1;
             progress.questProgress.clear();
             progress.completedQuests.clear();
+            resetChapterSelection(progress);
             PopupNotificationMessage.send(
                 player,
                 PopupNotificationMessage.PopupType.SYSTEM,
@@ -474,6 +654,13 @@ public class QuestManager {
                 170
             );
         }
+    }
+
+    private static void resetChapterSelection(QuestProgress progress) {
+        progress.candidateQuestIds.clear();
+        progress.selectedQuestIds.clear();
+        progress.selectionLockedChapter = 0;
+        progress.candidateChapter = 0;
     }
 
     public static void resetPlayer(UUID uuid) {

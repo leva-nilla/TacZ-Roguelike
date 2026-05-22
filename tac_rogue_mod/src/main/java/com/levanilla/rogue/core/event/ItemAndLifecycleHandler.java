@@ -2,6 +2,7 @@ package com.levanilla.rogue.core.event;
 
 import com.levanilla.rogue.core.*;
 import com.levanilla.rogue.core.RestrictedSlot.SlotType;
+import com.levanilla.rogue.core.service.ArmorPlateService;
 import com.levanilla.rogue.networking.TacRogueNetworking;
 import com.levanilla.rogue.world.LobbyGenerator;
 import com.levanilla.rogue.world.NpcManager;
@@ -26,7 +27,6 @@ import static com.levanilla.rogue.core.CommonEventHandler.ROGUE_DIM;
 @Mod.EventBusSubscriber(modid = "tac_rogue")
 public class ItemAndLifecycleHandler {
     private static final String SAVED_HEALTH_KEY = "TacRogueSavedHealth";
-
     // ===== 旧商人インタラクト =====
 
     @SubscribeEvent(priority = net.minecraftforge.eventbus.api.EventPriority.HIGHEST)
@@ -70,26 +70,43 @@ public class ItemAndLifecycleHandler {
         int floor = chest.getPersistentData().contains("TacRogueFloor")
             ? chest.getPersistentData().getInt("TacRogueFloor")
             : RunManager.getData(player).getCurrentFloor();
-        int chestIndex = chest.getPersistentData().getInt(
-            com.levanilla.rogue.core.service.ChestLootService.CHEST_INDEX_KEY);
-        String claimKey = com.levanilla.rogue.core.service.ChestLootService.claimKey(floor, chestIndex);
+        int chestIndex = Math.max(0, chest.getPersistentData().getInt(
+            com.levanilla.rogue.core.service.ChestLootService.CHEST_INDEX_KEY));
+        int generatedChestCount = chest.getPersistentData().contains(
+            com.levanilla.rogue.core.service.ChestLootService.CHEST_TOTAL_KEY)
+            ? chest.getPersistentData().getInt(com.levanilla.rogue.core.service.ChestLootService.CHEST_TOTAL_KEY)
+            : chestIndex + 1;
         PlayerRunData data = RunManager.getData(player);
-        if (com.levanilla.rogue.core.service.FloorInstanceManager.hasChestClaimed(chest, player.getUUID())
-            || data.hasClaimedSupplyChest(claimKey)) {
+        int maxClaims = data.getSupplyChestMaxClaims(floor);
+        if (maxClaims <= 0) {
+            // Compatibility for already-generated caches from older builds. New floors stamp this at generation time.
+            maxClaims = Math.max(1, generatedChestCount);
+        }
+        if (com.levanilla.rogue.core.service.FloorInstanceManager.hasChestClaimed(chest, player.getUUID())) {
             // Same generated chest, same floor session: allow reopening while any previously rolled loot remains.
-            // A regenerated chest is empty at this point, so it stays blocked by the saved claim key.
             if (hasAnyContent(chest)) {
                 return;
             }
-            player.displayClientMessage(net.minecraft.network.chat.Component.literal("§7This supply cache has already been claimed."), true);
+            // Empty already-opened physical cache may still consume another floor claim
+            // if this run previously generated more caches than the current layout exposes.
+        }
+        if (data.getClaimedSupplyChestCount(floor) >= maxClaims) {
+            player.displayClientMessage(net.minecraft.network.chat.Component.translatable("message.tac_rogue.supply_cache_claimed"), true);
             event.setCanceled(true);
             event.setCancellationResult(InteractionResult.SUCCESS);
             return;
         }
 
-        refillPersonalSupplyChest(chest, player, Math.max(1, floor), chestIndex);
+        int claimIndex = data.claimNextSupplyChest(floor, maxClaims);
+        if (claimIndex < 0) {
+            player.displayClientMessage(net.minecraft.network.chat.Component.translatable("message.tac_rogue.supply_cache_claimed"), true);
+            event.setCanceled(true);
+            event.setCancellationResult(InteractionResult.SUCCESS);
+            return;
+        }
+
+        refillPersonalSupplyChest(chest, player, Math.max(1, floor), claimIndex);
         com.levanilla.rogue.core.service.FloorInstanceManager.markChestClaimed(chest, player.getUUID());
-        data.markSupplyChestClaimed(claimKey);
         QuestManager.advanceQuest(player, QuestManager.QuestType.CHEST_RECOVERY, 1);
     }
 
@@ -149,41 +166,36 @@ public class ItemAndLifecycleHandler {
         }
 
         if (event.getEntity() instanceof ServerPlayer player) {
-            if (stack.hasTag() && stack.getTag().getBoolean("rogue_item")) {
+            if ((stack.hasTag() && stack.getTag().getBoolean("rogue_item"))
+                    || ArmorPlateService.isArmorPlate(stack)) {
                 if (stack.is(Items.HONEY_BOTTLE)) {
-                    // STAMINA BOOST
+                    // STAMINA SHOT: restore stamina and grant a short movement burst.
                     StaminaManager.setStamina(player, StaminaManager.getMaxStamina(player));
                     player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
                         net.minecraft.world.effect.MobEffects.MOVEMENT_SPEED, 300, 1, false, true));
-                    player.sendSystemMessage(net.minecraft.network.chat.Component.translatable("message.tac_rogue.stamina_boost"));
+                    player.sendSystemMessage(net.minecraft.network.chat.Component.translatable("message.tac_rogue.stamina_boost"), true);
                     stack.shrink(1);
                     event.setCanceled(true);
                 } else if (stack.is(Items.RAW_IRON)) {
                     // SCRAP METAL — ロビー限定換金
                     if (player.level().dimension() != LOBBY_DIM) {
                         player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
-                            "message.tac_rogue.lobby_only_exchange"));
+                            "message.tac_rogue.lobby_only_exchange"), true);
                         event.setCanceled(true);
                     } else {
-                        CurrencyManager.addGold(player, GameConstants.SCRAP_SELL_VALUE);
-                        player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
-                            "message.tac_rogue.scrap_sold", GameConstants.SCRAP_SELL_VALUE));
+                        com.levanilla.rogue.core.service.GoldGainService.award(player, GameConstants.SCRAP_SELL_VALUE);
                         stack.shrink(1);
-                        RunManager.syncPlayer(player);
                         event.setCanceled(true);
                     }
                 } else if (stack.is(Items.RAW_GOLD)) {
                     // GOLD CACHE — ロビー限定換金
                     if (player.level().dimension() != LOBBY_DIM) {
                         player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
-                            "message.tac_rogue.lobby_only_exchange"));
+                            "message.tac_rogue.lobby_only_exchange"), true);
                         event.setCanceled(true);
                     } else {
-                        CurrencyManager.addGold(player, GameConstants.GOLD_CACHE_VALUE);
-                        player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
-                            "message.tac_rogue.gold_cache", GameConstants.GOLD_CACHE_VALUE));
+                        com.levanilla.rogue.core.service.GoldGainService.award(player, GameConstants.GOLD_CACHE_VALUE);
                         stack.shrink(1);
-                        RunManager.syncPlayer(player);
                         event.setCanceled(true);
                     }
                 } else if (stack.is(Items.COOKED_BEEF)) {
@@ -220,35 +232,16 @@ public class ItemAndLifecycleHandler {
                     float healAmount = maxHp * 0.15f;
                     if (player.getHealth() < maxHp) {
                         player.heal(healAmount);
-                        player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                            "\u00A7a[BANDAGE] \u00A7fHealed " + String.format("%.0f", healAmount) + " HP"), true);
+                        player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                            "message.tac_rogue.bandage_heal", String.format("%.0f", healAmount)), true);
                         stack.shrink(1);
                     } else {
                         player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
                             "message.tac_rogue.hp_full"), true);
                     }
                     event.setCanceled(true);
-                } else if (stack.is(Items.IRON_INGOT)) {
-                    // ARMOR PLATE — 一時的にアーマー+8 (30秒)
-                    java.util.UUID armorUUID = java.util.UUID.fromString("b2d3e4f5-6789-4abc-def0-123456789abc");
-                    var modifier = new net.minecraft.world.entity.ai.attributes.AttributeModifier(
-                        armorUUID, "TacRogue Armor Plate", 8.0,
-                        net.minecraft.world.entity.ai.attributes.AttributeModifier.Operation.ADDITION);
-                    var armorAttr = player.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.ARMOR);
-                    if (armorAttr != null) {
-                        armorAttr.removeModifier(armorUUID);
-                        armorAttr.addTransientModifier(modifier);
-                        // 30秒後に除去するスケジュール
-                        player.getServer().tell(new net.minecraft.server.TickTask(
-                            player.getServer().getTickCount() + 600, () -> {
-                                if (armorAttr.getModifier(armorUUID) != null) {
-                                    armorAttr.removeModifier(armorUUID);
-                                }
-                            }));
-                    }
-                    player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                        "\u00A7b[ARMOR PLATE] \u00A7f+8 Armor for 30 seconds"), true);
-                    stack.shrink(1);
+                } else if (ArmorPlateService.isArmorPlate(stack)) {
+                    ArmorPlateService.use(player, stack);
                     event.setCanceled(true);
                 } else if (stack.is(Items.GLASS_BOTTLE)) {
                     // ADRENALINE — ダメージ+30% & 速度+20% (20秒) → 終了後スロー2秒
@@ -264,8 +257,8 @@ public class ItemAndLifecycleHandler {
                                     net.minecraft.world.effect.MobEffects.MOVEMENT_SLOWDOWN, 40, 1, false, true));
                             }
                         }));
-                    player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                        "\u00A7c[ADRENALINE] \u00A7f+30% DMG & +20% Speed for 20s"), true);
+                    player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                        "message.tac_rogue.adrenaline_used"), true);
                     stack.shrink(1);
                     event.setCanceled(true);
                 } else if (stack.is(Items.REDSTONE)) {
@@ -279,8 +272,8 @@ public class ItemAndLifecycleHandler {
                         mob.addEffect(new net.minecraft.world.effect.MobEffectInstance(
                             net.minecraft.world.effect.MobEffects.WEAKNESS, 100, 1, false, true));
                     }
-                    player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
-                        "\u00A7e[EMP] \u00A7fDisabled " + mobs.size() + " hostiles for 5 seconds"), true);
+                    player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                        "message.tac_rogue.emp_used", mobs.size()), true);
                     stack.shrink(1);
                     event.setCanceled(true);
                 }

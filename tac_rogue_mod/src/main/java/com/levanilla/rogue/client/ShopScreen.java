@@ -5,22 +5,28 @@ import com.levanilla.rogue.core.GameConstants;
 import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.core.ShopStockManager;
 import com.levanilla.rogue.core.TacZRegistryHelper;
+import com.levanilla.rogue.core.WeaponRarity;
 import com.levanilla.rogue.core.registry.ShopCatalog;
+import com.levanilla.rogue.core.registry.TacZGunRegistry;
 import com.levanilla.rogue.core.service.RogueItemFactory;
 import com.levanilla.rogue.networking.RogueActionMessage;
 import com.levanilla.rogue.networking.TacRogueNetworking;
+import com.tacz.guns.api.TimelessAPI;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 public class ShopScreen extends Screen {
     private static final int SLOT = 22;
@@ -41,6 +47,7 @@ public class ShopScreen extends Screen {
     private List<ShopCatalog.ShopItem> cachedVisibleSource = null;
     private ShopCatalog.Category cachedVisibleCategory = null;
     private int cachedVisibleShopFloor = Integer.MIN_VALUE;
+    private int cachedVisibleBlackMarket = Integer.MIN_VALUE;
     private final Map<String, ItemStack> previewStackCache = new HashMap<>();
     private int previewStackShopFloor = Integer.MIN_VALUE;
     private List<SellEntry> cachedSellEntries = List.of();
@@ -48,6 +55,9 @@ public class ShopScreen extends Screen {
     private List<String> cachedHeldGunIds = List.of();
     private String cachedHeldGunSignature = "";
     private final Map<String, Compatibility> compatibilityCache = new HashMap<>();
+    private long lastGridClickMillis = 0L;
+    private int lastGridClickKey = Integer.MIN_VALUE;
+    private boolean lastGridClickSellMode = false;
 
     public ShopScreen() {
         super(Component.translatable("gui.tac_rogue.shop_screen.title"));
@@ -66,6 +76,7 @@ public class ShopScreen extends Screen {
             page = 0;
             selectedIndex = -1;
             selectedSellSlot = -1;
+            clearDoubleClickState();
             this.init();
         }).bounds(x + panelW - 134, y + 10, 48, 18).build());
 
@@ -95,6 +106,7 @@ public class ShopScreen extends Screen {
                 categoryFilter = cat;
                 page = 0;
                 selectedIndex = -1;
+                clearDoubleClickState();
                 this.init();
             }).bounds(catX, catY + row * 18, CATEGORY_W - 4, 16).build());
         }
@@ -156,14 +168,24 @@ public class ShopScreen extends Screen {
             boolean hovered = mouseX >= sx && mouseX < sx + 20 && mouseY >= sy && mouseY < sy + 20;
             boolean selected = idx == selectedIndex;
             Compatibility compatibility = idx < items.size() ? compatibilityFor(items.get(idx)) : Compatibility.NONE;
-            graphics.fill(sx, sy, sx + 20, sy + 20, selected ? 0x7744FFAA : hovered ? 0x5544AAFF : compatibility.compatible ? 0x4422AA55 : 0x55000000);
+            int rarityFill = idx < items.size() ? rarityBackground(items.get(idx)) : 0x55000000;
+            graphics.fill(sx, sy, sx + 20, sy + 20, rarityFill);
+            if (selected || hovered || compatibility.compatible) {
+                graphics.fill(sx, sy, sx + 20, sy + 20, selected ? 0x7744FFAA : hovered ? 0x5544AAFF : 0x4422AA55);
+            }
             graphics.renderOutline(sx, sy, 20, 20, selected ? 0xFF55FFAA : compatibility.compatible ? 0xAA55FFAA : 0x66336655);
             if (idx >= items.size()) continue;
             if (hovered) hoveredIndex = idx;
             ItemStack stack = previewStack(items.get(idx));
             if (!stack.isEmpty()) {
-                graphics.renderItem(stack, sx + 2, sy + 2);
-                graphics.renderItemDecorations(this.font, stack, sx + 2, sy + 2);
+                if (!TacZGuiIconRenderer.renderLightweightIcon(graphics, this.font, stack, sx + 2, sy + 2)) {
+                    graphics.renderItem(stack, sx + 2, sy + 2);
+                    graphics.renderItemDecorations(this.font, stack, sx + 2, sy + 2);
+                }
+                if (isRarityShopWeapon(items.get(idx).category)) {
+                    int color = WeaponRarity.getRarity(stack).color;
+                    graphics.fill(sx + 2, sy + 18, sx + 18, sy + 20, color);
+                }
             } else {
                 graphics.drawCenteredString(this.font, "?", sx + 10, sy + 6, 0xFF777777);
             }
@@ -188,8 +210,10 @@ public class ShopScreen extends Screen {
             if (idx >= entries.size()) continue;
             if (hovered) hoveredIndex = idx;
             ItemStack stack = entries.get(idx).stack;
-            graphics.renderItem(stack, sx + 2, sy + 2);
-            graphics.renderItemDecorations(this.font, stack, sx + 2, sy + 2);
+            if (!TacZGuiIconRenderer.renderLightweightIcon(graphics, this.font, stack, sx + 2, sy + 2)) {
+                graphics.renderItem(stack, sx + 2, sy + 2);
+                graphics.renderItemDecorations(this.font, stack, sx + 2, sy + 2);
+            }
         }
     }
 
@@ -214,23 +238,24 @@ public class ShopScreen extends Screen {
             return;
         }
         ShopCatalog.ShopItem item = items.get(selectedIndex);
-        drawWrapped(graphics, item.displayName, x + 8, y + 8, w - 16, 0xFFFFFFFF);
+        drawWrapped(graphics, shopItemName(item).getString(), x + 8, y + 8, w - 16, 0xFFFFFFFF);
         graphics.drawString(this.font, categoryLabel(item.category), x + 8, y + 42, item.category.color, false);
         graphics.drawString(this.font, "$" + actualPrice(item), x + 8, y + 56,
             RunManager.getClientGold() >= actualPrice(item) ? 0xFFFFD45C : 0xFFFF6666, false);
-        if (item.category.isWeapon()) {
-            int mag = TacZRegistryHelper.getMagazineSize(item.id);
-            String ammo = TacZRegistryHelper.getAmmoForGun(item.id);
-            graphics.drawString(this.font, Component.translatable("gui.tac_rogue.shop_screen.mag_rounds", mag), x + 8, y + 72, 0xFFAAFFDD, false);
-            graphics.drawString(this.font, trimId(ammo), x + 8, y + 84, 0xFFAAAAAA, false);
+        int lineY = y + 72;
+        for (Component line : statLines(item)) {
+            if (lineY > y + h - 10) break;
+            graphics.drawString(this.font, line, x + 8, lineY, 0xFFAAFFDD, false);
+            lineY += 10;
         }
         Compatibility compatibility = compatibilityFor(item);
         if (compatibility.relevant) {
+            int compatY = Math.min(lineY + 2, y + h - 10);
             graphics.drawString(this.font,
                 compatibility.compatible
                     ? Component.translatable("gui.tac_rogue.shop_screen.compatible", compatibility.gunName)
                     : Component.translatable("gui.tac_rogue.shop_screen.no_matching_gun"),
-                x + 8, y + 102, compatibility.compatible ? 0xFF66FFAA : 0xFFFF7777, false);
+                x + 8, compatY, compatibility.compatible ? 0xFF66FFAA : 0xFFFF7777, false);
         }
     }
 
@@ -258,12 +283,9 @@ public class ShopScreen extends Screen {
         if (hoveredIndex >= items.size()) return;
         ShopCatalog.ShopItem item = items.get(hoveredIndex);
         List<Component> tooltip = new ArrayList<>();
-        tooltip.add(Component.literal(item.displayName));
+        tooltip.add(shopItemName(item));
         tooltip.add(Component.empty().append(categoryLabel(item.category)).append(Component.literal("  $" + actualPrice(item))));
-        if (item.category.isWeapon()) {
-            tooltip.add(Component.translatable("gui.tac_rogue.shop_screen.mag_ammo",
-                TacZRegistryHelper.getMagazineSize(item.id), trimId(TacZRegistryHelper.getAmmoForGun(item.id))));
-        }
+        tooltip.addAll(statLines(item));
         Compatibility compatibility = compatibilityFor(item);
         if (compatibility.relevant) {
             tooltip.add(compatibility.compatible
@@ -287,24 +309,68 @@ public class ShopScreen extends Screen {
             int col = ((int)mouseX - gridX) / SLOT;
             int row = ((int)mouseY - gridY) / SLOT;
             int idx = page * PAGE_SIZE + row * COLS + col;
+            boolean validCell = false;
+            int clickKey = idx;
             if (sellMode) {
                 List<SellEntry> entries = sellEntries();
-                if (idx < entries.size()) selectedSellSlot = entries.get(idx).slot;
+                if (idx < entries.size()) {
+                    selectedSellSlot = entries.get(idx).slot;
+                    clickKey = selectedSellSlot;
+                    validCell = true;
+                }
             } else if (idx < visibleItems().size()) {
                 selectedIndex = idx;
+                validCell = true;
+            }
+            if (validCell && button == 0 && isDoubleGridClick(clickKey)) {
+                if (sellMode) {
+                    sellSelected();
+                } else {
+                    buySelected();
+                }
+                clearDoubleClickState();
+            } else if (validCell && button == 0) {
+                rememberGridClick(clickKey);
+            } else {
+                clearDoubleClickState();
             }
             return true;
         }
         if (mouseX >= x + panelW / 2 - 54 && mouseX < x + panelW / 2 - 14 && mouseY >= y + panelH - 28 && mouseY < y + panelH - 10) {
-            if (page > 0) page--;
+            if (page > 0) {
+                page--;
+                clearDoubleClickState();
+            }
             return true;
         }
         if (mouseX >= x + panelW / 2 + 14 && mouseX < x + panelW / 2 + 54 && mouseY >= y + panelH - 28 && mouseY < y + panelH - 10) {
             int max = maxPage(sellMode ? sellEntries().size() : visibleItems().size());
-            if (page < max) page++;
+            if (page < max) {
+                page++;
+                clearDoubleClickState();
+            }
             return true;
         }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    private boolean isDoubleGridClick(int clickKey) {
+        long now = System.currentTimeMillis();
+        return lastGridClickSellMode == sellMode
+            && lastGridClickKey == clickKey
+            && now - lastGridClickMillis <= 250L;
+    }
+
+    private void rememberGridClick(int clickKey) {
+        lastGridClickSellMode = sellMode;
+        lastGridClickKey = clickKey;
+        lastGridClickMillis = System.currentTimeMillis();
+    }
+
+    private void clearDoubleClickState() {
+        lastGridClickMillis = 0L;
+        lastGridClickKey = Integer.MIN_VALUE;
+        lastGridClickSellMode = false;
     }
 
     @Override
@@ -345,15 +411,17 @@ public class ShopScreen extends Screen {
     }
 
     private List<ShopCatalog.ShopItem> visibleItems() {
-        int shopFloor = ShopStockManager.getShopFloor(RunManager.getCurrentFloor(), RunManager.isFloorCleared());
+        int shopFloor = shopFloor();
         List<ShopCatalog.ShopItem> source = TacZRegistryHelper.getAllShopItems();
         if (cachedVisibleSource == source
             && cachedVisibleShopFloor == shopFloor
-            && cachedVisibleCategory == categoryFilter) {
+            && cachedVisibleCategory == categoryFilter
+            && cachedVisibleBlackMarket == com.levanilla.rogue.core.ClientRunState.getPrestigeBlackMarket()) {
             return cachedVisibleItems;
         }
 
-        List<ShopCatalog.ShopItem> base = ShopStockManager.filterAvailable(source, shopFloor);
+        int blackMarket = com.levanilla.rogue.core.ClientRunState.getPrestigeBlackMarket();
+        List<ShopCatalog.ShopItem> base = ShopStockManager.filterAvailable(source, shopFloor, blackMarket);
         if (cachedVisibleSource != source) {
             previewStackCache.clear();
             compatibilityCache.clear();
@@ -364,6 +432,7 @@ public class ShopScreen extends Screen {
         cachedVisibleSource = source;
         cachedVisibleShopFloor = shopFloor;
         cachedVisibleCategory = categoryFilter;
+        cachedVisibleBlackMarket = blackMarket;
         return cachedVisibleItems;
     }
 
@@ -409,7 +478,7 @@ public class ShopScreen extends Screen {
     }
 
     private ItemStack previewStack(ShopCatalog.ShopItem item) {
-        int shopFloor = ShopStockManager.getShopFloor(RunManager.getCurrentFloor(), RunManager.isFloorCleared());
+        int shopFloor = shopFloor();
         if (previewStackShopFloor != shopFloor) {
             previewStackShopFloor = shopFloor;
             previewStackCache.clear();
@@ -419,7 +488,7 @@ public class ShopScreen extends Screen {
     }
 
     private int actualPrice(ShopCatalog.ShopItem item) {
-        if (item.category != ShopCatalog.Category.SPECIAL) return item.price;
+        if (item.category != ShopCatalog.Category.SPECIAL) return PriceManager.getShopBuyPrice(item, shopFloor());
         Minecraft mc = Minecraft.getInstance();
         int currentLevel = 0;
         if (mc.player != null) {
@@ -430,7 +499,154 @@ public class ShopScreen extends Screen {
         if (item.id.equals("rogue:ammo_capacity_upgrade")) currentLevel = RunManager.getClientAmmoCapacityLevel();
         if (item.id.equals("rogue:stash_upgrade")) currentLevel = Math.max(0, RunManager.getClientStashLines() - 2);
         if (item.id.equals("rogue:flashlight_upgrade")) currentLevel = RunManager.getClientFlashlightLevel();
-        return PriceManager.getUpgradePrice(item.id, currentLevel);
+        if (isUpgradeItem(item.id)) {
+            return PriceManager.getUpgradePrice(item.id, currentLevel);
+        }
+        return PriceManager.getShopBuyPrice(item, shopFloor());
+    }
+
+    private int shopFloor() {
+        return ShopStockManager.getShopFloor(RunManager.getCurrentFloor(), RunManager.isFloorCleared());
+    }
+
+    private boolean isUpgradeItem(String id) {
+        return id.equals("rogue:inv_upgrade")
+            || id.equals("rogue:stash_upgrade")
+            || id.equals("rogue:ammo_capacity_upgrade")
+            || id.equals("rogue:melee_upgrade")
+            || id.equals("rogue:flashlight_upgrade")
+            || id.equals("rogue:random_perk");
+    }
+
+    private Component shopItemName(ShopCatalog.ShopItem item) {
+        String key = shopItemNameKey(item.id);
+        return key == null ? Component.literal(item.displayName) : Component.translatable(key);
+    }
+
+    private String shopItemNameKey(String id) {
+        return switch (id) {
+            case "rogue:inv_upgrade" -> "shop_item.tac_rogue.inv_upgrade";
+            case "rogue:stash_upgrade" -> "shop_item.tac_rogue.stash_upgrade";
+            case "rogue:ammo_capacity_upgrade" -> "shop_item.tac_rogue.ammo_capacity_upgrade";
+            case "rogue:melee_upgrade" -> "shop_item.tac_rogue.melee_upgrade";
+            case "rogue:flashlight_upgrade" -> "shop_item.tac_rogue.flashlight_upgrade";
+            case "rogue:medkit" -> "shop_item.tac_rogue.medkit";
+            case "rogue:field_ration" -> "shop_item.tac_rogue.field_ration";
+            case "rogue:stamina_shot" -> "shop_item.tac_rogue.stamina_shot";
+            case "minecraft:snowball" -> "shop_item.tac_rogue.snowball";
+            case "rogue:bandage" -> "shop_item.tac_rogue.bandage";
+            case "rogue:armor_plate" -> "shop_item.tac_rogue.armor_plate";
+            case "rogue:adrenaline" -> "shop_item.tac_rogue.adrenaline";
+            case "rogue:emp_device" -> "shop_item.tac_rogue.emp_device";
+            case "rogue:random_perk" -> "shop_item.tac_rogue.random_perk";
+            default -> null;
+        };
+    }
+
+    private List<Component> statLines(ShopCatalog.ShopItem item) {
+        List<Component> lines = new ArrayList<>();
+        if (isRarityShopWeapon(item.category)) {
+            WeaponRarity.Rarity rarity = WeaponRarity.rollShopRarity(shopFloor(), item.id);
+            lines.add(Component.translatable("gui.tac_rogue.shop_screen.rarity_price",
+                rarity.name(), String.format(Locale.ROOT, "%.2f", PriceManager.getRarityPriceMultiplier(rarity))));
+        }
+        if (isGunCategory(item.category)) {
+            addGunStatLines(item, lines);
+        } else if (item.category == ShopCatalog.Category.ATTACHMENT) {
+            addAttachmentStatLines(item, lines);
+        } else if (item.category == ShopCatalog.Category.AMMO) {
+            lines.add(Component.translatable("gui.tac_rogue.shop_screen.ammo", shopItemName(item)));
+        }
+        return lines;
+    }
+
+    private void addGunStatLines(ShopCatalog.ShopItem item, List<Component> lines) {
+        TacZGunRegistry.GunProfile profile = TacZGunRegistry.getProfile(item.id);
+        if (profile == null) {
+            lines.add(Component.translatable("gui.tac_rogue.shop_screen.mag_ammo",
+                TacZRegistryHelper.getMagazineSize(item.id), trimId(TacZRegistryHelper.getAmmoForGun(item.id))));
+            return;
+        }
+        lines.add(Component.translatable("gui.tac_rogue.shop_screen.damage", profile.damage));
+        lines.add(Component.translatable("gui.tac_rogue.shop_screen.rpm", profile.rpm));
+        lines.add(Component.translatable("gui.tac_rogue.shop_screen.dps", profile.dps));
+        lines.add(Component.translatable("gui.tac_rogue.shop_screen.mag_ammo", profile.magSize, trimId(profile.ammoId == null ? "" : profile.ammoId.toString())));
+        if (profile.allowedAttachments != null && !profile.allowedAttachments.isEmpty()) {
+            String attachments = profile.allowedAttachments.stream()
+                .filter(type -> type != null)
+                .map(type -> type.name().toLowerCase(Locale.ROOT))
+                .collect(Collectors.joining(", "));
+            if (!attachments.isBlank()) {
+                lines.add(Component.translatable("gui.tac_rogue.shop_screen.attachments", trimDisplay(attachments, 30)));
+            }
+        }
+    }
+
+    private void addAttachmentStatLines(ShopCatalog.ShopItem item, List<Component> lines) {
+        String slot = com.levanilla.rogue.core.registry.AttachmentDatabase.getSlotType(item.id);
+        if (slot == null) slot = com.levanilla.rogue.core.registry.AttachmentDatabase.guessSlotType(item.id);
+        if (slot != null) lines.add(Component.literal(slot.toUpperCase(Locale.ROOT)));
+        try {
+            var index = TimelessAPI.getCommonAttachmentIndex(new ResourceLocation(item.id)).orElse(null);
+            if (index == null || index.getData() == null) {
+                lines.add(Component.literal(ShopCatalog.getAttachmentTypeDesc(item.id).replaceAll("\u00A7.", "")));
+                return;
+            }
+            var data = index.getData();
+            lines.add(Component.translatable("gui.tac_rogue.shop_screen.weight", data.getWeight()));
+            if (data.getExtendedMagLevel() > 0) {
+                lines.add(Component.translatable("gui.tac_rogue.shop_screen.ext_mag_level", data.getExtendedMagLevel()));
+            }
+            TacZGunRegistry.getAttachmentSoundProfile(item.id)
+                .filter(TacZGunRegistry.GunSoundProfile::suppressed)
+                .ifPresent(profile -> lines.add(Component.translatable("gui.tac_rogue.shop_screen.suppressor_reduction",
+                    String.format(Locale.ROOT, "%.0f", TacZGunRegistry.getSoundReductionBlocks(profile)))));
+            int added = 0;
+            for (var entry : data.getModifier().entrySet()) {
+                if (added >= 4) break;
+                var property = entry.getValue();
+                if (property == null) continue;
+                if (property.getComponents().isEmpty()) {
+                    property.initComponents();
+                }
+                if (!property.getComponents().isEmpty()) {
+                    for (Component component : property.getComponents()) {
+                        if (added >= 4) break;
+                        lines.add(component);
+                        added++;
+                    }
+                } else {
+                    lines.add(Component.translatable("gui.tac_rogue.shop_screen.modifier", trimId(entry.getKey())));
+                    added++;
+                }
+            }
+        } catch (Throwable ignored) {
+            lines.add(Component.literal(ShopCatalog.getAttachmentTypeDesc(item.id).replaceAll("\u00A7.", "")));
+        }
+    }
+
+    private boolean isGunCategory(ShopCatalog.Category category) {
+        return category == ShopCatalog.Category.PISTOL
+            || category == ShopCatalog.Category.RIFLE
+            || category == ShopCatalog.Category.SMG
+            || category == ShopCatalog.Category.SHOTGUN
+            || category == ShopCatalog.Category.SNIPER
+            || category == ShopCatalog.Category.LMG
+            || category == ShopCatalog.Category.EXPLOSIVE;
+    }
+
+    private boolean isRarityShopWeapon(ShopCatalog.Category category) {
+        return isGunCategory(category) || category == ShopCatalog.Category.MELEE;
+    }
+
+    private int rarityBackground(ShopCatalog.ShopItem item) {
+        if (!isRarityShopWeapon(item.category)) return 0x55000000;
+        WeaponRarity.Rarity rarity = WeaponRarity.rollShopRarity(shopFloor(), item.id);
+        return withAlpha(rarity.color, rarity == WeaponRarity.Rarity.COMMON ? 0x38 : 0x52);
+    }
+
+    private static int withAlpha(int argb, int alpha) {
+        return ((alpha & 0xFF) << 24) | (argb & 0x00FFFFFF);
     }
 
     private void drawWrapped(GuiGraphics graphics, String text, int x, int y, int width, int color) {
@@ -467,6 +683,11 @@ public class ShopScreen extends Screen {
         if (id == null) return "";
         String value = id.contains(":") ? id.substring(id.indexOf(':') + 1) : id;
         return value.length() > 16 ? value.substring(0, 14) + ".." : value;
+    }
+
+    private String trimDisplay(String value, int max) {
+        if (value == null || value.length() <= max) return value == null ? "" : value;
+        return value.substring(0, Math.max(0, max - 2)) + "..";
     }
 
     private Compatibility compatibilityFor(ShopCatalog.ShopItem item) {

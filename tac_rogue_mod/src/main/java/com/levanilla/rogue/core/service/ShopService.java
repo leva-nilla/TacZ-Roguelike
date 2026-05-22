@@ -3,6 +3,7 @@ package com.levanilla.rogue.core.service;
 import com.levanilla.rogue.core.*;
 import com.levanilla.rogue.core.registry.ShopCatalog;
 import com.levanilla.rogue.networking.TacRogueNetworking;
+import com.levanilla.rogue.networking.PopupNotificationMessage;
 import com.levanilla.rogue.networking.SyncDataMessage;
 import com.levanilla.rogue.networking.SyncStashMessage;
 import net.minecraft.server.level.ServerPlayer;
@@ -21,16 +22,22 @@ public final class ShopService {
     // ===== 購入 =====
 
     public static void handleBuyItem(ServerPlayer player, String itemId) {
-        int price = findPrice(itemId);
+        int shopFloor = getShopFloor(player);
+        int blackMarket = DeepProgressService.getBlackMarketLevel(player);
         ShopCatalog.ShopItem catalogItem = findCatalogItem(itemId);
-        if (catalogItem != null && !ShopStockManager.isAvailable(catalogItem, getShopFloor(player))) {
-            player.sendSystemMessage(Component.literal("\u00A7c[SHOP] Item is not in current stock: " + catalogItem.displayName));
+        int price = findPrice(itemId, shopFloor);
+        if (catalogItem != null && !ShopStockManager.isAvailable(catalogItem, shopFloor, blackMarket)) {
+            notifyShop(player, PopupNotificationMessage.PopupType.WARNING,
+                Component.literal("SHOP"),
+                Component.translatable("message.tac_rogue.shop_not_in_stock", catalogItem.displayName));
             return;
         }
 
         // SEC-4: 未登録IDで0以下の価格が返った場合は拒否
         if (price <= 0 && !itemId.startsWith("rogue:")) {
-            player.sendSystemMessage(Component.literal("\u00A7c[SHOP] Unknown item: " + itemId));
+            notifyShop(player, PopupNotificationMessage.PopupType.WARNING,
+                Component.literal("SHOP"),
+                Component.translatable("message.tac_rogue.shop_unknown_item", itemId));
             return;
         }
         // Upgrade handling
@@ -60,9 +67,13 @@ public final class ShopService {
         }
         // Recovery items
         if (itemId.startsWith("rogue:medkit") || itemId.startsWith("rogue:field_ration")
-                || itemId.startsWith("rogue:stamina_shot")) {
+                || itemId.startsWith("rogue:stamina_shot") || itemId.startsWith("rogue:bandage")
+                || itemId.startsWith("rogue:armor_plate") || itemId.startsWith("rogue:adrenaline")
+                || itemId.startsWith("rogue:emp_device")) {
             if (!CurrencyManager.consumeGold(player, price)) {
-                player.sendSystemMessage(Component.translatable("gui.tac_rogue.inventory.insufficient_funds"));
+                notifyShop(player, PopupNotificationMessage.PopupType.WARNING,
+                    Component.literal("SHOP"),
+                    Component.translatable("gui.tac_rogue.inventory.insufficient_funds"));
                 return;
             }
             ItemStack recItem = RogueItemFactory.createRecoveryItem(itemId);
@@ -75,20 +86,26 @@ public final class ShopService {
 
         // 騾壼ｸｸ繧｢繧､繝・Β雉ｼ蜈･
         if (!CurrencyManager.consumeGold(player, price)) {
-            player.sendSystemMessage(Component.translatable("gui.tac_rogue.inventory.insufficient_funds"));
+            notifyShop(player, PopupNotificationMessage.PopupType.WARNING,
+                Component.literal("SHOP"),
+                Component.translatable("gui.tac_rogue.inventory.insufficient_funds"));
             return;
         }
 
         try {
-            ItemStack resultStack = RogueItemFactory.createShopItemStack(player, itemId, getShopFloor(player));
+            ItemStack resultStack = RogueItemFactory.createShopItemStack(player, itemId, shopFloor);
             if (!resultStack.isEmpty()) {
                 ShopPlacementService.placePurchasedItem(player, resultStack, itemId, price);
             } else {
-                player.sendSystemMessage(Component.literal("\u00A7c[ERROR] Item not found in registry: " + itemId));
+                notifyShop(player, PopupNotificationMessage.PopupType.WARNING,
+                    Component.literal("SHOP ERROR"),
+                    Component.literal("Item not found: " + itemId));
                 CurrencyManager.addGoldNoQuest(player, price);
             }
         } catch (Exception e) {
-            player.sendSystemMessage(Component.literal("\u00A7c[ERROR] Creation failed: " + e.getMessage()));
+            notifyShop(player, PopupNotificationMessage.PopupType.WARNING,
+                Component.literal("SHOP ERROR"),
+                Component.literal("Creation failed: " + e.getMessage()));
             CurrencyManager.addGoldNoQuest(player, price);
         }
 
@@ -103,7 +120,9 @@ public final class ShopService {
             int slot = Integer.parseInt(slotData);
             // 武器スロットや拡張インベントリ等もすべて売却可能にする
             if (slot < 0 || slot >= 36) {
-                player.sendSystemMessage(Component.literal("\u00A7c[SHOP] Invalid slot for selling."));
+                notifyShop(player, PopupNotificationMessage.PopupType.WARNING,
+                    Component.literal("SHOP"),
+                    Component.literal("Invalid slot for selling."));
                 return;
             }
             if (slot >= player.getInventory().getContainerSize()) return;
@@ -112,16 +131,17 @@ public final class ShopService {
 
             int sellPrice = PriceManager.getSellPrice(stack);
             if (sellPrice <= 0) {
-                player.sendSystemMessage(Component.literal("\u00A7cThis item cannot be sold."));
+                notifyShop(player, PopupNotificationMessage.PopupType.WARNING,
+                    Component.literal("SHOP"),
+                    Component.literal("This item cannot be sold."));
                 return;
             }
 
-            CurrencyManager.addGold(player, sellPrice);
-            String itemName = stack.getHoverName().getString();
+            GoldGainService.award(player, sellPrice);
             player.getInventory().setItem(slot, ItemStack.EMPTY);
-            player.sendSystemMessage(Component.literal(
-                "\u00A7a[SOLD] \u00A7f" + itemName + " \u00A77-> \u00A76+$" + sellPrice));
-            RunManager.syncPlayer(player);
+            notifyShop(player, PopupNotificationMessage.PopupType.REWARD,
+                Component.literal("SOLD"),
+                Component.literal("+$" + sellPrice + " " + stack.getHoverName().getString()));
         } catch (NumberFormatException ignored) {}
     }
 
@@ -141,9 +161,9 @@ public final class ShopService {
 
     // ===== 繝倥Ν繝代・ =====
 
-    private static int findPrice(String itemId) {
+    private static int findPrice(String itemId, int shopFloor) {
         ShopCatalog.ShopItem catalogItem = findCatalogItem(itemId);
-        if (catalogItem != null) return catalogItem.price;
+        if (catalogItem != null) return PriceManager.getShopBuyPrice(catalogItem, shopFloor);
         return PriceManager.getPrice(itemId);
     }
 
@@ -188,5 +208,10 @@ public final class ShopService {
         TacRogueNetworking.CHANNEL.send(
             PacketDistributor.PLAYER.with(() -> player),
             new SyncDataMessage("gold:" + currentGold));
+    }
+
+    private static void notifyShop(ServerPlayer player, PopupNotificationMessage.PopupType type,
+                                   Component title, Component body) {
+        PopupNotificationMessage.send(player, type, title, body, 120);
     }
 }

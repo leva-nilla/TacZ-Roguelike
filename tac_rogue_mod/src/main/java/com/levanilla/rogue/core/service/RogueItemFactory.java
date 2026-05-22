@@ -60,7 +60,11 @@ public final class RogueItemFactory {
 
         String fullId = itemId.contains(":") ? itemId : ("tacz:" + itemId);
         if (isKnownAttachment(fullId)) return createAttachmentStack(fullId);
-        if (isKnownAmmo(fullId)) return createAmmoStack(player, fullId);
+        if (isKnownAmmo(fullId)) return createShopAmmoStack(fullId);
+        if (isKnownMelee(fullId, itemId)) {
+            WeaponRarity.Rarity rarity = WeaponRarity.rollShopRarity(shopFloor, fullId);
+            return createMeleeStack(fullId, rarity);
+        }
         if (!isShopGun(fullId, itemId)) return createItemStack(player, itemId);
 
         WeaponRarity.Rarity rarity = WeaponRarity.rollShopRarity(shopFloor, fullId);
@@ -71,27 +75,38 @@ public final class RogueItemFactory {
         String fullId = itemId.contains(":") ? itemId : ("tacz:" + itemId);
         WeaponRarity.Rarity rarity = WeaponRarity.atLeast(
             WeaponRarity.rollRarity(floor, random), WeaponRarity.Rarity.RARE);
-        return createGunStack(fullId, rarity);
+        ItemStack stack = createGunStack(fullId, rarity);
+        DeepProgressService.maybeApplyDeepModifier(stack, floor, random, 0.18f);
+        return stack;
     }
 
     public static ItemStack createMeleeStack(String fullId) {
+        return createMeleeStack(fullId, null);
+    }
+
+    public static ItemStack createMeleeStack(String fullId, WeaponRarity.Rarity rarity) {
+        ItemStack stack = ItemStack.EMPTY;
         if (LrTacticalRegistry.isAvailable()) {
             ResourceLocation resLoc = new ResourceLocation(fullId);
             ItemStack apiStack = LrTacticalRegistry.createMeleeStack(resLoc);
-            if (!apiStack.isEmpty()) return apiStack;
+            if (!apiStack.isEmpty()) stack = apiStack;
         }
 
-        net.minecraft.world.item.Item meleeBase = ForgeRegistries.ITEMS.getValue(
-            new ResourceLocation("lrtactical", "melee"));
-        if (meleeBase != null && meleeBase != Items.AIR) {
-            ItemStack stack = new ItemStack(meleeBase);
-            CompoundTag tag = new CompoundTag();
-            tag.putString("MeleeWeaponId", fullId);
-            tag.putBoolean("Unbreakable", true);
-            stack.setTag(tag);
-            return stack;
+        if (stack.isEmpty()) {
+            net.minecraft.world.item.Item meleeBase = ForgeRegistries.ITEMS.getValue(
+                new ResourceLocation("lrtactical", "melee"));
+            if (meleeBase == null || meleeBase == Items.AIR) return ItemStack.EMPTY;
+            stack = new ItemStack(meleeBase);
         }
-        return ItemStack.EMPTY;
+
+        CompoundTag tag = stack.getOrCreateTag();
+        tag.putString("MeleeWeaponId", fullId);
+        tag.putBoolean("Unbreakable", true);
+
+        if (rarity != null) {
+            WeaponRarity.applyRarity(stack, rarity);
+        }
+        return stack;
     }
 
     public static ItemStack createAttachmentStack(String fullId) {
@@ -108,6 +123,14 @@ public final class RogueItemFactory {
     }
 
     public static ItemStack createAmmoStack(ServerPlayer player, String fullId) {
+        return createAmmoStack(player, fullId, true);
+    }
+
+    public static ItemStack createShopAmmoStack(String fullId) {
+        return createAmmoStack(null, fullId, false);
+    }
+
+    private static ItemStack createAmmoStack(ServerPlayer player, String fullId, boolean applyAmmoPouch) {
         net.minecraft.world.item.Item item = ForgeRegistries.ITEMS.getValue(
             new ResourceLocation("tacz", "ammo"));
         if (item != null) {
@@ -117,7 +140,7 @@ public final class RogueItemFactory {
             stack.setTag(tag);
 
             int baseAmount = TacZRegistryHelper.getAmmoStackSize(fullId);
-            stack.setCount(RunManager.getAmmoStackLimit(player, baseAmount));
+            stack.setCount(applyAmmoPouch ? RunManager.getAmmoStackLimit(player, baseAmount) : Math.max(1, baseAmount));
 
             return stack;
         }
@@ -139,7 +162,8 @@ public final class RogueItemFactory {
             tag.putBoolean("HasBulletInBarrel", true);
             stack.setTag(tag);
             WeaponRarity.applyRarity(stack, rarity);
-            int magazineSize = WeaponRarity.getEffectiveMagazineSize(stack, TacZRegistryHelper.getMagazineSize(fullId));
+            int magazineSize = com.levanilla.rogue.core.TacZMagazineHelper.getEffectiveMagazineSize(
+                stack, null, TacZRegistryHelper.getMagazineSize(fullId));
             stack.getOrCreateTag().putInt("GunCurrentAmmoCount", magazineSize);
             return stack;
         }
@@ -151,19 +175,19 @@ public final class RogueItemFactory {
             case "rogue:medkit" -> GearService.createMedkitStack(1);
             case "rogue:field_ration" -> {
                 var stack = new ItemStack(Items.COOKED_BEEF, 3);
-                applyRecoveryLore(stack, "\u00a7f\u2726 FIELD RATION", new String[]{
-                    "\u00a77Right click to consume.",
-                    "\u00a77HP +6 / hunger recovery."
-                });
+                applyRecoveryLore(stack,
+                    Component.translatable("item.tac_rogue.field_ration"),
+                    Component.translatable("item.tac_rogue.field_ration.lore.0"),
+                    Component.translatable("item.tac_rogue.field_ration.lore.1"));
                 stack.getOrCreateTag().putInt("CustomModelData", 39003);
                 yield stack;
             }
             case "rogue:stamina_shot" -> {
                 var stack = new ItemStack(Items.HONEY_BOTTLE, 1);
-                applyRecoveryLore(stack, "\u00a7b\u2726 STAMINA SHOT", new String[]{
-                    "\u00a77Right click to inject.",
-                    "\u00a77Restores stamina and raises the maximum temporarily."
-                });
+                applyRecoveryLore(stack,
+                    Component.translatable("item.tac_rogue.stamina_shot"),
+                    Component.translatable("item.tac_rogue.stamina_shot.lore.0"),
+                    Component.translatable("item.tac_rogue.stamina_shot.lore.1"));
                 stack.enchant(net.minecraft.world.item.enchantment.Enchantments.UNBREAKING, 1);
                 stack.getOrCreateTag().putInt("HideFlags", 1);
                 stack.getOrCreateTag().putInt("CustomModelData", 39005);
@@ -171,29 +195,29 @@ public final class RogueItemFactory {
             }
             case "rogue:bandage" -> {
                 var stack = new ItemStack(Items.STRING, 1);
-                applyRecoveryLore(stack, "\u00a7f\u2726 BANDAGE", new String[]{
-                    "\u00a77Right click to use.",
-                    "\u00a77Restores 15% of max HP."
-                });
+                applyRecoveryLore(stack,
+                    Component.translatable("item.tac_rogue.bandage"),
+                    Component.translatable("item.tac_rogue.bandage.lore.0"),
+                    Component.translatable("item.tac_rogue.bandage.lore.1"));
                 stack.getOrCreateTag().putInt("CustomModelData", 39010);
                 yield stack;
             }
             case "rogue:armor_plate" -> {
                 var stack = new ItemStack(Items.IRON_INGOT, 1);
-                applyRecoveryLore(stack, "\u00a7b\u2726 ARMOR PLATE", new String[]{
-                    "\u00a77Right click to equip.",
-                    "\u00a77Armor +8 for 30 seconds."
-                });
+                applyRecoveryLore(stack,
+                    Component.translatable("item.tac_rogue.armor_plate"),
+                    Component.translatable("item.tac_rogue.armor_plate.lore.0"),
+                    Component.translatable("item.tac_rogue.armor_plate.lore.1"));
                 stack.getOrCreateTag().putInt("CustomModelData", 39011);
                 yield stack;
             }
             case "rogue:adrenaline" -> {
                 var stack = new ItemStack(Items.GLASS_BOTTLE, 1);
-                applyRecoveryLore(stack, "\u00a7c\u2726 ADRENALINE SYRINGE", new String[]{
-                    "\u00a77Right click to inject.",
-                    "\u00a77Damage +30% and speed +20% for 20 seconds.",
-                    "\u00a74Applies slowness after the effect ends."
-                });
+                applyRecoveryLore(stack,
+                    Component.translatable("item.tac_rogue.adrenaline"),
+                    Component.translatable("item.tac_rogue.adrenaline.lore.0"),
+                    Component.translatable("item.tac_rogue.adrenaline.lore.1"),
+                    Component.translatable("item.tac_rogue.adrenaline.lore.2"));
                 stack.enchant(net.minecraft.world.item.enchantment.Enchantments.UNBREAKING, 1);
                 stack.getOrCreateTag().putInt("HideFlags", 1);
                 stack.getOrCreateTag().putInt("CustomModelData", 39012);
@@ -201,11 +225,11 @@ public final class RogueItemFactory {
             }
             case "rogue:emp_device" -> {
                 var stack = new ItemStack(Items.REDSTONE, 1);
-                applyRecoveryLore(stack, "\u00a7e\u2726 EMP DEVICE", new String[]{
-                    "\u00a77Right click to discharge.",
-                    "\u00a77Slows and weakens hostiles within 10 blocks.",
-                    "\u00a77Duration: 5 seconds."
-                });
+                applyRecoveryLore(stack,
+                    Component.translatable("item.tac_rogue.emp_device"),
+                    Component.translatable("item.tac_rogue.emp_device.lore.0"),
+                    Component.translatable("item.tac_rogue.emp_device.lore.1"),
+                    Component.translatable("item.tac_rogue.emp_device.lore.2"));
                 stack.getOrCreateTag().putInt("CustomModelData", 39013);
                 yield stack;
             }
@@ -219,6 +243,14 @@ public final class RogueItemFactory {
 
     private static boolean isKnownAmmo(String fullId) {
         return TacZRegistryHelper.getAllAmmoIds().contains(fullId);
+    }
+
+    private static boolean isKnownMelee(String fullId, String itemId) {
+        if (!LrTacticalRegistry.isAvailable()) return false;
+        for (var melee : ShopCatalog.getBuiltinMelee()) {
+            if (melee.id.equals(fullId) || melee.id.equals(itemId)) return true;
+        }
+        return false;
     }
 
     private static boolean isShopGun(String fullId, String itemId) {
@@ -236,12 +268,12 @@ public final class RogueItemFactory {
         return true;
     }
 
-    private static void applyRecoveryLore(ItemStack stack, String name, String[] lore) {
-        stack.setHoverName(Component.literal(name));
+    private static void applyRecoveryLore(ItemStack stack, Component name, Component... lore) {
+        stack.setHoverName(name);
         CompoundTag display = stack.getOrCreateTagElement("display");
         ListTag loreList = new ListTag();
-        for (String line : lore) {
-            loreList.add(StringTag.valueOf(Component.Serializer.toJson(Component.literal(line))));
+        for (Component line : lore) {
+            loreList.add(StringTag.valueOf(Component.Serializer.toJson(line)));
         }
         display.put("Lore", loreList);
         stack.getOrCreateTag().putBoolean("rogue_item", true);

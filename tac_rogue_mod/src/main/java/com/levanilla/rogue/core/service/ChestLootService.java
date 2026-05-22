@@ -21,6 +21,7 @@ import java.util.UUID;
 
 public final class ChestLootService {
     public static final String CHEST_INDEX_KEY = "TacRogueChestIndex";
+    public static final String CHEST_TOTAL_KEY = "TacRogueChestTotal";
 
     private ChestLootService() {}
 
@@ -30,17 +31,27 @@ public final class ChestLootService {
 
     public static List<ItemStack> generatePersonalChestLoot(ServerPlayer player, int floor, int chestIndex) {
         int safeFloor = Math.max(1, floor);
-        Random rand = new Random(stableSeed(player.getUUID(), safeFloor, Math.max(0, chestIndex)));
+        int safeChestIndex = Math.max(0, chestIndex);
+        Random rand = new Random(stableSeed(player.getUUID(), safeFloor, safeChestIndex));
         List<ItemStack> loot = new ArrayList<>();
 
-        addIfPresent(loot, rollRecovery(rand, safeFloor));
-        addAmmo(loot, player, rand, safeFloor);
+        if (rand.nextFloat() < recoverySlotChance(safeFloor, safeChestIndex)) {
+            addIfPresent(loot, rollRecovery(rand, safeFloor));
+        }
+        if (rand.nextFloat() < ammoSlotChance(safeFloor, safeChestIndex)) {
+            addAmmo(loot, player, rand, safeFloor);
+        }
         rollDefense(loot, rand, safeFloor);
         rollTactical(loot, rand, safeFloor);
         rollMaterial(loot, rand, safeFloor);
         rollAttachment(loot, rand, safeFloor);
         rollWeapon(loot, rand, safeFloor);
+        addBandSupportGuarantee(loot, player, rand, safeFloor, safeChestIndex);
+        addSupplyLineBonus(loot, player, rand, safeFloor);
 
+        if (loot.isEmpty()) {
+            addIfPresent(loot, createScrapMetal(1));
+        }
         return loot;
     }
 
@@ -51,6 +62,18 @@ public final class ChestLootService {
         seed ^= (long) floor * 0x9E37_79B9_7F4A_7C15L;
         seed = Long.rotateLeft(seed, 23) ^ ((long) chestIndex * 0xD1B5_4A32_D192_ED03L);
         return seed;
+    }
+
+    private static float recoverySlotChance(int floor, int chestIndex) {
+        float base = floor <= 4 ? 0.85F : floor <= 14 ? 0.75F : floor <= 34 ? 0.68F : 0.62F;
+        if (chestIndex > 0) base -= 0.20F;
+        return clamp(base, 0.35F, 0.90F);
+    }
+
+    private static float ammoSlotChance(int floor, int chestIndex) {
+        float base = floor <= 4 ? 0.90F : floor <= 14 ? 0.82F : floor <= 34 ? 0.76F : 0.70F;
+        if (chestIndex > 0) base -= 0.20F;
+        return clamp(base, 0.45F, 0.95F);
     }
 
     private static ItemStack rollRecovery(Random rand, int floor) {
@@ -87,7 +110,7 @@ public final class ChestLootService {
     }
 
     private static void rollDefense(List<ItemStack> loot, Random rand, int floor) {
-        float chance = floor <= 4 ? 0.25F : floor <= 14 ? 0.35F : floor <= 34 ? 0.45F : 0.55F;
+        float chance = floor <= 4 ? 0.18F : floor <= 14 ? 0.26F : floor <= 34 ? 0.34F : 0.40F;
         if (rand.nextFloat() >= chance) return;
         float roll = rand.nextFloat();
         if (floor <= 4) {
@@ -108,7 +131,7 @@ public final class ChestLootService {
     }
 
     private static void rollTactical(List<ItemStack> loot, Random rand, int floor) {
-        float chance = floor <= 4 ? 0.25F : floor <= 9 ? 0.35F : floor <= 24 ? 0.45F : 0.55F;
+        float chance = floor <= 4 ? 0.16F : floor <= 9 ? 0.24F : floor <= 24 ? 0.32F : 0.38F;
         if (rand.nextFloat() >= chance) return;
         float roll = rand.nextFloat();
         if (floor <= 4) {
@@ -129,7 +152,7 @@ public final class ChestLootService {
     }
 
     private static void rollMaterial(List<ItemStack> loot, Random rand, int floor) {
-        float chance = floor <= 9 ? 0.45F : floor <= 29 ? 0.50F : 0.55F;
+        float chance = floor <= 9 ? 0.35F : floor <= 29 ? 0.40F : 0.45F;
         if (rand.nextFloat() >= chance) return;
         if (floor <= 9) {
             addIfPresent(loot, createScrapMetal(1 + rand.nextInt(3)));
@@ -145,7 +168,7 @@ public final class ChestLootService {
     }
 
     private static void rollAttachment(List<ItemStack> loot, Random rand, int floor) {
-        float chance = clamp(0.10F + floor * 0.004F, 0.10F, 0.35F);
+        float chance = clamp(0.08F + floor * 0.003F, 0.08F, 0.28F);
         if (rand.nextFloat() >= chance) return;
         List<String> attachments = TacZRegistryHelper.getAllAttachmentIds();
         if (attachments.isEmpty()) return;
@@ -154,14 +177,92 @@ public final class ChestLootService {
 
     private static void rollWeapon(List<ItemStack> loot, Random rand, int floor) {
         if (floor < 6) return;
-        float chance = clamp(0.06F + (floor - 6) * 0.006F, 0.06F, 0.28F);
+        float chance = clamp(0.05F + (floor - 6) * 0.004F, 0.05F, 0.20F);
         if (rand.nextFloat() >= chance) return;
         List<ShopCatalog.ShopItem> candidates = weaponCandidates(floor, true);
         if (candidates.isEmpty()) return;
         ShopCatalog.ShopItem chosen = candidates.get(rand.nextInt(candidates.size()));
         WeaponRarity.Rarity rarity = WeaponRarity.rollRarity(
             Math.max(1, floor - 5), RandomSource.create(rand.nextLong()));
-        addIfPresent(loot, RogueItemFactory.createGunStack(chosen.id, rarity));
+        ItemStack stack = chosen.category == ShopCatalog.Category.MELEE
+            ? RogueItemFactory.createMeleeStack(chosen.id, rarity)
+            : RogueItemFactory.createGunStack(chosen.id, rarity);
+        if (chosen.category != ShopCatalog.Category.MELEE) {
+            DeepProgressService.maybeApplyDeepModifier(stack, floor, RandomSource.create(rand.nextLong()), 0.16f);
+        }
+        addIfPresent(loot, stack);
+    }
+
+    private static void addBandSupportGuarantee(List<ItemStack> loot, ServerPlayer player, Random rand, int floor, int chestIndex) {
+        if (chestIndex != 0) return;
+        int floorInBand = Math.floorMod(floor - 1, 5) + 1;
+        float chance = floorInBand == 5 ? 0.50F : 0.35F;
+        if (rand.nextFloat() >= chance) return;
+        switch (floorInBand) {
+            case 1 -> addIfPresent(loot, RogueItemFactory.createRecoveryItem("rogue:armor_plate"));
+            case 2 -> addGuaranteedAttachment(loot, rand);
+            case 3 -> {
+                addIfPresent(loot, createScrapMetal(2 + rand.nextInt(3)));
+                if (rand.nextFloat() < 0.50F) {
+                    addIfPresent(loot, RogueItemFactory.createRecoveryItem("rogue:stamina_shot"));
+                }
+            }
+            case 4 -> addGuaranteedBandWeaponOrAttachment(loot, player, rand, floor);
+            case 5 -> {
+                addIfPresent(loot, rand.nextBoolean()
+                    ? RogueItemFactory.createRecoveryItem("rogue:medkit")
+                    : RogueItemFactory.createRecoveryItem("rogue:armor_plate"));
+            }
+            default -> { }
+        }
+    }
+
+    private static void addGuaranteedAttachment(List<ItemStack> loot, Random rand) {
+        List<String> attachments = TacZRegistryHelper.getAllAttachmentIds();
+        if (attachments.isEmpty()) return;
+        addIfPresent(loot, RogueItemFactory.createAttachmentStack(attachments.get(rand.nextInt(attachments.size()))));
+    }
+
+    private static void addGuaranteedBandWeaponOrAttachment(List<ItemStack> loot, ServerPlayer player, Random rand, int floor) {
+        if (floor < 6) {
+            addGuaranteedAttachment(loot, rand);
+            return;
+        }
+        List<ShopCatalog.ShopItem> candidates = RewardSelectionService.chestWeaponCandidates(floor);
+        if (candidates.isEmpty()) {
+            addGuaranteedAttachment(loot, rand);
+            return;
+        }
+        ShopCatalog.ShopItem chosen = candidates.get(rand.nextInt(candidates.size()));
+        WeaponRarity.Rarity rarity = WeaponRarity.rollRarity(Math.max(1, floor - 5), RandomSource.create(rand.nextLong()));
+        ItemStack stack = chosen.category == ShopCatalog.Category.MELEE
+            ? RogueItemFactory.createMeleeStack(chosen.id, rarity)
+            : RogueItemFactory.createGunStack(chosen.id, rarity);
+        if (chosen.category != ShopCatalog.Category.MELEE) {
+            float chance = 0.18f + DeepProgressService.getSupplyLineLevel(player) * 0.03f;
+            DeepProgressService.maybeApplyDeepModifier(stack, floor, RandomSource.create(rand.nextLong()), chance);
+        }
+        addIfPresent(loot, stack);
+    }
+
+    private static void addSupplyLineBonus(List<ItemStack> loot, ServerPlayer player, Random rand, int floor) {
+        int level = DeepProgressService.getSupplyLineLevel(player);
+        if (level <= 0) return;
+        float chance = clamp(0.10F + level * 0.05F, 0.0F, 0.38F);
+        if (rand.nextFloat() >= chance) return;
+
+        float roll = rand.nextFloat();
+        if (roll < 0.25F) {
+            addIfPresent(loot, RogueItemFactory.createRecoveryItem("rogue:armor_plate"));
+        } else if (roll < 0.45F) {
+            addIfPresent(loot, RogueItemFactory.createRecoveryItem("rogue:medkit"));
+        } else if (roll < 0.65F) {
+            addGuaranteedAttachment(loot, rand);
+        } else if (roll < 0.85F) {
+            addIfPresent(loot, createScrapMetal(2 + rand.nextInt(2 + level)));
+        } else {
+            addGuaranteedBandWeaponOrAttachment(loot, player, rand, Math.max(6, floor));
+        }
     }
 
     private static List<ShopCatalog.ShopItem> weaponCandidates(int floor, boolean forWeaponDrop) {
@@ -178,7 +279,8 @@ public final class ChestLootService {
             }
             if (item.price > maxPrice) continue;
 
-            int weight = item.category == ShopCatalog.Category.EXPLOSIVE ? 1 : 4;
+            int weight = item.category == ShopCatalog.Category.MELEE ? 2
+                : item.category == ShopCatalog.Category.EXPLOSIVE ? 1 : 4;
             for (int i = 0; i < weight; i++) weighted.add(item);
         }
 
@@ -186,7 +288,8 @@ public final class ChestLootService {
     }
 
     private static boolean isAllowedChestWeaponCategory(ShopCatalog.Category category, int floor, boolean forWeaponDrop) {
-        if (category == null || category == ShopCatalog.Category.MELEE || category == ShopCatalog.Category.TACTICAL) return false;
+        if (category == null || category == ShopCatalog.Category.TACTICAL) return false;
+        if (category == ShopCatalog.Category.MELEE) return forWeaponDrop;
         if (!category.isWeapon()) return false;
         if (!forWeaponDrop && floor <= 5) {
             return category == ShopCatalog.Category.PISTOL || category == ShopCatalog.Category.SMG;
@@ -219,11 +322,12 @@ public final class ChestLootService {
 
     private static ItemStack createEmergencyRation() {
         ItemStack stack = new ItemStack(Items.GOLDEN_APPLE);
-        applyRogueLore(stack, "\u00a76* EMERGENCY RATION", new String[]{
-            "\u00a77Restores health in an emergency.",
-            "\u00a77Right click to recover HP.",
-            "\u00a78\u00a7oRarity: \u00a7eRARE"
-        }, 39001);
+        applyRogueLore(stack,
+            Component.translatable("item.tac_rogue.emergency_ration"),
+            39001,
+            Component.translatable("item.tac_rogue.emergency_ration.lore.0"),
+            Component.translatable("item.tac_rogue.emergency_ration.lore.1"),
+            Component.translatable("item.tac_rogue.rarity.rare"));
         stack.enchant(net.minecraft.world.item.enchantment.Enchantments.UNBREAKING, 1);
         stack.getOrCreateTag().putInt("HideFlags", 1);
         return stack;
@@ -231,30 +335,32 @@ public final class ChestLootService {
 
     private static ItemStack createGoldCache() {
         ItemStack stack = new ItemStack(Items.RAW_GOLD, 1);
-        applyRogueLore(stack, "\u00a7e* GOLD CACHE", new String[]{
-            "\u00a77A small cache of gold.",
-            "\u00a77Right click in lobby to gain \u00a7e" + GameConstants.GOLD_CACHE_VALUE + " G\u00a77.",
-            "\u00a78\u00a7oRarity: \u00a77COMMON"
-        }, 39004);
+        applyRogueLore(stack,
+            Component.translatable("item.tac_rogue.gold_cache"),
+            39004,
+            Component.translatable("item.tac_rogue.gold_cache.lore.0"),
+            Component.translatable("item.tac_rogue.gold_cache.lore.1", GameConstants.GOLD_CACHE_VALUE),
+            Component.translatable("item.tac_rogue.rarity.common"));
         return stack;
     }
 
     private static ItemStack createScrapMetal(int count) {
         ItemStack stack = new ItemStack(Items.RAW_IRON, Math.max(1, count));
-        applyRogueLore(stack, "\u00a78* SCRAP METAL", new String[]{
-            "\u00a77Usable scrap material.",
-            "\u00a77Right click in lobby to gain \u00a7e" + GameConstants.SCRAP_SELL_VALUE + " G\u00a77.",
-            "\u00a78\u00a7oRarity: \u00a77COMMON"
-        }, 39006);
+        applyRogueLore(stack,
+            Component.translatable("item.tac_rogue.scrap_metal"),
+            39006,
+            Component.translatable("item.tac_rogue.scrap_metal.lore.0"),
+            Component.translatable("item.tac_rogue.scrap_metal.lore.1", GameConstants.SCRAP_SELL_VALUE),
+            Component.translatable("item.tac_rogue.rarity.common"));
         return stack;
     }
 
-    private static void applyRogueLore(ItemStack stack, String name, String[] lore, int customModelData) {
-        stack.setHoverName(Component.literal(name));
+    private static void applyRogueLore(ItemStack stack, Component name, int customModelData, Component... lore) {
+        stack.setHoverName(name);
         CompoundTag display = stack.getOrCreateTagElement("display");
         ListTag loreList = new ListTag();
-        for (String line : lore) {
-            loreList.add(StringTag.valueOf(Component.Serializer.toJson(Component.literal(line))));
+        for (Component line : lore) {
+            loreList.add(StringTag.valueOf(Component.Serializer.toJson(line)));
         }
         display.put("Lore", loreList);
         stack.getOrCreateTag().putBoolean("rogue_item", true);
