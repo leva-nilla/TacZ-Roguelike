@@ -1,0 +1,40 @@
+# Build and Gradle outputs
+**/build/
+**/.gradle/
+
+# Local IDE and assistant state
+.vscode/
+.gemini/
+
+# Local reference sources and extracted/decompiled scratch data
+tacz_src/
+tmp/
+tmp_*/
+/tmp_*
+
+# Local reference mod jars; the modpack source of truth is tac_rogue_modpack/
+mods/
+resourcepacks/
+
+# Root-level generated jars. Release artifacts belong under releases/.
+/*.jar
+
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Runtime logs and temporary benchmark output
+*.log
+*.tmp
+/releases/
+/scripts/
+/tests/
+tests/**/results/*
+!tests/**/results/.gitignore
+releases/backups/
+
+# Local source/class audit dumps
+tac_rogue_mod/*_src_dump.txt
+tac_rogue_mod/class_headers.txt
+tac_rogue_mod/class_summary.txt
+tac_rogue_mod/file_stats.txt
