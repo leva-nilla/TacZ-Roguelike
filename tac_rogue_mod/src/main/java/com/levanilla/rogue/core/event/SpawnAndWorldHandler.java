@@ -82,6 +82,10 @@ public class SpawnAndWorldHandler {
 
             // 強化版亡霊処理: チャンクロード時に過去のエンティティを一掃する
             boolean isSpawnedOrNpc = mob.getTags().contains("tac_rogue_spawned") || mob.getTags().contains("tac_rogue_npc");
+            if (!isSpawnedOrNpc) {
+                event.setCanceled(true);
+                return;
+            }
             if (isSpawnedOrNpc && event.getLevel() instanceof ServerLevel sl) {
                 PlayerRunData data = RunManager.findDataForDungeonPosition(sl, mob.getX(), mob.getZ());
                 if (data != null && data.isRunActive()) {
@@ -120,6 +124,12 @@ public class SpawnAndWorldHandler {
             var followRange = mob.getAttribute(net.minecraft.world.entity.ai.attributes.Attributes.FOLLOW_RANGE);
             if (followRange != null && followRange.getBaseValue() > 24.0) {
                 followRange.setBaseValue(24.0);
+            }
+        } else if (dim == LOBBY_DIM && event.getEntity() instanceof Mob mob) {
+            boolean isNpc = mob.getTags().contains("tac_rogue_npc");
+            if (!isNpc) {
+                event.setCanceled(true);
+                return;
             }
         }
 

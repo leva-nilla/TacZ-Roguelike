@@ -272,9 +272,9 @@ public class MapGenerator {
                 int worldX = center.getX() + (gx - GRID_CENTER);
                 int worldZ = center.getZ() + (gz - GRID_CENTER);
                 if (cellType == VOID) {
-                    if (shape.style() == ThemeManager.ThemeGenerationStyle.ROOFTOP_OPEN) {
+                    if (shape.needsLowBackdrop()) {
                         setBlock(level, new BlockPos(worldX, baseY - 4, worldZ),
-                            rooftopBackdropBlock(theme, gx, gz));
+                            outdoorBackdropBlock(theme, gx, gz));
                     }
                     continue;
                 }
@@ -318,6 +318,9 @@ public class MapGenerator {
                     }
                 }
             }
+        }
+        if (shape.blocksNaturalSkyLight()) {
+            buildSkyLightOccluder(level, theme, center, baseY, shape);
         }
 
         // --- Phase 4: 照明配置（天井に埋め込み）---
@@ -617,8 +620,8 @@ public class MapGenerator {
                 }
             }
         }
-        if (shape.style() == ThemeManager.ThemeGenerationStyle.ROOFTOP_OPEN) {
-            buildRooftopBackdrop(level, rand, theme, center, baseY, wallR);
+        if (shape.needsLowBackdrop()) {
+            buildOutdoorBackdrop(level, rand, theme, center, baseY, wallR, shape);
         }
 
         GenerationJob finalJob = ACTIVE_GENERATION_JOB.get();
@@ -718,6 +721,22 @@ public class MapGenerator {
 
         private boolean needsInvisibleSafetyCap() {
             return style == ThemeManager.ThemeGenerationStyle.ROOFTOP_OPEN;
+        }
+
+        private boolean needsLowBackdrop() {
+            return style == ThemeManager.ThemeGenerationStyle.ROOFTOP_OPEN
+                || style == ThemeManager.ThemeGenerationStyle.RADAR_OPEN;
+        }
+
+        private boolean blocksNaturalSkyLight() {
+            return ceilingMode == CeilingMode.BROKEN;
+        }
+
+        private BlockState skyOccluder(ThemeManager.ThemeInstance theme) {
+            return switch (style) {
+                case ROOFTOP_OPEN, RADAR_OPEN -> Blocks.BLACK_CONCRETE.defaultBlockState();
+                default -> theme.ceil;
+            };
         }
 
         private int wallTop(int gx, int gz) {
@@ -1012,8 +1031,21 @@ public class MapGenerator {
         }
     }
 
-    private static void buildRooftopBackdrop(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
-                                             BlockPos center, int baseY, int innerR) {
+    private static void buildSkyLightOccluder(ServerLevel level, ThemeManager.ThemeInstance theme,
+                                              BlockPos center, int baseY, ThemeShapeProfile shape) {
+        int y = baseY + ROOM_HEIGHT + 4;
+        int radius = ROOM_RADIUS + 8;
+        BlockState occluder = shape.skyOccluder(theme);
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                setBlock(level, new BlockPos(center.getX() + dx, y, center.getZ() + dz), occluder);
+            }
+        }
+    }
+
+    private static void buildOutdoorBackdrop(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                             BlockPos center, int baseY, int innerR,
+                                             ThemeShapeProfile shape) {
         int outerR = innerR + ROOFTOP_BACKDROP_MARGIN;
         int roofY = baseY - 4;
         for (int dx = -outerR; dx <= outerR; dx++) {
@@ -1021,11 +1053,11 @@ public class MapGenerator {
                 if (Math.abs(dx) <= innerR && Math.abs(dz) <= innerR) continue;
                 int worldX = center.getX() + dx;
                 int worldZ = center.getZ() + dz;
-                setBlock(level, new BlockPos(worldX, roofY, worldZ), rooftopBackdropBlock(theme, dx, dz));
+                setBlock(level, new BlockPos(worldX, roofY, worldZ), outdoorBackdropBlock(theme, dx, dz));
             }
         }
 
-        int cityBlocks = 26;
+        int cityBlocks = shape.style() == ThemeManager.ThemeGenerationStyle.RADAR_OPEN ? 16 : 26;
         for (int i = 0; i < cityBlocks; i++) {
             int side = i % 4;
             int offset = -outerR + 6 + rand.nextInt(Math.max(1, outerR * 2 - 12));
@@ -1054,7 +1086,7 @@ public class MapGenerator {
         }
     }
 
-    private static BlockState rooftopBackdropBlock(ThemeManager.ThemeInstance theme, int x, int z) {
+    private static BlockState outdoorBackdropBlock(ThemeManager.ThemeInstance theme, int x, int z) {
         return ((Math.floorDiv(x, 7) + Math.floorDiv(z, 7)) & 1) == 0
             ? theme.floor
             : theme.accent;
