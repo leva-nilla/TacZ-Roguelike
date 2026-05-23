@@ -1,5 +1,6 @@
 package com.levanilla.rogue.client;
 
+import com.levanilla.rogue.TacRogue;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
@@ -143,11 +144,11 @@ public class TacRogueTitleScreen extends Screen {
         graphics.fill(x - 10, y - 10, x + panelW + 10, y + panelH + 10, 0xB805090B);
         graphics.fill(x - 10, y - 10, x + panelW + 10, y - 8, 0xAA54E7C4);
         graphics.fill(x + Math.max(0, panelW - 110), y + panelH + 8, x + panelW + 10, y + panelH + 10, 0x99E6C76A);
-        graphics.drawString(font, Component.literal(fitLabel(font, "LR-TAC ROGUELIKE", panelW)), x, y, 0xFFE8FFF8, false);
+        graphics.drawString(font, Component.literal(fitLabel(font, TacRogue.DISPLAY_NAME, panelW)), x, y, 0xFFE8FFF8, false);
         graphics.drawString(font, Component.literal(fitLabel(font, Component.translatable("gui.tac_rogue.title.status").getString(), panelW)), x, y + 18, 0xFF74DDBE, false);
         if (!layout.compactTitle) {
             graphics.drawString(font, Component.literal(fitLabel(font, Component.translatable("gui.tac_rogue.title.protocol").getString(), panelW)), x, y + 35, 0xFF8A98A0, false);
-            graphics.drawString(font, Component.literal("PACK V0.6.0"), x, y + 52, 0xFF708087, false);
+            graphics.drawString(font, Component.literal(fitLabel(font, TacRogue.displayNameWithVersion(), panelW)), x, y + 52, 0xFF708087, false);
         }
     }
 

@@ -11,7 +11,9 @@ public final class TacticalScreenStyle {
 
     public static boolean isWorldFlowScreen(Screen screen) {
         return screen instanceof net.minecraft.client.gui.screens.worldselection.SelectWorldScreen
-            || screen instanceof net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
+            || screen instanceof net.minecraft.client.gui.screens.worldselection.CreateWorldScreen
+            || screen instanceof net.minecraft.client.gui.screens.GenericDirtMessageScreen
+            || screen instanceof net.minecraft.client.gui.screens.ProgressScreen;
     }
 
     public static void renderBackground(GuiGraphics graphics, int w, int h) {
@@ -56,6 +58,32 @@ public final class TacticalScreenStyle {
         graphics.fill(x1, y1, x2, y1 + 2, 0xAA54E7C4);
         graphics.fill(x1, y2 - 2, x2, y2, 0x6654E7C4);
         graphics.fill(x1, y1, x1 + 2, y2, 0x8854E7C4);
+    }
+
+    public static void drawCenteredStatus(GuiGraphics graphics, Font font, int w, int h, Component title, Component body, int progress) {
+        int panelW = clamp(w * 42 / 100, 260, 560);
+        int panelH = progress >= 0 ? 112 : 86;
+        int x = w / 2 - panelW / 2;
+        int y = h / 2 - panelH / 2;
+        drawPanel(graphics, x, y, x + panelW, y + panelH);
+        drawFrame(graphics, x, y, x + panelW, y + panelH);
+
+        String titleText = fitLabel(font, title.getString(), panelW - 36);
+        graphics.drawString(font, Component.literal(titleText), x + 18, y + 18, 0xFFE8FFF8, false);
+        if (body != null) {
+            String bodyText = fitLabel(font, body.getString(), panelW - 36);
+            graphics.drawString(font, Component.literal(bodyText), x + 18, y + 40, 0xFF74DDBE, false);
+        }
+        if (progress >= 0) {
+            int barX = x + 18;
+            int barY = y + panelH - 34;
+            int barW = panelW - 36;
+            int clamped = clamp(progress, 0, 100);
+            graphics.fill(barX, barY, barX + barW, barY + 7, 0xFF020506);
+            graphics.fill(barX + 1, barY + 1, barX + barW - 1, barY + 6, 0xFF10191B);
+            graphics.fill(barX + 1, barY + 1, barX + 1 + (barW - 2) * clamped / 100, barY + 6, 0xCC54E7C4);
+            graphics.drawString(font, Component.literal(clamped + "%"), barX + barW - font.width(clamped + "%"), barY + 12, 0xFF8A98A0, false);
+        }
     }
 
     public static void drawFrame(GuiGraphics graphics, int x1, int y1, int x2, int y2) {

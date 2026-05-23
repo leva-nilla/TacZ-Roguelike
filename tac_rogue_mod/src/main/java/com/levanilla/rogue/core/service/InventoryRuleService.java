@@ -26,7 +26,6 @@ public final class InventoryRuleService {
             return;
         }
 
-        migrateLegacyAmmoSlots(player);
         prioritizeAmmoSlots(player);
         enforceInventoryLimits(player);
         enforceAmmoStackSizes(player);
@@ -354,20 +353,6 @@ public final class InventoryRuleService {
             ItemStack stack = player.getInventory().getItem(slot);
             if (isLockedSlotVisual(stack)) {
                 player.getInventory().setItem(slot, ItemStack.EMPTY);
-            }
-        }
-    }
-
-    private static void migrateLegacyAmmoSlots(ServerPlayer player) {
-        for (int slot = 9; slot <= 11; slot++) {
-            if (slot >= GameConstants.SLOT_AMMO_GUN1_START && slot <= GameConstants.SLOT_AMMO_GUN2_END) continue;
-            ItemStack stack = player.getInventory().getItem(slot);
-            if (stack.isEmpty() || !stack.hasTag() || !stack.getTag().contains("AmmoId")) continue;
-            ItemStack moving = stack.copy();
-            if (placeIntoAmmoSlots(player, moving, slot)) {
-                player.getInventory().setItem(slot, ItemStack.EMPTY);
-            } else if (moving.getCount() != stack.getCount()) {
-                player.getInventory().setItem(slot, moving);
             }
         }
     }

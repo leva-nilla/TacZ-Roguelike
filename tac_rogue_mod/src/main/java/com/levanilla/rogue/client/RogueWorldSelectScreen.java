@@ -3,7 +3,6 @@ package com.levanilla.rogue.client;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.worldselection.CreateWorldScreen;
 import net.minecraft.network.chat.Component;
@@ -128,7 +127,8 @@ public class RogueWorldSelectScreen extends Screen {
         if (summary == null || this.minecraft == null) return;
         String levelId = summary.getLevelId();
         String name = summary.getLevelName().isBlank() ? levelId : summary.getLevelName();
-        this.minecraft.setScreen(new ConfirmScreen(
+        this.minecraft.setScreen(new RogueConfirmScreen(
+            this,
             confirmed -> {
                 this.minecraft.setScreen(this);
                 if (confirmed) {

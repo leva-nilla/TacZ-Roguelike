@@ -12,9 +12,13 @@ import net.minecraftforge.fml.config.ModConfig;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.fml.ModLoadingContext;
+import net.minecraftforge.fml.ModList;
 
-@Mod("tac_rogue")
+@Mod(TacRogue.MOD_ID)
 public class TacRogue {
+    public static final String MOD_ID = "tac_rogue";
+    public static final String DISPLAY_NAME = "TacZ: Rogue Protocol";
+
     public TacRogue() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
         
@@ -35,5 +39,16 @@ public class TacRogue {
         event.enqueueWork(() -> {
             // Setup Tasks
         });
+    }
+
+    public static String version() {
+        return ModList.get()
+            .getModContainerById(MOD_ID)
+            .map(container -> container.getModInfo().getVersion().toString())
+            .orElse("dev");
+    }
+
+    public static String displayNameWithVersion() {
+        return DISPLAY_NAME + " v" + version();
     }
 }

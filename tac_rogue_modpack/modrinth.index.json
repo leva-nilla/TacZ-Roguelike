@@ -2,8 +2,8 @@
     "formatVersion": 1,
     "game": "minecraft",
     "versionId": "0.8.0",
-    "name": "TacZ Roguelike",
-    "summary": "Fast-paced tactical rougelike shooter built on TacZ.",
+    "name": "TacZ: Rogue Protocol",
+    "summary": "Fast-paced tactical roguelike shooter protocol built on TacZ.",
     "files": [
         {
             "path": "mods/acceleratedrendering-1.0.8-1.20.1-alpha.jar",
