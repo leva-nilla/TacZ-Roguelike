@@ -60,6 +60,7 @@ public class MapGenerator {
     private static final int CLEAR_MAX_Y_OFFSET = ROOM_HEIGHT + 4;
     private static final int SET_BLOCK_FLAGS = 2 | 16; // 2=クライアント通知, 16=ライト計算スキップ
     private static final int MAX_STORED_FOOTPRINTS = 32;
+    private static final float DARK_ROOM_CHANCE = 0.30F;
     private static final float EXTRA_SUPPLY_CHEST_CHANCE =
         readFloatProperty("tac_rogue.extraSupplyChestChance", 0.10F, 0.0F, 1.0F);
     public static final int DEFAULT_GENERATION_BLOCKS_PER_TICK =
@@ -324,13 +325,14 @@ public class MapGenerator {
         }
 
         // --- Phase 4: 照明配置（天井に埋め込み）---
-        // D3: 30%の部屋を暗闇エリアにする（照明スキップ）
+        // D3: 一部の部屋を暗闇エリアにする（照明スキップ）
         Set<int[]> darkRooms = new HashSet<>();
         for (int ri = 1; ri < rooms.size(); ri++) { // スポーン部屋(0)は常に照明あり
-            if (rand.nextFloat() < 0.30f) {
+            if (rand.nextFloat() < DARK_ROOM_CHANCE) {
                 darkRooms.add(rooms.get(ri));
             }
         }
+        ensureFlashlightDarkRoom(darkRooms, rooms, plan, shape);
 
         for (int gx = 0; gx < GRID_SIZE; gx++) {
             for (int gz = 0; gz < GRID_SIZE; gz++) {
@@ -684,6 +686,32 @@ public class MapGenerator {
         OPEN
     }
 
+    private static void ensureFlashlightDarkRoom(Set<int[]> darkRooms, List<int[]> rooms, DungeonPlan plan, ThemeShapeProfile shape) {
+        if (!shape.shouldGuaranteeFlashlightRoom() || !darkRooms.isEmpty() || rooms.size() <= 2) return;
+
+        int bestIndex = -1;
+        int bestScore = Integer.MIN_VALUE;
+        for (int i = 1; i < rooms.size(); i++) {
+            RoomRole role = i < plan.rooms().size() ? plan.rooms().get(i).role() : RoomRole.COMBAT_SMALL;
+            if (role == RoomRole.START || role == RoomRole.BOSS_ENTRY || role == RoomRole.BOSS_ARENA) continue;
+
+            int[] room = rooms.get(i);
+            int score = Math.abs(room[0]) + Math.abs(room[1]) + room[2] + room[3];
+            if (role == RoomRole.AMBUSH || role == RoomRole.ELITE) score += 24;
+            if (role == RoomRole.COVER_DENSE || role == RoomRole.COMBAT_LONG) score += 10;
+            if (role == RoomRole.SUPPLY_RISK || role == RoomRole.SIDE_REWARD) score -= 10;
+            if (score > bestScore) {
+                bestScore = score;
+                bestIndex = i;
+            }
+        }
+
+        if (bestIndex < 0) {
+            bestIndex = 1;
+        }
+        darkRooms.add(rooms.get(bestIndex));
+    }
+
     private record ThemeShapeProfile(
         ThemeManager.ThemeGenerationStyle style,
         CeilingMode ceilingMode,
@@ -730,6 +758,10 @@ public class MapGenerator {
 
         private boolean blocksNaturalSkyLight() {
             return ceilingMode == CeilingMode.BROKEN;
+        }
+
+        private boolean shouldGuaranteeFlashlightRoom() {
+            return !openCeiling();
         }
 
         private BlockState skyOccluder(ThemeManager.ThemeInstance theme) {

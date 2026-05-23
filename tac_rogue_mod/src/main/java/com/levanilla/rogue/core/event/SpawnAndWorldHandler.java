@@ -76,7 +76,10 @@ public class SpawnAndWorldHandler {
     @SubscribeEvent
     public static void onEntityJoinLevel(net.minecraftforge.event.entity.EntityJoinLevelEvent event) {
         var dim = event.getLevel().dimension();
+        boolean serverLevel = event.getLevel() instanceof ServerLevel;
         if (dim == ROGUE_DIM && event.getEntity() instanceof Mob mob) {
+            if (!serverLevel) return;
+
             mob.setPersistenceRequired();
             inheritSlimeSplitTracking(event, mob);
 
@@ -86,7 +89,7 @@ public class SpawnAndWorldHandler {
                 event.setCanceled(true);
                 return;
             }
-            if (isSpawnedOrNpc && event.getLevel() instanceof ServerLevel sl) {
+            if (event.getLevel() instanceof ServerLevel sl) {
                 PlayerRunData data = RunManager.findDataForDungeonPosition(sl, mob.getX(), mob.getZ());
                 if (data != null && data.isRunActive()) {
                     int mobFloor = mob.getPersistentData().getInt("TacRogueSpawnFloor");
@@ -126,6 +129,8 @@ public class SpawnAndWorldHandler {
                 followRange.setBaseValue(24.0);
             }
         } else if (dim == LOBBY_DIM && event.getEntity() instanceof Mob mob) {
+            if (!serverLevel) return;
+
             boolean isNpc = mob.getTags().contains("tac_rogue_npc");
             if (!isNpc) {
                 event.setCanceled(true);
@@ -135,6 +140,8 @@ public class SpawnAndWorldHandler {
 
         // ダンジョン・ロビーでのブロック破片ドロップを無効化
         if (dim == ROGUE_DIM || dim == LOBBY_DIM) {
+            if (!serverLevel) return;
+
             if (event.getEntity() instanceof net.minecraft.world.entity.item.ItemEntity itemEntity) {
                 if (itemEntity.getItem().getItem() instanceof net.minecraft.world.item.BlockItem) {
                     event.setCanceled(true);

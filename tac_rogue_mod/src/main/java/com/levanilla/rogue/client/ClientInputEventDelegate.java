@@ -16,6 +16,7 @@ final class ClientInputEventDelegate {
     private static boolean lastCrawlDown = false;
     private static boolean lastAdsInputSent = false;
     private static int lastAdsInputPacketTick = -20;
+    private static boolean guiScaleCapped = false;
 
     private ClientInputEventDelegate() {}
 
@@ -28,6 +29,7 @@ final class ClientInputEventDelegate {
 
             Minecraft mc = Minecraft.getInstance();
             ClientWelcomeScreenDelegate.handlePendingWelcomeScreen(mc);
+            ensureTacRogueGuiScale(mc);
             TutorialGuideManager.tick(mc);
             syncAdsInput(mc);
             handleRogueSneakToggle(mc);
@@ -58,6 +60,34 @@ final class ClientInputEventDelegate {
             while (ClientKeyBinds.TUTORIAL_NEXT.consumeClick()) {
                 TutorialGuideManager.advanceManually(mc);
             }
+        }
+    }
+
+    private static void ensureTacRogueGuiScale(Minecraft mc) {
+        if (mc == null || mc.options == null) return;
+        boolean inTacRogueDimension = mc.level != null
+            && "tac_rogue".equals(mc.level.dimension().location().getNamespace());
+        boolean inTacRogueScreen = mc.screen != null
+            && mc.screen.getClass().getName().startsWith("com.levanilla.rogue.client");
+        if (!inTacRogueDimension && !inTacRogueScreen) {
+            guiScaleCapped = false;
+            return;
+        }
+        try {
+            int scale = mc.options.guiScale().get();
+            if (scale == 0 || scale > 2) {
+                mc.options.guiScale().set(2);
+                mc.options.save();
+                mc.resizeDisplay();
+                if (mc.screen != null) {
+                    mc.screen.init(mc, mc.getWindow().getGuiScaledWidth(), mc.getWindow().getGuiScaledHeight());
+                }
+                if (!guiScaleCapped) {
+                    NotificationManager.add("\u00A7bGUI Scale set to 2 for TacZ: Rogue Protocol", 0xFF66E8FF);
+                }
+                guiScaleCapped = true;
+            }
+        } catch (Exception ignored) {
         }
     }
 

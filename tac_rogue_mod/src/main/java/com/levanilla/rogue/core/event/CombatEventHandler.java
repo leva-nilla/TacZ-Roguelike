@@ -4,6 +4,7 @@ import com.levanilla.rogue.core.*;
 import com.levanilla.rogue.core.service.RoguePickupService;
 import com.levanilla.rogue.networking.StealthTakedownHintMessage;
 import com.levanilla.rogue.networking.TacRogueNetworking;
+import net.minecraft.util.Mth;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.DamageTypeTags;
@@ -41,6 +42,9 @@ public class CombatEventHandler {
     private static final String STEALTH_TAKEDOWN_BY = "TacRogueStealthTakedownBy";
     private static final String STEALTH_TAKEDOWN_TICK = "TacRogueStealthTakedownTick";
     private static final int STEALTH_HINT_DURATION_MS = 350;
+    private static final double STEALTH_HEAD_SEES_PLAYER_DOT = 0.25D;
+    private static final double STEALTH_BODY_BACK_DOT = -0.25D;
+    private static final double STEALTH_HEAD_BACK_DOT = -0.55D;
 
     // TacZ damage context is registered by TacZEventHandler and consumed by LivingHurtEvent.
     public static class GunDamageContext {
@@ -151,15 +155,20 @@ public class CombatEventHandler {
         }
 
         if (event.getEntity() instanceof Mob mob) {
-            if (isStealthTakedownHit(event, mob)) {
+            boolean stealthTakedown = isStealthTakedownHit(event, mob);
+            if (stealthTakedown) {
                 ServerPlayer srcPlayer = (ServerPlayer) event.getSource().getEntity();
                 event.setAmount(Math.max((event.getAmount() * 10.0f) + 50.0f, mob.getHealth() + 2.0f));
                 mob.getPersistentData().putString(STEALTH_TAKEDOWN_BY, srcPlayer.getUUID().toString());
                 mob.getPersistentData().putLong(STEALTH_TAKEDOWN_TICK, mob.level().getGameTime());
                 srcPlayer.displayClientMessage(net.minecraft.network.chat.Component.literal("\u00A7c\u00A7l* STEALTH TAKEDOWN *"), true);
                 srcPlayer.level().playSound(null, mob.blockPosition(), net.minecraft.sounds.SoundEvents.PLAYER_ATTACK_CRIT, net.minecraft.sounds.SoundSource.PLAYERS, 1.0f, 0.8f);
+            } else if (mob.level().dimension() == ROGUE_DIM
+                && event.getSource().getEntity() instanceof ServerPlayer srcPlayer
+                && event.getSource().getDirectEntity() == srcPlayer) {
+                com.levanilla.rogue.core.service.RogueMobAlertService.onMeleeAllyHit(srcPlayer, mob);
+                mob.getPersistentData().putLong("LastAlertTick", mob.level().getGameTime());
             }
-            mob.getPersistentData().putLong("LastAlertTick", mob.level().getGameTime());
         }
 
         if (event.getEntity() instanceof ServerPlayer damagedPlayer) {
@@ -467,10 +476,24 @@ public class CombatEventHandler {
         long lastAlert = mob.getPersistentData().getLong("LastAlertTick");
         if (lastAlert > 0L && now - lastAlert < 80L) return false;
 
-        Vec3 lookVec = mob.getViewVector(1.0F).normalize();
         Vec3 toPlayer = srcPlayer.position().subtract(mob.position()).normalize();
-        if (lookVec.dot(toPlayer) >= -0.55D) return false;
+        double headDot = horizontalFacingFromYaw(mob.getYHeadRot()).dot(flatten(toPlayer));
+        if (headDot >= STEALTH_HEAD_SEES_PLAYER_DOT) return false;
+
+        double bodyDot = horizontalFacingFromYaw(mob.yBodyRot).dot(flatten(toPlayer));
+        if (bodyDot >= STEALTH_BODY_BACK_DOT && headDot >= STEALTH_HEAD_BACK_DOT) return false;
         return mob.hasLineOfSight(srcPlayer);
+    }
+
+    private static Vec3 flatten(Vec3 vec) {
+        Vec3 flat = new Vec3(vec.x, 0.0D, vec.z);
+        double len = flat.length();
+        return len < 1.0E-4D ? Vec3.ZERO : flat.scale(1.0D / len);
+    }
+
+    private static Vec3 horizontalFacingFromYaw(float yawDegrees) {
+        float radians = yawDegrees * Mth.DEG_TO_RAD;
+        return new Vec3(-Mth.sin(radians), 0.0D, Mth.cos(radians)).normalize();
     }
 
     private static boolean isMarkedStealthKill(net.minecraft.world.entity.LivingEntity killed, ServerPlayer killer) {

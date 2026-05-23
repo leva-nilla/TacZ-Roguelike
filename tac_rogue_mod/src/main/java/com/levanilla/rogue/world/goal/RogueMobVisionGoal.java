@@ -54,6 +54,12 @@ public class RogueMobVisionGoal extends TargetGoal {
             return true;
         }
 
+        Player alertedVisible = findAlertedVisiblePlayer();
+        if (alertedVisible != null) {
+            targetPlayer = alertedVisible;
+            return true;
+        }
+
         // 視界内のプレイヤーを探す
         Player spotted = findPlayerInSight();
         if (spotted != null) {
@@ -116,6 +122,25 @@ public class RogueMobVisionGoal extends TargetGoal {
             e -> e instanceof Player p && !p.isSpectator() && !p.isDeadOrDying() && isInFovAndLOS(p)
         );
         return (found instanceof Player p) ? p : null;
+    }
+
+    private Player findAlertedVisiblePlayer() {
+        RogueMobAlertService.AlertLevel alertLevel = RogueMobAlertService.getAlertLevel(mob);
+        if (alertLevel.ordinal() < RogueMobAlertService.AlertLevel.INVESTIGATE.ordinal()) return null;
+
+        Player nearest = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (Player player : mob.level().players()) {
+            if (!player.isAlive() || player.isSpectator()) continue;
+            double distance = mob.distanceTo(player);
+            if (distance > CHASE_RANGE || !mob.hasLineOfSight(player)) continue;
+            if (!RogueMobAlertService.promoteVisibleInvestigation(mob, player)) continue;
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                nearest = player;
+            }
+        }
+        return nearest;
     }
 
     private boolean isBossMob() {

@@ -388,8 +388,30 @@ public final class SmokeTestService {
             clearAlertData(ally);
             RogueMobAlertService.onAllyHit(player, near);
             RogueMobAlertService.AlertLevel allyHitLevel = RogueMobAlertService.getAlertLevel(ally);
-            record(counter, suite, "alert.ally_hit", allyHitLevel != RogueMobAlertService.AlertLevel.NONE || ally.getTarget() == player,
-                "ally hit alerts nearby rogue mob", allyHitLevel.name() + " target=" + (ally.getTarget() == player), "");
+            record(counter, suite, "alert.ally_hit.victim", near.getTarget() == player
+                    && RogueMobAlertService.getAlertLevel(near) == RogueMobAlertService.AlertLevel.ENGAGED,
+                "ranged hit engages the hurt rogue mob immediately",
+                RogueMobAlertService.getAlertLevel(near).name() + " target=" + (near.getTarget() == player), "");
+            record(counter, suite, "alert.ally_hit.nearby", ally.getTarget() == player
+                    && allyHitLevel == RogueMobAlertService.AlertLevel.ENGAGED,
+                "ranged hit engages nearby rogue mob at close range",
+                allyHitLevel.name() + " target=" + (ally.getTarget() == player), "");
+
+            near.setTarget(null);
+            ally.setTarget(null);
+            clearAlertData(near);
+            clearAlertData(ally);
+            ally.moveTo(player.getX() + 14.5D, player.getY(), player.getZ(), 0.0F, 0.0F);
+            RogueMobAlertService.onMeleeAllyHit(player, near);
+            RogueMobAlertService.AlertLevel meleeFarLevel = RogueMobAlertService.getAlertLevel(ally);
+            record(counter, suite, "alert.melee.victim", near.getTarget() == player
+                    && RogueMobAlertService.getAlertLevel(near) == RogueMobAlertService.AlertLevel.ENGAGED,
+                "melee hit engages the hurt rogue mob immediately",
+                RogueMobAlertService.getAlertLevel(near).name() + " target=" + (near.getTarget() == player), "");
+            record(counter, suite, "alert.melee.far_ally_quiet", meleeFarLevel == RogueMobAlertService.AlertLevel.NONE
+                    && ally.getTarget() == null,
+                "melee hit does not alert farther nearby rogue mob",
+                meleeFarLevel.name() + " target=" + (ally.getTarget() == player), "");
         } finally {
             near.discard();
             ally.discard();

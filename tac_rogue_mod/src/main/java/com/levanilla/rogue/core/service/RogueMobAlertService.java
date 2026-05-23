@@ -32,6 +32,10 @@ public final class RogueMobAlertService {
 
     private static final long SUPPRESSED_BURST_WINDOW_TICKS = 30L;
     private static final int SUPPRESSED_BURST_SHOTS = 3;
+    private static final HitAlertProfile RANGED_HIT_PROFILE =
+        new HitAlertProfile(14.0D, 8.0D, 12.0D, 12.0D, true, 130L, 80L, 60L, 1.05D, 0.95D);
+    private static final HitAlertProfile MELEE_HIT_PROFILE =
+        new HitAlertProfile(8.0D, 3.5D, 6.0D, 6.0D, false, 90L, 60L, 40L, 0.92D, 0.82D);
     private static final ConcurrentHashMap<UUID, ShotBurst> RECENT_SHOTS = new ConcurrentHashMap<>();
 
     private RogueMobAlertService() {}
@@ -53,7 +57,7 @@ public final class RogueMobAlertService {
         List<Mob> mobs = shooter.level().getEntitiesOfClass(
             Mob.class, area, m -> m.isAlive() && isRogueMob(m));
         for (Mob mob : mobs) {
-            if (mob.getTarget() != null) continue;
+            if (hasActiveTarget(mob)) continue;
             double dist = mob.distanceTo(shooter);
             boolean hasLos = mob.hasLineOfSight(shooter);
             AlertLevel current = getAlertLevel(mob);
@@ -80,22 +84,40 @@ public final class RogueMobAlertService {
     }
 
     public static void onAllyHit(ServerPlayer attacker, LivingEntity hurt) {
+        handleAllyHit(attacker, hurt, RANGED_HIT_PROFILE);
+    }
+
+    public static void onMeleeAllyHit(ServerPlayer attacker, LivingEntity hurt) {
+        handleAllyHit(attacker, hurt, MELEE_HIT_PROFILE);
+    }
+
+    private static void handleAllyHit(ServerPlayer attacker, LivingEntity hurt, HitAlertProfile profile) {
         if (attacker == null || hurt == null || hurt.level().dimension() != CommonEventHandler.ROGUE_DIM) return;
         if (!isRogueTarget(hurt)) return;
-        AABB area = new AABB(hurt.blockPosition()).inflate(14.0D);
+
+        if (hurt instanceof Mob hurtMob && isRogueMob(hurtMob)) {
+            if (!hasActiveTarget(hurtMob)) {
+                engage(hurtMob, attacker, profile.victimDuration());
+            }
+        }
+
+        AABB area = new AABB(hurt.blockPosition()).inflate(profile.alertRadius());
         List<Mob> mobs = hurt.level().getEntitiesOfClass(
             Mob.class, area, m -> m.isAlive() && m != hurt && isRogueMob(m));
         for (Mob mob : mobs) {
-            if (mob.getTarget() != null) continue;
+            if (hasActiveTarget(mob)) continue;
             double dist = mob.distanceTo(hurt);
             AlertLevel current = getAlertLevel(mob);
             boolean hasLos = mob.hasLineOfSight(attacker);
-            if (dist <= 6.0D || current.ordinal() >= AlertLevel.WARNED.ordinal()) {
-                engage(mob, attacker, 110L);
-            } else if (dist <= 10.0D || hasLos || current.ordinal() >= AlertLevel.INVESTIGATE.ordinal()) {
-                warn(mob, hurt.position(), 80L, 1.05D);
+            if ((profile.engageThroughWalls() && dist <= profile.engageRadius())
+                || (!profile.engageThroughWalls() && dist <= profile.engageRadius() && hasLos)
+                || (hasLos && dist <= profile.losEngageRadius())
+                || current.ordinal() >= AlertLevel.WARNED.ordinal()) {
+                engage(mob, attacker, profile.engageDuration());
+            } else if (dist <= profile.warnRadius() || hasLos || current.ordinal() >= AlertLevel.INVESTIGATE.ordinal()) {
+                warn(mob, hurt.position(), profile.warnDuration(), profile.warnSpeed());
             } else {
-                investigate(mob, hurt.position(), 60L, 0.95D);
+                investigate(mob, hurt.position(), profile.investigateDuration(), profile.investigateSpeed());
             }
         }
     }
@@ -161,6 +183,23 @@ public final class RogueMobAlertService {
         if (mob == null) return false;
         long last = mob.getPersistentData().getLong(LAST_ALERT_TICK);
         return last > 0L && mob.level().getGameTime() - last < ticks;
+    }
+
+    public static boolean promoteVisibleInvestigation(Mob mob, Player player) {
+        if (mob == null || player == null || !player.isAlive() || player.isSpectator()) return false;
+        AlertLevel current = getAlertLevel(mob);
+        if (current == AlertLevel.WARNED || current == AlertLevel.ENGAGED) return true;
+        if (current != AlertLevel.INVESTIGATE) return false;
+
+        double distance = mob.distanceTo(player);
+        if (distance <= 10.0D) {
+            engage(mob, player, 95L);
+            return true;
+        }
+        if (distance <= 16.0D) {
+            warn(mob, player.position(), 70L, 1.02D);
+        }
+        return false;
     }
 
     private static void investigate(Mob mob, Vec3 pos, long duration, double speed) {
@@ -287,5 +326,30 @@ public final class RogueMobAlertService {
             && (entity.getTags().contains("tac_rogue_spawned") || entity.getTags().contains("rogue:boss"));
     }
 
+    private static boolean hasActiveTarget(Mob mob) {
+        LivingEntity target = mob.getTarget();
+        if (target == null) return false;
+        if (target.isAlive() && !target.isSpectator()) return true;
+        mob.setTarget(null);
+        return false;
+    }
+
     private record ShotBurst(long firstTick, long lastTick, int count) {}
+
+    private record HitAlertProfile(
+        double alertRadius,
+        double engageRadius,
+        double losEngageRadius,
+        double warnRadius,
+        boolean engageThroughWalls,
+        long engageDuration,
+        long warnDuration,
+        long investigateDuration,
+        double warnSpeed,
+        double investigateSpeed
+    ) {
+        private long victimDuration() {
+            return Math.max(engageDuration, 100L);
+        }
+    }
 }
