@@ -35,6 +35,10 @@ public class PlayerRunData {
     public long getFloorSeedSalt() { return progressData.getFloorSeedSalt(); }
     public void setFloorSeedSalt(long salt) { progressData.setFloorSeedSalt(salt); }
     public void rerollFloorSeedSalt(long entropy) { progressData.rerollFloorSeedSalt(entropy); }
+    public int getFloorAttemptIndex() { return progressData.getFloorAttemptIndex(); }
+    public void setFloorAttemptIndex(int value) { progressData.setFloorAttemptIndex(value); }
+    public void startFloorAttempt(long entropy) { progressData.startFloorAttempt(entropy); }
+    public void nextFloorAttempt(long entropy) { progressData.nextFloorAttempt(entropy); }
 
     public String getThemeName() { return progressData.getThemeName(); }
     public void setThemeName(String n) { progressData.setThemeName(n); }

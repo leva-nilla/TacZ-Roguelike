@@ -28,11 +28,12 @@ final class FloorEntryModeHandler {
         long tick = player.server.getTickCount();
         String id = "solo-" + player.getUUID() + "-" + tick + "-" + UUID.randomUUID();
         BlockPos origin = RunManager.getPrivateDungeonOrigin(player);
+        PlayerRunData data = RunManager.getData(player);
         boolean questEligible = FloorInstanceManager.isQuestEligibleFloor(floor,
-            RunManager.getData(player).getMaxReachedFloor());
+            data.getMaxReachedFloor());
         FloorInstanceManager.FloorInstance instance = new FloorInstanceManager.FloorInstance(id, floor,
-            FloorInstanceManager.EntryMode.SOLO, player.getUUID(), origin, tick, System.nanoTime(),
-            System.nanoTime() ^ tick, questEligible);
+            FloorInstanceManager.EntryMode.SOLO, player.getUUID(), origin, tick, safeRunSeed(data, tick),
+            safeFloorSeedSalt(data, tick), safeAttemptIndex(data), questEligible);
         instance.participants.add(player.getUUID());
         instance.initialParticipantCount = 1;
         FloorInstanceManager.INSTANCES.put(id, instance);
@@ -73,11 +74,12 @@ final class FloorEntryModeHandler {
         if (existing == null || existing.state == FloorInstanceManager.State.CLEARED) {
             long tick = player.server.getTickCount();
             String id = "public-floor-" + floor + "-" + tick + "-" + UUID.randomUUID();
+            PlayerRunData data = RunManager.getData(player);
             boolean questEligible = FloorInstanceManager.isQuestEligibleFloor(floor,
-                RunManager.getData(player).getMaxReachedFloor());
+                data.getMaxReachedFloor());
             existing = new FloorInstanceManager.FloorInstance(id, floor, FloorInstanceManager.EntryMode.PUBLIC,
                 player.getUUID(), FloorInstanceManager.publicOriginForFloor(floor),
-                tick, System.nanoTime(), System.nanoTime() ^ ((long) floor << 32), questEligible);
+                tick, safeRunSeed(data, tick), safeFloorSeedSalt(data, tick), safeAttemptIndex(data), questEligible);
             FloorInstanceManager.INSTANCES.put(id, existing);
             FloorInstanceManager.PUBLIC_INSTANCES_BY_FLOOR.put(floor, id);
         }
@@ -127,11 +129,26 @@ final class FloorEntryModeHandler {
         if (data.getMaxReachedFloor() < 1) data.setMaxReachedFloor(1);
         data.setRunSeed(instance.runSeed);
         data.setFloorSeedSalt(instance.floorSeedSalt);
+        data.setFloorAttemptIndex(instance.floorAttemptIndex);
         if (active && player.server != null) {
             data.setFloorStartTick(player.server.getTickCount());
             LowHealthChallengeService.activateForFloor(player);
         }
         RunManager.refreshThemeName(data);
         RunManager.syncPlayer(player);
+    }
+
+    private static long safeRunSeed(PlayerRunData data, long tick) {
+        long seed = data == null ? 0L : data.getRunSeed();
+        return seed != 0L ? seed : (System.nanoTime() ^ Long.rotateLeft(tick, 21));
+    }
+
+    private static long safeFloorSeedSalt(PlayerRunData data, long tick) {
+        long salt = data == null ? 0L : data.getFloorSeedSalt();
+        return salt != 0L ? salt : (System.nanoTime() ^ Long.rotateLeft(tick, 17));
+    }
+
+    private static int safeAttemptIndex(PlayerRunData data) {
+        return Math.max(1, data == null ? 1 : data.getFloorAttemptIndex());
     }
 }

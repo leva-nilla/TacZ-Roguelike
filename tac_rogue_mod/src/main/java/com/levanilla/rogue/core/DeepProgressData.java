@@ -27,6 +27,8 @@ final class DeepProgressData {
     private long runSeed = 0;
     /** 同じフロアを再生成するたびに変える生成ソルト */
     private long floorSeedSalt = 0;
+    /** 同じフロアの再生成回数。生成器側の脱既視感用。 */
+    private int floorAttemptIndex = 0;
     /** テーマ表示名 */
     private String themeName = "RUINS - OVERGROWN";
     /** レガシーテーマ enum */
@@ -89,11 +91,24 @@ final class DeepProgressData {
     long getFloorSeedSalt() { return floorSeedSalt; }
     void setFloorSeedSalt(long salt) { floorSeedSalt = salt; }
 
+    int getFloorAttemptIndex() { return floorAttemptIndex; }
+    void setFloorAttemptIndex(int value) { floorAttemptIndex = Math.max(0, value); }
+
     void rerollFloorSeedSalt(long entropy) {
         floorSeedSalt = System.nanoTime()
             ^ Long.rotateLeft(entropy, 17)
             ^ ((long) currentFloor * 0x9E3779B97F4A7C15L);
         if (floorSeedSalt == 0) floorSeedSalt = 0xD1B54A32D192ED03L;
+    }
+
+    void startFloorAttempt(long entropy) {
+        floorAttemptIndex = 1;
+        rerollFloorSeedSalt(entropy ^ 0xA11CE5EEDL);
+    }
+
+    void nextFloorAttempt(long entropy) {
+        floorAttemptIndex = Math.max(1, floorAttemptIndex + 1);
+        rerollFloorSeedSalt(entropy ^ ((long) floorAttemptIndex * 0xC2B2AE3D27D4EB4FL));
     }
 
     String getThemeName() { return themeName; }
@@ -195,7 +210,7 @@ final class DeepProgressData {
         updateHighestEverFloor(currentFloor);
         floorCleared = false;
         runSeed = System.nanoTime();
-        rerollFloorSeedSalt(runSeed);
+        startFloorAttempt(runSeed);
         floorStartTick = 0; // 呼び出し元でサーバーtickを設定
     }
 
@@ -205,7 +220,7 @@ final class DeepProgressData {
         updateHighestEverFloor(currentFloor);
         floorCleared = false;
         runActive = true;
-        rerollFloorSeedSalt(runSeed);
+        startFloorAttempt(runSeed);
         floorStartTick = 0; // 呼び出し元でサーバーtickを設定
     }
 
@@ -217,6 +232,7 @@ final class DeepProgressData {
         tag.putBoolean("FloorCleared", floorCleared);
         tag.putLong("RunSeed", runSeed);
         tag.putLong("FloorSeedSalt", floorSeedSalt);
+        tag.putInt("FloorAttemptIndex", floorAttemptIndex);
         tag.putString("ThemeName", themeName);
         tag.putString("ThemeEnum", theme.name());
         if (dungeonOrigin != null) {
@@ -255,6 +271,11 @@ final class DeepProgressData {
         if (tag.contains("FloorCleared")) floorCleared = tag.getBoolean("FloorCleared");
         if (tag.contains("RunSeed")) runSeed = tag.getLong("RunSeed");
         if (tag.contains("FloorSeedSalt")) floorSeedSalt = tag.getLong("FloorSeedSalt");
+        if (tag.contains("FloorAttemptIndex")) {
+            floorAttemptIndex = Math.max(0, tag.getInt("FloorAttemptIndex"));
+        } else if (currentFloor > 0 && floorSeedSalt != 0) {
+            floorAttemptIndex = 1;
+        }
         if (tag.contains("ThemeName")) themeName = tag.getString("ThemeName");
         if (tag.contains("ThemeEnum")) {
             try {
@@ -301,6 +322,7 @@ final class DeepProgressData {
         floorCleared = false;
         runSeed = 0;
         floorSeedSalt = 0;
+        floorAttemptIndex = 0;
         themeName = "RUINS - OVERGROWN";
         theme = RunManager.Theme.MANSION;
         dungeonOrigin = new BlockPos(0, GameConstants.DUNGEON_BASE_Y, 0);

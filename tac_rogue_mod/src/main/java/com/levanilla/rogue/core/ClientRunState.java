@@ -35,6 +35,8 @@ public final class ClientRunState {
     private static EnemyDirectionState enemyDirectionState = null;
     private static long enemyDirectionUntilMs = 0L;
     private static long medicalBuffUntilMs = 0L;
+    private static int stealthTakedownTargetId = -1;
+    private static long stealthTakedownUntilMs = 0L;
     private static final java.util.Set<String> perkTags = new java.util.LinkedHashSet<>();
 
     private ClientRunState() {}
@@ -221,6 +223,29 @@ public final class ClientRunState {
             return 0;
         }
         return (int)Math.ceil(remaining / 1000.0D);
+    }
+
+    public static void setStealthTakedownTarget(int entityId, long durationMs) {
+        if (entityId < 0 || durationMs <= 0L) {
+            clearStealthTakedownTarget();
+            return;
+        }
+        stealthTakedownTargetId = entityId;
+        stealthTakedownUntilMs = System.currentTimeMillis() + durationMs;
+    }
+
+    public static void clearStealthTakedownTarget() {
+        stealthTakedownTargetId = -1;
+        stealthTakedownUntilMs = 0L;
+    }
+
+    public static int getStealthTakedownTargetId() {
+        if (stealthTakedownTargetId < 0) return -1;
+        if (System.currentTimeMillis() > stealthTakedownUntilMs) {
+            clearStealthTakedownTarget();
+            return -1;
+        }
+        return stealthTakedownTargetId;
     }
 
     public static int getFloor() {

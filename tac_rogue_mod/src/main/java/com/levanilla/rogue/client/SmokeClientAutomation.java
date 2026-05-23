@@ -432,7 +432,7 @@ public final class SmokeClientAutomation {
         String lower = value.toLowerCase(Locale.ROOT);
         return switch (lower) {
             case "quick", "floor", "combat", "economy", "quest", "deep", "ui", "registry",
-                "world", "thirdperson", "shooting", "monster", "all", "full" -> lower;
+                "world", "thirdperson", "shooting", "monster", "generation", "generation_view", "all", "full" -> lower;
             default -> "quick";
         };
     }

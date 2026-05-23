@@ -203,6 +203,12 @@ public class TacRogueNetworking {
                 .decoder(SyncMetaMessage::decode)
                 .consumerMainThread(SyncMetaMessage::handle)
                 .add();
+
+        CHANNEL.messageBuilder(StealthTakedownHintMessage.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(StealthTakedownHintMessage::encode)
+                .decoder(StealthTakedownHintMessage::decode)
+                .consumerMainThread(StealthTakedownHintMessage::handle)
+                .add();
     }
 
     /**

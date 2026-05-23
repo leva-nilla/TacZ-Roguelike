@@ -1,11 +1,19 @@
 package com.levanilla.rogue.world;
 
+import com.levanilla.rogue.world.generation.DungeonPlanGenerator;
+import com.levanilla.rogue.world.generation.FloorGenerationContext;
+import com.levanilla.rogue.world.generation.plan.CorridorVariant;
+import com.levanilla.rogue.world.generation.plan.DungeonCorridor;
+import com.levanilla.rogue.world.generation.plan.DungeonPlan;
+import com.levanilla.rogue.world.generation.plan.DungeonRoom;
+import com.levanilla.rogue.world.generation.plan.RoomRole;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Container;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.chunk.LevelChunk;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,7 +54,8 @@ public class MapGenerator {
     private static final int BOSS_CORRIDOR_W = 5;  // ボスフロアの通路幅（Ravager等の巨体対応）
     private static final int WALL_THICK   = 1;
     private static final int ROOM_RADIUS  = 70;           // 部屋配置の有効半径
-    private static final int CLEAR_RADIUS = ROOM_RADIUS + 8 + 1;
+    private static final int ROOFTOP_BACKDROP_MARGIN = 26;
+    private static final int CLEAR_RADIUS = ROOM_RADIUS + 8 + ROOFTOP_BACKDROP_MARGIN + 1;
     private static final int CLEAR_MIN_Y_OFFSET = -4;
     private static final int CLEAR_MAX_Y_OFFSET = ROOM_HEIGHT + 4;
     private static final int SET_BLOCK_FLAGS = 2 | 16; // 2=クライアント通知, 16=ライト計算スキップ
@@ -176,6 +185,13 @@ public class MapGenerator {
 
     public static BlockPos generateRoom(ServerLevel level, BlockPos center,
                                          ThemeManager.ThemeInstance themeOverride, int floor, long runSeed,
+                                         long floorSeedSalt, int floorAttemptIndex) {
+        return generateRoom(level, center, themeOverride, floor, runSeed, floorSeedSalt, null, "SOLO", 1,
+            -1, floorAttemptIndex);
+    }
+
+    public static BlockPos generateRoom(ServerLevel level, BlockPos center,
+                                         ThemeManager.ThemeInstance themeOverride, int floor, long runSeed,
                                          long floorSeedSalt, String instanceId, String mode, int participantCount) {
         return generateRoom(level, center, themeOverride, floor, runSeed, floorSeedSalt, instanceId, mode, participantCount, -1);
     }
@@ -184,29 +200,40 @@ public class MapGenerator {
                                          ThemeManager.ThemeInstance themeOverride, int floor, long runSeed,
                                          long floorSeedSalt, String instanceId, String mode, int participantCount,
                                          int maxClaimableSupplyChests) {
+        return generateRoom(level, center, themeOverride, floor, runSeed, floorSeedSalt, instanceId, mode,
+            participantCount, maxClaimableSupplyChests, 1);
+    }
+
+    public static BlockPos generateRoom(ServerLevel level, BlockPos center,
+                                         ThemeManager.ThemeInstance themeOverride, int floor, long runSeed,
+                                         long floorSeedSalt, String instanceId, String mode, int participantCount,
+                                         int maxClaimableSupplyChests, int floorAttemptIndex) {
         clearPreviousDungeon(level, center);
 
         DungeonFootprint footprint = new DungeonFootprint();
         ACTIVE_FOOTPRINT.set(footprint);
         try {
 
-        long seed = runSeed
-            ^ (floor * 7919L)
-            ^ Long.rotateLeft(floorSeedSalt, 17)
-            ^ 0x5F3759DFL;
-        Random rand = new Random(seed);
-
         long worldSeed = level.getSeed();
         ThemeManager.ThemeInstance theme = themeOverride != null ? themeOverride : ThemeManager.getThemeForFloor(floor, worldSeed);
 
-        LayoutPattern pattern = LayoutPattern.values()[rand.nextInt(LayoutPattern.values().length)];
         boolean isBoss = ThemeManager.isBossFloor(floor);
-        if (isBoss) pattern = LayoutPattern.RING;
+        FloorGenerationContext generationContext = new FloorGenerationContext(
+            runSeed,
+            floor,
+            floorSeedSalt,
+            Math.max(1, floorAttemptIndex),
+            instanceId,
+            mode,
+            participantCount,
+            worldSeed);
+        DungeonPlan plan = DungeonPlanGenerator.generate(generationContext, isBoss, theme);
+        Random rand = new Random(generationContext.decorationSeed());
 
         int biomeIndex = ThemeManager.getBiomeIndex(floor, worldSeed);
 
         // --- Phase 1: 部屋の配置計画 ---
-        List<int[]> rooms = generateLayout(pattern, rand, isBoss);
+        List<int[]> rooms = plan.legacyRooms();
 
         // --- Phase 2: 2Dグリッドの構築 ---
         int[][] grid = new int[GRID_SIZE][GRID_SIZE];
@@ -220,32 +247,17 @@ public class MapGenerator {
             stampRoom(grid, gx, gz, rw, rd);
         }
 
-        // 2b: 通路をグリッドに描画（直線接続）
-        int corrWidth = isBoss ? BOSS_CORRIDOR_W : CORRIDOR_W;
-        for (int i = 0; i < rooms.size() - 1; i++) {
-            int[] from = rooms.get(i);
-            int[] to   = rooms.get(i + 1);
-            int fx = GRID_CENTER + from[0] + from[2] / 2;
-            int fz = GRID_CENTER + from[1] + from[3] / 2;
-            int tx = GRID_CENTER + to[0] + to[2] / 2;
-            int tz = GRID_CENTER + to[1] + to[3] / 2;
-            stampCorridor(grid, fx, fz, tx, tz, corrWidth);
-        }
-
-        // ループ接続（50%確率）
-        for (int i = 0; i < rooms.size() - 2; i++) {
-            if (rand.nextFloat() < 0.5f) {
-                int j = i + 2 + rand.nextInt(Math.min(3, rooms.size() - i - 2));
-                if (j < rooms.size()) {
-                    int[] from = rooms.get(i);
-                    int[] to   = rooms.get(j);
-                    int fx = GRID_CENTER + from[0] + from[2] / 2;
-                    int fz = GRID_CENTER + from[1] + from[3] / 2;
-                    int tx = GRID_CENTER + to[0] + to[2] / 2;
-                    int tz = GRID_CENTER + to[1] + to[3] / 2;
-                    stampCorridor(grid, fx, fz, tx, tz, corrWidth);
-                }
-            }
+        // 2b: 通路をグリッドに描画（DungeonPlanの接続グラフを使用）
+        for (DungeonCorridor corridor : plan.corridors()) {
+            DungeonRoom from = plan.room(corridor.fromRoomId());
+            DungeonRoom to = plan.room(corridor.toRoomId());
+            if (from == null || to == null) continue;
+            int fx = GRID_CENTER + from.centerX();
+            int fz = GRID_CENTER + from.centerZ();
+            int tx = GRID_CENTER + to.centerX();
+            int tz = GRID_CENTER + to.centerZ();
+            int corrWidth = Math.max(isBoss ? BOSS_CORRIDOR_W : CORRIDOR_W, corridor.width());
+            stampCorridor(grid, fx, fz, tx, tz, corrWidth, corridor.variant());
         }
 
         // 2c: VOIDセルでROOM/CORRに隣接するものをWALLに昇格
@@ -253,28 +265,57 @@ public class MapGenerator {
 
         // --- Phase 3: グリッドからワールドへブロック配置（VOIDはスキップ） ---
         int baseY = center.getY();
+        ThemeShapeProfile shape = ThemeShapeProfile.of(theme);
         for (int gx = 0; gx < GRID_SIZE; gx++) {
             for (int gz = 0; gz < GRID_SIZE; gz++) {
                 int cellType = grid[gx][gz];
-                if (cellType == VOID) continue;  // VOIDは何も置かない
-
                 int worldX = center.getX() + (gx - GRID_CENTER);
                 int worldZ = center.getZ() + (gz - GRID_CENTER);
+                if (cellType == VOID) {
+                    if (shape.style() == ThemeManager.ThemeGenerationStyle.ROOFTOP_OPEN) {
+                        setBlock(level, new BlockPos(worldX, baseY - 4, worldZ),
+                            rooftopBackdropBlock(theme, gx, gz));
+                    }
+                    continue;
+                }
 
                 if (cellType == WALL) {
-                    for (int y = -2; y <= ROOM_HEIGHT + 1; y++) {
-                        setBlock(level, new BlockPos(worldX, baseY + y, worldZ), theme.wall);
+                    int wallTop = shape.wallTop(gx, gz);
+                    for (int y = -2; y <= wallTop; y++) {
+                        BlockState wallState = shape.roughWalls() && y >= 1 && cellNoise(gx, gz, y) < 0.18F
+                            ? theme.accent
+                            : theme.wall;
+                        setBlock(level, new BlockPos(worldX, baseY + y, worldZ), wallState);
+                    }
+                    if (shape.needsInvisibleSafetyCap()) {
+                        setBlock(level, new BlockPos(worldX, baseY + wallTop + 1, worldZ),
+                            Blocks.BARRIER.defaultBlockState());
+                    }
+                    if (shape.openCeiling()) {
+                        for (int y = wallTop + 1; y <= ROOM_HEIGHT + 1; y++) {
+                            if (shape.needsInvisibleSafetyCap() && y == wallTop + 1) continue;
+                            setBlock(level, new BlockPos(worldX, baseY + y, worldZ), Blocks.AIR.defaultBlockState());
+                        }
                     }
                 } else {
                     // ROOM or CORR
                     setBlock(level, new BlockPos(worldX, baseY - 2, worldZ), theme.floor);
                     setBlock(level, new BlockPos(worldX, baseY - 1, worldZ), theme.floor);
                     setBlock(level, new BlockPos(worldX, baseY,     worldZ), theme.floor);
-                    for (int y = 1; y < ROOM_HEIGHT; y++) {
+                    int clearTop = shape.openCeiling() ? ROOM_HEIGHT + 1 : ROOM_HEIGHT - 1;
+                    for (int y = 1; y <= clearTop; y++) {
                         setBlock(level, new BlockPos(worldX, baseY + y, worldZ), Blocks.AIR.defaultBlockState());
                     }
-                    setBlock(level, new BlockPos(worldX, baseY + ROOM_HEIGHT,     worldZ), theme.ceil);
-                    setBlock(level, new BlockPos(worldX, baseY + ROOM_HEIGHT + 1, worldZ), theme.ceil);
+                    if (!shape.openCeiling()) {
+                        if (shape.brokenCeiling() && cellNoise(gx, gz, 71) < shape.ceilingBreakChance()) {
+                            setBlock(level, new BlockPos(worldX, baseY + ROOM_HEIGHT,     worldZ), Blocks.AIR.defaultBlockState());
+                            setBlock(level, new BlockPos(worldX, baseY + ROOM_HEIGHT + 1, worldZ), Blocks.AIR.defaultBlockState());
+                        } else {
+                            BlockState ceiling = shape.roughCeiling() && cellNoise(gx, gz, 72) < 0.22F ? theme.accent : theme.ceil;
+                            setBlock(level, new BlockPos(worldX, baseY + ROOM_HEIGHT,     worldZ), ceiling);
+                            setBlock(level, new BlockPos(worldX, baseY + ROOM_HEIGHT + 1, worldZ), theme.ceil);
+                        }
+                    }
                 }
             }
         }
@@ -302,10 +343,16 @@ public class MapGenerator {
                                 break;
                             }
                         }
-                        if (!isDark) {
+                        if (!isDark && !shape.openCeiling()) {
                             int wx = center.getX() + (gx - GRID_CENTER);
                             int wz = center.getZ() + (gz - GRID_CENTER);
                             setBlock(level, new BlockPos(wx, baseY + ROOM_HEIGHT, wz), theme.light);
+                        } else if (!isDark && shape.openCeiling() && gx % 8 == 0 && gz % 8 == 0) {
+                            int wx = center.getX() + (gx - GRID_CENTER);
+                            int wz = center.getZ() + (gz - GRID_CENTER);
+                            setBlock(level, new BlockPos(wx, baseY + 2, wz),
+                                Blocks.LIGHT.defaultBlockState()
+                                    .setValue(net.minecraft.world.level.block.LightBlock.LEVEL, 12));
                         }
                     }
                 }
@@ -324,6 +371,7 @@ public class MapGenerator {
             int rz = center.getZ() + room[1];
             int rw = room[2];
             int rd = room[3];
+            RoomRole role = ri < plan.rooms().size() ? plan.rooms().get(ri).role() : RoomRole.COMBAT_SMALL;
 
             // A. コーナー柱 (ランダムに2箇所)
             int[][] corners = {{0, 0}, {rw - 1, 0}, {0, rd - 1}, {rw - 1, rd - 1}};
@@ -374,10 +422,13 @@ public class MapGenerator {
                 setBlock(level, new BlockPos(bx + 1, baseY + 1, bz), theme.wall);
             }
 
+            boolean supplyCandidate = role == RoomRole.SUPPLY_RISK || role == RoomRole.SIDE_REWARD || rand.nextFloat() < 0.30F;
             if (decorateRoomArchetype(level, rand, theme, baseY, ri, isBoss, rx, rz, rw, rd,
-                supplyChests < maxSupplyChests, floor, instanceId, mode, supplyChests)) {
+                supplyChests < maxSupplyChests && supplyCandidate, floor, instanceId, mode, supplyChests)) {
                 supplyChests++;
             }
+            decorateRoomVolume(level, rand, theme, shape, baseY, role, isBoss, rx, rz, rw, rd);
+            decorateThemeRoomDetails(level, rand, theme, shape, baseY, role, isBoss, rx, rz, rw, rd);
         }
         if (supplyChests == 0 && maxSupplyChests > 0 && !rooms.isEmpty()) {
             int fallbackIndex = isBoss && rooms.size() > 2 ? 2 : Math.min(1, rooms.size() - 1);
@@ -466,12 +517,8 @@ public class MapGenerator {
         BlockPos spawnPos = center.above(1);
         int[] spawnRoom = null;
         if (!rooms.isEmpty()) {
-            if (isBoss && rooms.size() > 1) {
-                // ボスフロア: プレイヤーは外周部屋(index 1)にスポーン → ボスは中心部屋に待機
-                spawnRoom = rooms.get(1);
-            } else {
-                spawnRoom = rooms.get(0);
-            }
+            int spawnRoomId = Math.max(0, Math.min(plan.spawnRoomId(), rooms.size() - 1));
+            spawnRoom = rooms.get(spawnRoomId);
             int sx = center.getX() + spawnRoom[0] + spawnRoom[2] / 2;
             int sz = center.getZ() + spawnRoom[1] + spawnRoom[3] / 2;
             spawnPos = new BlockPos(sx, baseY + 1, sz);
@@ -537,9 +584,11 @@ public class MapGenerator {
             }
         }
         if (isVerboseLogging()) {
-            LOGGER.info("[TacRogue] Floor {} generated: {} rooms, {} mobs queued", floor, rooms.size(), totalMobsSpawned);
+            LOGGER.info("[TacRogue] Floor {} generated: {} rooms, {} mobs queued, archetype={}, attempt={}, hash={}",
+                floor, rooms.size(), totalMobsSpawned, plan.archetype(), generationContext.attemptIndex(), plan.layoutHash());
         } else {
-            LOGGER.debug("[TacRogue] Floor {} generated: {} rooms, {} mobs queued", floor, rooms.size(), totalMobsSpawned);
+            LOGGER.debug("[TacRogue] Floor {} generated: {} rooms, {} mobs queued, archetype={}, attempt={}, hash={}",
+                floor, rooms.size(), totalMobsSpawned, plan.archetype(), generationContext.attemptIndex(), plan.layoutHash());
         }
 
         // --- Phase 5.5: 外周封鎖壁（部屋配置有効範囲の外側に配置） ---
@@ -552,12 +601,32 @@ public class MapGenerator {
             for (int[] edge : edgePairs) {
                 int ex = center.getX() + edge[0];
                 int ez = center.getZ() + edge[1];
-                for (int ey = -3; ey <= ROOM_HEIGHT + 4; ey++) {
+                int outerTop = shape.outerWallTop();
+                for (int ey = -3; ey <= outerTop; ey++) {
                     setBlock(level, new BlockPos(ex, baseY + ey, ez), theme.wall);
+                }
+                if (shape.needsInvisibleSafetyCap()) {
+                    setBlock(level, new BlockPos(ex, baseY + outerTop + 1, ez),
+                        Blocks.BARRIER.defaultBlockState());
+                }
+                if (shape.openCeiling()) {
+                    for (int ey = outerTop + 1; ey <= ROOM_HEIGHT + 4; ey++) {
+                        if (shape.needsInvisibleSafetyCap() && ey == outerTop + 1) continue;
+                        setBlock(level, new BlockPos(ex, baseY + ey, ez), Blocks.AIR.defaultBlockState());
+                    }
                 }
             }
         }
+        if (shape.style() == ThemeManager.ThemeGenerationStyle.ROOFTOP_OPEN) {
+            buildRooftopBackdrop(level, rand, theme, center, baseY, wallR);
+        }
 
+        GenerationJob finalJob = ACTIVE_GENERATION_JOB.get();
+        if (finalJob != null) {
+            finalJob.addCompletionAction(() -> flushMapVisibleChunkUpdates(level, footprint));
+        } else {
+            flushMapVisibleChunkUpdates(level, footprint);
+        }
         storeDungeonFootprint(level, center, footprint);
         return spawnPos;
         } finally {
@@ -577,11 +646,20 @@ public class MapGenerator {
                                                 ThemeManager.ThemeInstance themeOverride, int floor, long runSeed,
                                                 long floorSeedSalt, String instanceId, String mode,
                                                 int participantCount, int maxClaimableSupplyChests) {
+        return generateRoomJob(level, center, themeOverride, floor, runSeed, floorSeedSalt, instanceId, mode,
+            participantCount, maxClaimableSupplyChests, 1);
+    }
+
+    public static GenerationJob generateRoomJob(ServerLevel level, BlockPos center,
+                                                ThemeManager.ThemeInstance themeOverride, int floor, long runSeed,
+                                                long floorSeedSalt, String instanceId, String mode,
+                                                int participantCount, int maxClaimableSupplyChests,
+                                                int floorAttemptIndex) {
         GenerationJob job = new GenerationJob(level);
         ACTIVE_GENERATION_JOB.set(job);
         try {
             job.setSpawnPos(generateRoom(level, center, themeOverride, floor, runSeed, floorSeedSalt,
-                instanceId, mode, participantCount, maxClaimableSupplyChests));
+                instanceId, mode, participantCount, maxClaimableSupplyChests, floorAttemptIndex));
             job.captureInitialCount();
             return job;
         } finally {
@@ -596,6 +674,73 @@ public class MapGenerator {
     // ===================================================================
     //  グリッド操作
     // ===================================================================
+
+    private enum CeilingMode {
+        SEALED,
+        BROKEN,
+        OPEN
+    }
+
+    private record ThemeShapeProfile(
+        ThemeManager.ThemeGenerationStyle style,
+        CeilingMode ceilingMode,
+        int wallTop,
+        int outerWallTop,
+        float ceilingBreakChance,
+        boolean roughWalls,
+        boolean roughCeiling
+    ) {
+        private static ThemeShapeProfile of(ThemeManager.ThemeInstance theme) {
+            ThemeManager.ThemeGenerationStyle style = ThemeManager.generationStyle(theme);
+            return switch (style) {
+                case ROOFTOP_OPEN -> new ThemeShapeProfile(style, CeilingMode.OPEN, 2, 2, 0.0F, false, false);
+                case RADAR_OPEN -> new ThemeShapeProfile(style, CeilingMode.OPEN, 3, 3, 0.0F, false, false);
+                case BROKEN_RUINS -> new ThemeShapeProfile(style, CeilingMode.BROKEN, ROOM_HEIGHT + 1, ROOM_HEIGHT + 4, 0.18F, true, true);
+                case ORGANIC_CAVE -> new ThemeShapeProfile(style, CeilingMode.BROKEN, ROOM_HEIGHT + 1, ROOM_HEIGHT + 4, 0.10F, true, true);
+                case FLOODED_LOW, SHIPWRECK -> new ThemeShapeProfile(style, CeilingMode.BROKEN, ROOM_HEIGHT + 1, ROOM_HEIGHT + 4, 0.12F, true, false);
+                case HANGAR -> new ThemeShapeProfile(style, CeilingMode.BROKEN, ROOM_HEIGHT + 1, ROOM_HEIGHT + 4, 0.08F, false, false);
+                case LAB_COMPLEX -> new ThemeShapeProfile(style, CeilingMode.SEALED, ROOM_HEIGHT + 1, ROOM_HEIGHT + 4, 0.0F, false, false);
+                case MILITARY_COMPOUND -> new ThemeShapeProfile(style, CeilingMode.SEALED, ROOM_HEIGHT + 1, ROOM_HEIGHT + 4, 0.0F, false, false);
+                case NETHER_FORTRESS -> new ThemeShapeProfile(style, CeilingMode.BROKEN, ROOM_HEIGHT + 1, ROOM_HEIGHT + 4, 0.08F, false, true);
+                case URBAN_INTERIOR -> new ThemeShapeProfile(style, CeilingMode.SEALED, ROOM_HEIGHT + 1, ROOM_HEIGHT + 4, 0.0F, false, false);
+                case VOID_ALIEN -> new ThemeShapeProfile(style, CeilingMode.BROKEN, ROOM_HEIGHT + 1, ROOM_HEIGHT + 4, 0.14F, false, true);
+                default -> new ThemeShapeProfile(style, CeilingMode.SEALED, ROOM_HEIGHT + 1, ROOM_HEIGHT + 4, 0.0F, false, false);
+            };
+        }
+
+        private boolean openCeiling() {
+            return ceilingMode == CeilingMode.OPEN;
+        }
+
+        private boolean brokenCeiling() {
+            return ceilingMode == CeilingMode.BROKEN;
+        }
+
+        private boolean needsInvisibleSafetyCap() {
+            return style == ThemeManager.ThemeGenerationStyle.ROOFTOP_OPEN;
+        }
+
+        private int wallTop(int gx, int gz) {
+            if (openCeiling()) return wallTop;
+            if (roughWalls && cellNoise(gx, gz, 41) < 0.16F) {
+                return Math.max(3, wallTop - 1);
+            }
+            return wallTop;
+        }
+    }
+
+    private static float cellNoise(int x, int z, int salt) {
+        long value = 0x9E3779B97F4A7C15L;
+        value ^= (long) x * 0xBF58476D1CE4E5B9L;
+        value ^= (long) z * 0x94D049BB133111EBL;
+        value ^= (long) salt * 0xD6E8FEB86659FD93L;
+        value ^= value >>> 30;
+        value *= 0xBF58476D1CE4E5B9L;
+        value ^= value >>> 27;
+        value *= 0x94D049BB133111EBL;
+        value ^= value >>> 31;
+        return (float) ((value >>> 40) & 0xFFFFFFL) / (float) 0x1000000;
+    }
 
     private static boolean decorateRoomArchetype(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
                                               int baseY, int roomIndex, boolean isBoss,
@@ -619,6 +764,367 @@ public class MapGenerator {
             default -> buildLowVisibilityRoom(level, rand, theme, baseY, rx, rz, rw, rd);
         }
         return false;
+    }
+
+    private static void decorateRoomVolume(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                           ThemeShapeProfile shape,
+                                           int baseY, RoomRole role, boolean isBoss,
+                                           int rx, int rz, int rw, int rd) {
+        if (shape.openCeiling()) return;
+        if (isBoss || rw < 11 || rd < 11 || role == RoomRole.START) return;
+        float chance = switch (role) {
+            case COMBAT_LONG, COVER_DENSE -> 0.45F;
+            case SIDE_REWARD, SUPPLY_RISK -> 0.35F;
+            case ELITE, AMBUSH -> 0.25F;
+            default -> 0.15F;
+        };
+        if (rand.nextFloat() >= chance) return;
+
+        if (rand.nextBoolean()) {
+            buildAtriumOpening(level, rand, theme, baseY, rx, rz, rw, rd);
+        } else {
+            buildRaisedPocket(level, rand, theme, baseY, rx, rz, rw, rd);
+        }
+    }
+
+    private static void decorateThemeRoomDetails(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                                 ThemeShapeProfile shape, int baseY, RoomRole role, boolean isBoss,
+                                                 int rx, int rz, int rw, int rd) {
+        if (role == RoomRole.START || rw < 7 || rd < 7) return;
+        switch (shape.style()) {
+            case ORGANIC_CAVE -> buildOrganicCaveDetails(level, rand, theme, baseY, rx, rz, rw, rd);
+            case BROKEN_RUINS -> buildBrokenRuinDetails(level, rand, theme, baseY, rx, rz, rw, rd);
+            case FLOODED_LOW -> buildFloodedLowDetails(level, rand, theme, baseY, rx, rz, rw, rd);
+            case SHIPWRECK -> buildShipwreckDetails(level, rand, theme, baseY, rx, rz, rw, rd);
+            case PIPELINE, SUBWAY, SEWER -> buildLinearUtilityDetails(level, rand, theme, shape.style(), baseY, rx, rz, rw, rd);
+            case HANGAR -> buildHangarDetails(level, theme, baseY, rx, rz, rw, rd);
+            case RADAR_OPEN -> buildRadarDetails(level, theme, baseY, rx, rz, rw, rd);
+            case LAB_COMPLEX -> buildLabDetails(level, rand, theme, baseY, rx, rz, rw, rd);
+            case MILITARY_COMPOUND -> buildMilitaryCompoundDetails(level, rand, theme, baseY, rx, rz, rw, rd);
+            case NETHER_FORTRESS -> buildNetherFortressDetails(level, rand, theme, baseY, rx, rz, rw, rd);
+            case URBAN_INTERIOR -> buildUrbanInteriorDetails(level, rand, theme, baseY, rx, rz, rw, rd);
+            case TEMPLE_AXIS -> buildTempleAxisDetails(level, theme, baseY, rx, rz, rw, rd);
+            case VOID_ALIEN -> buildVoidAlienDetails(level, rand, theme, baseY, rx, rz, rw, rd);
+            case ROOFTOP_OPEN -> buildRooftopDetails(level, rand, theme, baseY, rx, rz, rw, rd);
+            default -> {
+            }
+        }
+    }
+
+    private static void buildOrganicCaveDetails(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                                int baseY, int rx, int rz, int rw, int rd) {
+        int clusters = Math.max(2, Math.min(6, (rw + rd) / 6));
+        for (int i = 0; i < clusters; i++) {
+            int x = rx + 2 + rand.nextInt(Math.max(1, rw - 4));
+            int z = rz + 2 + rand.nextInt(Math.max(1, rd - 4));
+            int height = 1 + rand.nextInt(3);
+            for (int y = 1; y <= height; y++) {
+                setBlock(level, new BlockPos(x, baseY + y, z), y == height ? theme.accent : theme.wall);
+            }
+            if (rand.nextBoolean() && rw > 9 && rd > 9) {
+                setBlock(level, new BlockPos(x + 1, baseY + 1, z), theme.decor);
+            }
+        }
+    }
+
+    private static void buildBrokenRuinDetails(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                               int baseY, int rx, int rz, int rw, int rd) {
+        int rubble = Math.max(2, Math.min(7, (rw * rd) / 26));
+        for (int i = 0; i < rubble; i++) {
+            int x = rx + 1 + rand.nextInt(Math.max(1, rw - 2));
+            int z = rz + 1 + rand.nextInt(Math.max(1, rd - 2));
+            setBlock(level, new BlockPos(x, baseY + 1, z), rand.nextBoolean() ? theme.wall : theme.accent);
+            if (rand.nextFloat() < 0.35F) {
+                setBlock(level, new BlockPos(x, baseY + ROOM_HEIGHT, z), Blocks.AIR.defaultBlockState());
+                setBlock(level, new BlockPos(x, baseY + ROOM_HEIGHT + 1, z), Blocks.AIR.defaultBlockState());
+            }
+        }
+    }
+
+    private static void buildFloodedLowDetails(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                               int baseY, int rx, int rz, int rw, int rd) {
+        int z = rz + rd / 2;
+        for (int x = rx + 2; x < rx + rw - 2; x++) {
+            if ((x + z) % 3 == 0) {
+                setBlock(level, new BlockPos(x, baseY, z), theme.accent);
+            }
+        }
+        if (rand.nextBoolean()) {
+            buildRaisedDryPlatform(level, theme, baseY, rx, rz, rw, rd);
+        }
+    }
+
+    private static void buildShipwreckDetails(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                              int baseY, int rx, int rz, int rw, int rd) {
+        int ribs = Math.max(2, rw / 5);
+        for (int i = 1; i <= ribs; i++) {
+            int x = rx + i * rw / (ribs + 1);
+            for (int z = rz + 2; z < rz + rd - 2; z += 2) {
+                setBlock(level, new BlockPos(x, baseY + 1, z), theme.accent);
+            }
+            if (rand.nextBoolean()) {
+                setBlock(level, new BlockPos(x, baseY + 2, rz + rd / 2), theme.wall);
+            }
+        }
+    }
+
+    private static void buildLinearUtilityDetails(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                                  ThemeManager.ThemeGenerationStyle style,
+                                                  int baseY, int rx, int rz, int rw, int rd) {
+        boolean alongX = rw >= rd;
+        int mid = alongX ? rz + rd / 2 : rx + rw / 2;
+        int start = alongX ? rx + 2 : rz + 2;
+        int end = alongX ? rx + rw - 2 : rz + rd - 2;
+        for (int p = start; p < end; p++) {
+            if (p % 2 != 0) continue;
+            BlockPos pos = alongX ? new BlockPos(p, baseY, mid) : new BlockPos(mid, baseY, p);
+            setBlock(level, pos, style == ThemeManager.ThemeGenerationStyle.SUBWAY ? theme.accent : theme.wall);
+        }
+        if (style == ThemeManager.ThemeGenerationStyle.PIPELINE || style == ThemeManager.ThemeGenerationStyle.SEWER) {
+            int fixtures = 1 + rand.nextInt(3);
+            for (int i = 0; i < fixtures; i++) {
+                int p = start + rand.nextInt(Math.max(1, end - start));
+                BlockPos pos = alongX ? new BlockPos(p, baseY + 1, mid + 2) : new BlockPos(mid + 2, baseY + 1, p);
+                setBlock(level, pos, theme.decor);
+            }
+        }
+    }
+
+    private static void buildHangarDetails(ServerLevel level, ThemeManager.ThemeInstance theme,
+                                           int baseY, int rx, int rz, int rw, int rd) {
+        for (int x = rx + 2; x < rx + rw - 2; x++) {
+            if (x % 4 == 0) {
+                setBlock(level, new BlockPos(x, baseY, rz + rd / 2), theme.accent);
+            }
+        }
+        setBlock(level, new BlockPos(rx + rw / 2, baseY + 1, rz + 2), theme.light);
+    }
+
+    private static void buildRadarDetails(ServerLevel level, ThemeManager.ThemeInstance theme,
+                                          int baseY, int rx, int rz, int rw, int rd) {
+        int cx = rx + rw / 2;
+        int cz = rz + rd / 2;
+        for (int y = 1; y <= 4; y++) {
+            setBlock(level, new BlockPos(cx, baseY + y, cz), theme.accent);
+        }
+        for (int dx = -2; dx <= 2; dx++) {
+            setBlock(level, new BlockPos(cx + dx, baseY + 4, cz), theme.light);
+        }
+        for (int dz = -2; dz <= 2; dz++) {
+            setBlock(level, new BlockPos(cx, baseY + 4, cz + dz), theme.light);
+        }
+    }
+
+    private static void buildLabDetails(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                        int baseY, int rx, int rz, int rw, int rd) {
+        int cx = rx + rw / 2;
+        int cz = rz + rd / 2;
+        for (int x = rx + 2; x < rx + rw - 2; x++) {
+            if ((x - rx) % 4 == 0) {
+                setBlock(level, new BlockPos(x, baseY + 1, cz), theme.accent);
+                setBlock(level, new BlockPos(x, baseY + 2, cz), Blocks.IRON_BARS.defaultBlockState());
+            }
+        }
+        int pods = 1 + rand.nextInt(3);
+        for (int i = 0; i < pods; i++) {
+            int x = rx + 2 + rand.nextInt(Math.max(1, rw - 4));
+            int z = rz + 2 + rand.nextInt(Math.max(1, rd - 4));
+            setBlock(level, new BlockPos(x, baseY + 1, z), Blocks.GLASS.defaultBlockState());
+            setBlock(level, new BlockPos(x, baseY + 2, z), theme.light);
+        }
+    }
+
+    private static void buildMilitaryCompoundDetails(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                                     int baseY, int rx, int rz, int rw, int rd) {
+        int lanes = Math.max(1, Math.min(3, rd / 5));
+        for (int lane = 1; lane <= lanes; lane++) {
+            int z = rz + lane * rd / (lanes + 1);
+            for (int x = rx + 2; x < rx + rw - 2; x += 5) {
+                setBlock(level, new BlockPos(x, baseY + 1, z), theme.wall);
+                if (rand.nextBoolean()) {
+                    setBlock(level, new BlockPos(x + 1, baseY + 1, z), theme.accent);
+                }
+            }
+        }
+        setBlock(level, new BlockPos(rx + rw / 2, baseY + 1, rz + rd - 3), Blocks.BARREL.defaultBlockState());
+    }
+
+    private static void buildNetherFortressDetails(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                                   int baseY, int rx, int rz, int rw, int rd) {
+        int cx = rx + rw / 2;
+        for (int z = rz + 2; z < rz + rd - 2; z += 3) {
+            setBlock(level, new BlockPos(cx - 2, baseY + 1, z), theme.accent);
+            setBlock(level, new BlockPos(cx + 2, baseY + 1, z), theme.accent);
+            if (rand.nextFloat() < 0.35F) {
+                setBlock(level, new BlockPos(cx, baseY, z), theme.light);
+            }
+        }
+    }
+
+    private static void buildUrbanInteriorDetails(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                                  int baseY, int rx, int rz, int rw, int rd) {
+        boolean splitX = rw >= rd;
+        int divider = splitX ? rx + rw / 2 : rz + rd / 2;
+        int start = splitX ? rz + 2 : rx + 2;
+        int end = splitX ? rz + rd - 2 : rx + rw - 2;
+        int doorway = start + rand.nextInt(Math.max(1, end - start));
+        for (int p = start; p < end; p++) {
+            if (Math.abs(p - doorway) <= 1) continue;
+            BlockPos pos = splitX ? new BlockPos(divider, baseY + 1, p) : new BlockPos(p, baseY + 1, divider);
+            setBlock(level, pos, theme.wall);
+            if (p % 4 == 0) setBlock(level, pos.above(), theme.accent);
+        }
+        setBlock(level, new BlockPos(rx + 2, baseY + 1, rz + 2), Blocks.BOOKSHELF.defaultBlockState());
+        setBlock(level, new BlockPos(rx + rw - 3, baseY + 1, rz + rd - 3), theme.decor);
+    }
+
+    private static void buildTempleAxisDetails(ServerLevel level, ThemeManager.ThemeInstance theme,
+                                               int baseY, int rx, int rz, int rw, int rd) {
+        int cx = rx + rw / 2;
+        for (int z = rz + 2; z < rz + rd - 2; z += 4) {
+            setBlock(level, new BlockPos(cx - 3, baseY + 1, z), theme.accent);
+            setBlock(level, new BlockPos(cx + 3, baseY + 1, z), theme.accent);
+        }
+        setBlock(level, new BlockPos(cx, baseY + 1, rz + rd - 3), theme.light);
+    }
+
+    private static void buildVoidAlienDetails(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                              int baseY, int rx, int rz, int rw, int rd) {
+        int marks = Math.max(2, Math.min(5, (rw + rd) / 8));
+        for (int i = 0; i < marks; i++) {
+            int x = rx + 2 + rand.nextInt(Math.max(1, rw - 4));
+            int z = rz + 2 + rand.nextInt(Math.max(1, rd - 4));
+            setBlock(level, new BlockPos(x, baseY, z), theme.accent);
+            setBlock(level, new BlockPos(x, baseY + ROOM_HEIGHT, z), theme.light);
+        }
+    }
+
+    private static void buildRooftopDetails(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                            int baseY, int rx, int rz, int rw, int rd) {
+        int fixtures = Math.max(1, Math.min(3, (rw + rd) / 12));
+        for (int i = 0; i < fixtures; i++) {
+            int x = rx + 2 + rand.nextInt(Math.max(1, rw - 4));
+            int z = rz + 2 + rand.nextInt(Math.max(1, rd - 4));
+            setBlock(level, new BlockPos(x, baseY + 1, z), Blocks.IRON_BLOCK.defaultBlockState());
+            if (rand.nextBoolean()) {
+                setBlock(level, new BlockPos(x + 1, baseY + 1, z), theme.accent);
+            }
+        }
+    }
+
+    private static void buildRooftopBackdrop(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                             BlockPos center, int baseY, int innerR) {
+        int outerR = innerR + ROOFTOP_BACKDROP_MARGIN;
+        int roofY = baseY - 4;
+        for (int dx = -outerR; dx <= outerR; dx++) {
+            for (int dz = -outerR; dz <= outerR; dz++) {
+                if (Math.abs(dx) <= innerR && Math.abs(dz) <= innerR) continue;
+                int worldX = center.getX() + dx;
+                int worldZ = center.getZ() + dz;
+                setBlock(level, new BlockPos(worldX, roofY, worldZ), rooftopBackdropBlock(theme, dx, dz));
+            }
+        }
+
+        int cityBlocks = 26;
+        for (int i = 0; i < cityBlocks; i++) {
+            int side = i % 4;
+            int offset = -outerR + 6 + rand.nextInt(Math.max(1, outerR * 2 - 12));
+            int depth = 4 + rand.nextInt(9);
+            int width = 4 + rand.nextInt(8);
+            int height = 2 + rand.nextInt(5);
+            int bx = switch (side) {
+                case 0 -> -outerR + 2 + rand.nextInt(Math.max(1, ROOFTOP_BACKDROP_MARGIN / 2));
+                case 1 -> outerR - width - 2 - rand.nextInt(Math.max(1, ROOFTOP_BACKDROP_MARGIN / 2));
+                default -> offset;
+            };
+            int bz = switch (side) {
+                case 2 -> -outerR + 2 + rand.nextInt(Math.max(1, ROOFTOP_BACKDROP_MARGIN / 2));
+                case 3 -> outerR - depth - 2 - rand.nextInt(Math.max(1, ROOFTOP_BACKDROP_MARGIN / 2));
+                default -> offset;
+            };
+            if (Math.abs(bx) <= innerR + 1 && Math.abs(bz) <= innerR + 1) continue;
+            for (int x = 0; x < width; x++) {
+                for (int z = 0; z < depth; z++) {
+                    for (int y = 0; y < height; y++) {
+                        setBlock(level, new BlockPos(center.getX() + bx + x, roofY + 1 + y, center.getZ() + bz + z),
+                            y == height - 1 ? theme.accent : theme.wall);
+                    }
+                }
+            }
+        }
+    }
+
+    private static BlockState rooftopBackdropBlock(ThemeManager.ThemeInstance theme, int x, int z) {
+        return ((Math.floorDiv(x, 7) + Math.floorDiv(z, 7)) & 1) == 0
+            ? theme.floor
+            : theme.accent;
+    }
+
+    private static void buildRaisedDryPlatform(ServerLevel level, ThemeManager.ThemeInstance theme,
+                                               int baseY, int rx, int rz, int rw, int rd) {
+        int px = rx + rw / 2 - 2;
+        int pz = rz + rd / 2 - 2;
+        for (int dx = 0; dx < 4; dx++) {
+            for (int dz = 0; dz < 4; dz++) {
+                setBlock(level, new BlockPos(px + dx, baseY + 1, pz + dz), theme.floor);
+            }
+        }
+    }
+
+    private static void buildAtriumOpening(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                           int baseY, int rx, int rz, int rw, int rd) {
+        int margin = 3;
+        int ox0 = rx + margin;
+        int oz0 = rz + margin;
+        int ow = Math.max(3, rw - margin * 2);
+        int od = Math.max(3, rd - margin * 2);
+        if (ow < 4 || od < 4) return;
+        for (int dx = 0; dx < ow; dx++) {
+            for (int dz = 0; dz < od; dz++) {
+                boolean frame = dx == 0 || dz == 0 || dx == ow - 1 || dz == od - 1;
+                BlockPos ceiling = new BlockPos(ox0 + dx, baseY + ROOM_HEIGHT, oz0 + dz);
+                BlockPos upper = ceiling.above();
+                if (frame) {
+                    if ((dx + dz) % 3 == 0) setBlock(level, ceiling, theme.accent);
+                    continue;
+                }
+                setBlock(level, ceiling, Blocks.AIR.defaultBlockState());
+                setBlock(level, upper, Blocks.AIR.defaultBlockState());
+            }
+        }
+        int lx = ox0 + ow / 2;
+        int lz = oz0 + od / 2;
+        setBlock(level, new BlockPos(lx, baseY + ROOM_HEIGHT - 1, lz), theme.light);
+    }
+
+    private static void buildRaisedPocket(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
+                                          int baseY, int rx, int rz, int rw, int rd) {
+        int side = rand.nextInt(4);
+        int width = Math.max(4, Math.min(7, rw / 2));
+        int depth = Math.max(4, Math.min(7, rd / 2));
+        int px = switch (side) {
+            case 0, 1 -> rx + rw / 2 - width / 2;
+            case 2 -> rx + 2;
+            default -> rx + rw - width - 2;
+        };
+        int pz = switch (side) {
+            case 0 -> rz + 2;
+            case 1 -> rz + rd - depth - 2;
+            default -> rz + rd / 2 - depth / 2;
+        };
+        for (int dx = 0; dx < width; dx++) {
+            for (int dz = 0; dz < depth; dz++) {
+                if (dx == 0 || dz == 0 || dx == width - 1 || dz == depth - 1) {
+                    setBlock(level, new BlockPos(px + dx, baseY + 1, pz + dz), theme.wall);
+                    continue;
+                }
+                setBlock(level, new BlockPos(px + dx, baseY + 1, pz + dz), Blocks.AIR.defaultBlockState());
+                setBlock(level, new BlockPos(px + dx, baseY + 2, pz + dz), Blocks.AIR.defaultBlockState());
+                if ((dx + dz) % 4 == 0) {
+                    setBlock(level, new BlockPos(px + dx, baseY, pz + dz), theme.accent);
+                }
+            }
+        }
     }
 
     private static void buildOpenCombatMarkers(ServerLevel level, ThemeManager.ThemeInstance theme,
@@ -798,38 +1304,108 @@ public class MapGenerator {
     }
 
     private static void stampCorridor(int[][] grid, int fx, int fz, int tx, int tz, int corridorWidth) {
-        int halfW = corridorWidth / 2;
+        stampCorridor(grid, fx, fz, tx, tz, corridorWidth, CorridorVariant.STRAIGHT);
+    }
 
-        // X軸方向
-        int xDir = fx < tx ? 1 : -1;
-        for (int x = fx; x != tx; x += xDir) {
-            for (int w = -halfW; w <= halfW; w++) {
-                stampCorridorCell(grid, x, fz + w);
-            }
-            stampCorridorWall(grid, x, fz - halfW - 1);
-            stampCorridorWall(grid, x, fz + halfW + 1);
+    private static void stampCorridor(int[][] grid, int fx, int fz, int tx, int tz,
+                                      int corridorWidth, CorridorVariant variant) {
+        CorridorVariant safeVariant = variant == null ? CorridorVariant.STRAIGHT : variant;
+        int width = switch (safeVariant) {
+            case WIDE_COVER, LOOP_CONNECTOR -> Math.max(corridorWidth, 5);
+            case NARROW_PRESSURE -> Math.max(3, Math.min(corridorWidth, 3));
+            default -> corridorWidth;
+        };
+        if (safeVariant == CorridorVariant.DOGLEG || safeVariant == CorridorVariant.BROKEN_ALCOVE) {
+            int midX = fx + (tx - fx) / 2;
+            int midZ = fz + (tz - fz) / 2;
+            stampCorridorSegmentX(grid, fx, midX, fz, width, safeVariant);
+            stampJunction(grid, midX, fz, width);
+            stampCorridorSegmentZ(grid, fz, midZ, midX, width, safeVariant);
+            stampJunction(grid, midX, midZ, width);
+            stampCorridorSegmentX(grid, midX, tx, midZ, width, safeVariant);
+            stampJunction(grid, tx, midZ, width);
+            stampCorridorSegmentZ(grid, midZ, tz, tx, width, safeVariant);
+            return;
         }
 
-        // 交差点
+        stampCorridorSegmentX(grid, fx, tx, fz, width, safeVariant);
+        stampJunction(grid, tx, fz, width);
+        stampCorridorSegmentZ(grid, fz, tz, tx, width, safeVariant);
+    }
+
+    private static void stampCorridorSegmentX(int[][] grid, int fromX, int toX, int z,
+                                              int corridorWidth, CorridorVariant variant) {
+        if (fromX == toX) return;
+        int halfW = corridorWidth / 2;
+        int xDir = fromX < toX ? 1 : -1;
+        int step = 0;
+        for (int x = fromX; x != toX; x += xDir, step++) {
+            int localHalf = corridorHalfWidthAt(halfW, step, variant);
+            for (int w = -localHalf; w <= localHalf; w++) {
+                stampCorridorCell(grid, x, z + w);
+            }
+            stampCorridorWall(grid, x, z - localHalf - 1);
+            stampCorridorWall(grid, x, z + localHalf + 1);
+            stampCorridorAlcoveX(grid, x, z, localHalf, step, variant);
+        }
+    }
+
+    private static void stampCorridorSegmentZ(int[][] grid, int fromZ, int toZ, int x,
+                                              int corridorWidth, CorridorVariant variant) {
+        if (fromZ == toZ) return;
+        int halfW = corridorWidth / 2;
+        int zDir = fromZ < toZ ? 1 : -1;
+        int step = 0;
+        for (int z = fromZ; z != toZ; z += zDir, step++) {
+            int localHalf = corridorHalfWidthAt(halfW, step, variant);
+            for (int w = -localHalf; w <= localHalf; w++) {
+                stampCorridorCell(grid, x + w, z);
+            }
+            stampCorridorWall(grid, x - localHalf - 1, z);
+            stampCorridorWall(grid, x + localHalf + 1, z);
+            stampCorridorAlcoveZ(grid, x, z, localHalf, step, variant);
+        }
+    }
+
+    private static void stampJunction(int[][] grid, int x, int z, int corridorWidth) {
+        int halfW = corridorWidth / 2;
         for (int dx = -halfW - 1; dx <= halfW + 1; dx++) {
             for (int dz = -halfW - 1; dz <= halfW + 1; dz++) {
                 boolean isEdge = (Math.abs(dx) == halfW + 1 || Math.abs(dz) == halfW + 1);
                 if (isEdge) {
-                    stampCorridorWall(grid, tx + dx, fz + dz);
+                    stampCorridorWall(grid, x + dx, z + dz);
                 } else {
-                    stampCorridorCell(grid, tx + dx, fz + dz);
+                    stampCorridorCell(grid, x + dx, z + dz);
                 }
             }
         }
+    }
 
-        // Z軸方向
-        int zDir = fz < tz ? 1 : -1;
-        for (int z = fz; z != tz; z += zDir) {
-            for (int w = -halfW; w <= halfW; w++) {
-                stampCorridorCell(grid, tx + w, z);
-            }
-            stampCorridorWall(grid, tx - halfW - 1, z);
-            stampCorridorWall(grid, tx + halfW + 1, z);
+    private static int corridorHalfWidthAt(int baseHalf, int step, CorridorVariant variant) {
+        if (variant == CorridorVariant.WIDE_COVER && step % 11 >= 7) return baseHalf + 1;
+        if (variant == CorridorVariant.BROKEN_ALCOVE && step % 13 >= 9) return baseHalf + 1;
+        return baseHalf;
+    }
+
+    private static void stampCorridorAlcoveX(int[][] grid, int x, int z, int halfW, int step,
+                                             CorridorVariant variant) {
+        if (variant != CorridorVariant.BROKEN_ALCOVE && variant != CorridorVariant.WIDE_COVER) return;
+        if (step % 10 != 5) return;
+        int side = (step / 10) % 2 == 0 ? -1 : 1;
+        for (int depth = 1; depth <= 2; depth++) {
+            stampCorridorCell(grid, x, z + side * (halfW + depth));
+            stampCorridorCell(grid, x + 1, z + side * (halfW + depth));
+        }
+    }
+
+    private static void stampCorridorAlcoveZ(int[][] grid, int x, int z, int halfW, int step,
+                                             CorridorVariant variant) {
+        if (variant != CorridorVariant.BROKEN_ALCOVE && variant != CorridorVariant.WIDE_COVER) return;
+        if (step % 10 != 5) return;
+        int side = (step / 10) % 2 == 0 ? -1 : 1;
+        for (int depth = 1; depth <= 2; depth++) {
+            stampCorridorCell(grid, x + side * (halfW + depth), z);
+            stampCorridorCell(grid, x + side * (halfW + depth), z + 1);
         }
     }
 
@@ -1041,6 +1617,9 @@ public class MapGenerator {
                 LOGGER.debug("[TacRogue] Cleared dungeon footprint at {} ({} tracked, {} cleared)",
                     center, footprint.blockCount(), clearedBlocks);
             }
+            if (ACTIVE_GENERATION_JOB.get() == null) {
+                flushMapVisibleChunkUpdates(level, footprint);
+            }
             return;
         }
 
@@ -1154,6 +1733,23 @@ public class MapGenerator {
     private static void placeBlockNow(ServerLevel level, BlockPos pos, BlockState state) {
         clearContainerIfBlockEntityPossible(level, pos);
         level.setBlock(pos, state, SET_BLOCK_FLAGS);
+    }
+
+    private static void flushMapVisibleChunkUpdates(ServerLevel level, DungeonFootprint footprint) {
+        if (level == null || footprint == null || footprint.isEmpty()) return;
+        int minChunkX = Math.floorDiv(footprint.minX, 16);
+        int maxChunkX = Math.floorDiv(footprint.maxX, 16);
+        int minChunkZ = Math.floorDiv(footprint.minZ, 16);
+        int maxChunkZ = Math.floorDiv(footprint.maxZ, 16);
+        for (int cx = minChunkX; cx <= maxChunkX; cx++) {
+            for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
+                LevelChunk chunk = level.getChunkSource().getChunkNow(cx, cz);
+                if (chunk != null) {
+                    chunk.setUnsaved(true);
+                    level.getChunkSource().chunkMap.resendBiomesForChunks(List.of(chunk));
+                }
+            }
+        }
     }
 
     private static boolean isVerboseLogging() {

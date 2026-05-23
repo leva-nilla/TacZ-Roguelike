@@ -17,13 +17,18 @@ import com.levanilla.rogue.core.service.FloorService;
 import com.levanilla.rogue.core.service.FloorInstanceManager;
 import com.levanilla.rogue.core.service.RogueItemFactory;
 import com.levanilla.rogue.core.service.ShopPlacementService;
+import com.levanilla.rogue.core.smoke.SmokeGenerationWalkService;
 import com.levanilla.rogue.core.smoke.SmokeTestService;
 import com.levanilla.rogue.networking.TacRogueNetworking;
 import com.levanilla.rogue.world.LobbyGenerator;
+import com.levanilla.rogue.world.MapGenerator;
+import com.levanilla.rogue.world.ThemeManager;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.commands.arguments.ResourceLocationArgument;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -83,6 +88,21 @@ public class RogueAdminCommand {
                     .then(Commands.literal("quests")
                         .executes(context -> debugQuests(context.getSource()))
                     )
+                    .then(Commands.literal("theme_list")
+                        .executes(context -> debugThemeList(context.getSource(), ""))
+                        .then(Commands.argument("biome", StringArgumentType.word())
+                            .executes(context -> debugThemeList(
+                                context.getSource(),
+                                StringArgumentType.getString(context, "biome"))))
+                    )
+                    .then(Commands.literal("theme")
+                        .then(Commands.argument("biome", StringArgumentType.word())
+                            .then(Commands.argument("variant", StringArgumentType.word())
+                                .executes(context -> debugGenerateTheme(
+                                    context.getSource(),
+                                    StringArgumentType.getString(context, "biome"),
+                                    StringArgumentType.getString(context, "variant")))))
+                    )
                     .then(Commands.literal("smoke")
                         .executes(context -> debugSmoke(context.getSource(), "quick"))
                         .then(Commands.literal("quick")
@@ -109,6 +129,18 @@ public class RogueAdminCommand {
                             .executes(context -> debugSmoke(context.getSource(), "shooting")))
                         .then(Commands.literal("monster")
                             .executes(context -> debugSmoke(context.getSource(), "monster")))
+                        .then(Commands.literal("generation")
+                            .executes(context -> debugSmoke(context.getSource(), "generation")))
+                        .then(Commands.literal("generation_view")
+                            .executes(context -> debugSmoke(context.getSource(), "generation_view")))
+                        .then(Commands.literal("generation_walk")
+                            .executes(context -> debugGenerationWalk(context.getSource(), 8))
+                            .then(Commands.argument("seconds", IntegerArgumentType.integer(2, 30))
+                                .executes(context -> debugGenerationWalk(
+                                    context.getSource(),
+                                    IntegerArgumentType.getInteger(context, "seconds")))))
+                        .then(Commands.literal("generation_stop")
+                            .executes(context -> debugGenerationStop(context.getSource())))
                         .then(Commands.literal("all")
                             .executes(context -> debugSmoke(context.getSource(), "all")))
                         .then(Commands.literal("full")
@@ -362,6 +394,100 @@ public class RogueAdminCommand {
 
     private static int debugSmoke(CommandSourceStack source, String suite) {
         return SmokeTestService.runSuite(source, suite);
+    }
+
+    private static int debugGenerationWalk(CommandSourceStack source, int seconds) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+        return SmokeGenerationWalkService.start(player, seconds);
+    }
+
+    private static int debugGenerationStop(CommandSourceStack source) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+        return SmokeGenerationWalkService.stop(player, true);
+    }
+
+    private static int debugThemeList(CommandSourceStack source, String biomeName) {
+        if (biomeName == null || biomeName.isBlank()) {
+            send(source, "Theme biomes=" + ThemeManager.biomeNamesCsv());
+            send(source, "Use /rogue_admin debug theme_list <biome> to list variants.");
+            return 1;
+        }
+        String variants = ThemeManager.variantNamesCsv(biomeName);
+        if (variants.isBlank()) {
+            source.sendFailure(Component.literal("[DEBUG] Unknown biome: " + biomeName
+                + " options=" + ThemeManager.biomeNamesCsv()));
+            return 0;
+        }
+        send(source, biomeName.toUpperCase(Locale.ROOT) + " variants=" + variants);
+        return 1;
+    }
+
+    private static int debugGenerateTheme(CommandSourceStack source, String biomeName, String variantName) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+        ServerLevel rogue = player.server.getLevel(CommonEventHandler.ROGUE_DIM);
+        if (rogue == null) {
+            source.sendFailure(Component.literal("[DEBUG] Rogue dimension is not loaded."));
+            return 0;
+        }
+
+        ThemeManager.ThemeInstance theme = ThemeManager.getThemeForNames(biomeName, variantName);
+        if (theme == null) {
+            source.sendFailure(Component.literal("[DEBUG] Unknown theme: " + biomeName + "/" + variantName
+                + ". Use /rogue_admin debug theme_list."));
+            return 0;
+        }
+
+        BlockPos center = new BlockPos(7350, 80, 7350);
+        String instanceId = "debug-theme-" + theme.biomeName.toLowerCase(Locale.ROOT)
+            + "-" + theme.variantName.toLowerCase(Locale.ROOT);
+        MapGenerator.clearStoredDungeon(rogue, center);
+        MapGenerator.GenerationJob job = MapGenerator.generateRoomJob(
+            rogue,
+            center,
+            theme,
+            1,
+            0xD06E_0800L,
+            theme.displayName.hashCode(),
+            instanceId,
+            "DEBUG",
+            1,
+            0,
+            1);
+        int ticks = 0;
+        while (!job.isComplete() && ticks < 80) {
+            job.tick(25000);
+            ticks++;
+        }
+        BlockPos spawn = job.getSpawnPos();
+        if (spawn != null) {
+            player.teleportTo(rogue, spawn.getX() + 0.5D, spawn.getY(), spawn.getZ() + 0.5D,
+                Direction.SOUTH.toYRot(), 0.0F);
+            player.getPersistentData().putString(FloorInstanceManager.INSTANCE_ID_KEY, instanceId);
+        }
+
+        boolean complete = job.isComplete();
+        boolean entered = spawn != null && player.level() == rogue && player.blockPosition().distSqr(spawn) <= 4.0D;
+        boolean spawnClear = spawn != null && rogue.getBlockState(spawn).isAir()
+            && rogue.getBlockState(spawn.above()).isAir();
+        boolean spawnFloor = spawn != null && !rogue.getBlockState(spawn.below()).isAir();
+        boolean ok = complete && entered && spawnClear && spawnFloor && job.totalBlockUpdates() > 1000;
+        String result = "Generated theme " + theme.biomeName + "/" + theme.variantName
+            + " style=" + ThemeManager.generationStyle(theme)
+            + " complete=" + complete
+            + " entered=" + entered
+            + " blocks=" + job.totalBlockUpdates()
+            + " ticks=" + ticks
+            + " spawn=" + spawn;
+        if (ok) {
+            send(source, result);
+        } else {
+            source.sendFailure(Component.literal("[DEBUG] Theme generation check failed. " + result
+                + " spawnClear=" + spawnClear + " spawnFloor=" + spawnFloor));
+        }
+        return ok ? 1 : 0;
     }
 
     private static int debugSetFloorCleared(CommandSourceStack source, boolean cleared) {

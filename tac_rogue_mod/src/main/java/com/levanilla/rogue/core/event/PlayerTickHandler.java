@@ -76,6 +76,9 @@ public class PlayerTickHandler {
         }
         if (player.level().dimension() == ROGUE_DIM) {
             LowHealthChallengeService.enforceCap(player);
+            if (player.tickCount % 3 == 0) {
+                CombatEventHandler.syncStealthTakedownHint(player);
+            }
         }
 
         // 奈落への落下防止

@@ -95,14 +95,12 @@ public class WelcomeScreen extends Screen {
         y = addSettingsRows(y);
         y += 20;
 
-        int gap = 8;
-        int buttonW = (this.layout.contentW() - gap) / 2;
         this.closeButton = Button.builder(Component.translatable("gui.tac_rogue.welcome.start"), b -> closeAndStart(true))
-            .bounds(this.layout.contentX(), this.layout.footerY(), buttonW, 20)
+            .bounds(this.layout.contentX(), this.layout.footerY(), tutorialChoiceButtonWidth(), 20)
             .build();
         this.addRenderableWidget(this.closeButton);
         this.skipTutorialButton = Button.builder(Component.translatable("gui.tac_rogue.welcome.skip_tutorial"), b -> closeAndStart(false))
-            .bounds(this.layout.contentX() + buttonW + gap, this.layout.footerY(), this.layout.contentW() - buttonW - gap, 20)
+            .bounds(tutorialChoiceSecondButtonX(), this.layout.footerY(), tutorialChoiceSecondButtonWidth(), 20)
             .build();
         this.addRenderableWidget(this.skipTutorialButton);
 
@@ -360,9 +358,31 @@ public class WelcomeScreen extends Screen {
         if (this.closeButton != null) {
             this.closeButton.setX(this.layout.contentX());
             this.closeButton.setY(this.layout.footerY());
-            this.closeButton.setWidth(this.layout.contentW());
+            this.closeButton.setWidth(tutorialChoiceButtonWidth());
             this.closeButton.visible = true;
         }
+        if (this.skipTutorialButton != null) {
+            this.skipTutorialButton.setX(tutorialChoiceSecondButtonX());
+            this.skipTutorialButton.setY(this.layout.footerY());
+            this.skipTutorialButton.setWidth(tutorialChoiceSecondButtonWidth());
+            this.skipTutorialButton.visible = true;
+        }
+    }
+
+    private int tutorialChoiceGap() {
+        return Math.min(8, Math.max(4, this.layout.contentW() / 48));
+    }
+
+    private int tutorialChoiceButtonWidth() {
+        return Math.max(96, (this.layout.contentW() - tutorialChoiceGap()) / 2);
+    }
+
+    private int tutorialChoiceSecondButtonX() {
+        return this.layout.contentX() + tutorialChoiceButtonWidth() + tutorialChoiceGap();
+    }
+
+    private int tutorialChoiceSecondButtonWidth() {
+        return Math.max(96, this.layout.contentW() - tutorialChoiceButtonWidth() - tutorialChoiceGap());
     }
 
     @Override

@@ -225,7 +225,6 @@ public class RunManager {
             data.setCurrentFloor(data.getMaxReachedFloor() - 1);
         }
         data.advanceFloor();
-        data.rerollFloorSeedSalt(player.server.getTickCount());
         // フロアクリア判定の猶予タイマー設定
         data.setFloorStartTick(player.server.getTickCount());
         updateThemeName(data);
@@ -234,7 +233,8 @@ public class RunManager {
         if (rogueLevel != null) {
             com.levanilla.rogue.core.service.FloorService.clearDungeonEntities(rogueLevel, data.getDungeonOrigin());
             BlockPos spawnPos = com.levanilla.rogue.world.MapGenerator.generateRoom(
-                rogueLevel, data.getDungeonOrigin(), null, data.getCurrentFloor(), data.getRunSeed(), data.getFloorSeedSalt());
+                rogueLevel, data.getDungeonOrigin(), null, data.getCurrentFloor(), data.getRunSeed(),
+                data.getFloorSeedSalt(), data.getFloorAttemptIndex());
 
             safeTeleport(player, rogueLevel, spawnPos);
             syncPlayer(player);
@@ -257,14 +257,15 @@ public class RunManager {
         data.setRunActive(true);
         data.setFloorCleared(false);
         data.setFloorStartTick(player.server.getTickCount());
-        data.rerollFloorSeedSalt(player.server.getTickCount());
+        data.startFloorAttempt(player.server.getTickCount());
         updateThemeName(data);
 
         ServerLevel rogueLevel = player.server.getLevel(CommonEventHandler.ROGUE_DIM);
         if (rogueLevel != null) {
             com.levanilla.rogue.core.service.FloorService.clearDungeonEntities(rogueLevel, data.getDungeonOrigin());
             BlockPos spawnPos = com.levanilla.rogue.world.MapGenerator.generateRoom(
-                rogueLevel, data.getDungeonOrigin(), null, data.getCurrentFloor(), data.getRunSeed(), data.getFloorSeedSalt());
+                rogueLevel, data.getDungeonOrigin(), null, data.getCurrentFloor(), data.getRunSeed(),
+                data.getFloorSeedSalt(), data.getFloorAttemptIndex());
             safeTeleport(player, rogueLevel, spawnPos);
             syncPlayer(player);
 

@@ -1,7 +1,7 @@
 {
     "formatVersion": 1,
     "game": "minecraft",
-    "versionId": "0.8.0",
+    "versionId": "0.8.5",
     "name": "TacZ: Rogue Protocol",
     "summary": "Fast-paced tactical roguelike shooter protocol built on TacZ.",
     "files": [

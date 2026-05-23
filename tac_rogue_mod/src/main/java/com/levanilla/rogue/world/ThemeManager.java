@@ -41,6 +41,26 @@ public class ThemeManager {
         RUINS, LAB, UNDERGROUND, MILITARY, NETHER, OCEAN, URBAN, TEMPLE, VOID
     }
 
+    public enum ThemeGenerationStyle {
+        DEFAULT,
+        BROKEN_RUINS,
+        ORGANIC_CAVE,
+        FLOODED_LOW,
+        SHIPWRECK,
+        PIPELINE,
+        SUBWAY,
+        SEWER,
+        HANGAR,
+        RADAR_OPEN,
+        LAB_COMPLEX,
+        MILITARY_COMPOUND,
+        NETHER_FORTRESS,
+        URBAN_INTERIOR,
+        TEMPLE_AXIS,
+        VOID_ALIEN,
+        ROOFTOP_OPEN
+    }
+
     // バリエーション名（各バイオーム群内で 5 種）
     private static final String[][] VARIANT_NAMES = {
         /* RUINS       */ {"OVERGROWN", "FLOODED", "FROZEN", "CRUMBLING", "BURNING"},
@@ -146,6 +166,78 @@ public class ThemeManager {
             biome.name(),
             VARIANT_NAMES[biomeIndex][variantIndex]
         );
+    }
+
+    public static ThemeInstance getThemeForIndices(int biomeIndex, int variantIndex) {
+        int safeBiome = Math.max(0, Math.min(Biome.values().length - 1, biomeIndex));
+        int safeVariant = Math.max(0, Math.min(VARIANT_NAMES[safeBiome].length - 1, variantIndex));
+        Biome biome = Biome.values()[safeBiome];
+        return new ThemeInstance(
+            FLOORS[safeBiome][safeVariant],
+            WALLS[safeBiome][safeVariant],
+            WALLS[safeBiome][safeVariant],
+            DECORS[safeBiome][safeVariant],
+            ACCENTS[safeBiome][safeVariant],
+            LIGHTS[safeBiome][safeVariant],
+            biome.name(),
+            VARIANT_NAMES[safeBiome][safeVariant]
+        );
+    }
+
+    public static ThemeInstance getThemeForNames(String biomeName, String variantName) {
+        int biomeIndex = biomeIndexOf(biomeName);
+        if (biomeIndex < 0) return null;
+        int variantIndex = variantIndexOf(biomeIndex, variantName);
+        if (variantIndex < 0) return null;
+        return getThemeForIndices(biomeIndex, variantIndex);
+    }
+
+    public static int biomeCount() {
+        return Biome.values().length;
+    }
+
+    public static int variantCount(int biomeIndex) {
+        int safeBiome = Math.max(0, Math.min(Biome.values().length - 1, biomeIndex));
+        return VARIANT_NAMES[safeBiome].length;
+    }
+
+    public static String biomeNamesCsv() {
+        return java.util.Arrays.stream(Biome.values())
+            .map(Biome::name)
+            .collect(java.util.stream.Collectors.joining(","));
+    }
+
+    public static String variantNamesCsv(String biomeName) {
+        int biomeIndex = biomeIndexOf(biomeName);
+        if (biomeIndex < 0) return "";
+        return String.join(",", VARIANT_NAMES[biomeIndex]);
+    }
+
+    private static int biomeIndexOf(String biomeName) {
+        if (biomeName == null) return -1;
+        String normalized = biomeName.trim().toUpperCase(java.util.Locale.ROOT);
+        for (int i = 0; i < Biome.values().length; i++) {
+            if (Biome.values()[i].name().equals(normalized)) return i;
+        }
+        return -1;
+    }
+
+    private static int variantIndexOf(int biomeIndex, String variantName) {
+        if (variantName == null || biomeIndex < 0 || biomeIndex >= VARIANT_NAMES.length) return -1;
+        String normalized = variantName.trim().toUpperCase(java.util.Locale.ROOT);
+        for (int i = 0; i < VARIANT_NAMES[biomeIndex].length; i++) {
+            if (VARIANT_NAMES[biomeIndex][i].equals(normalized)) return i;
+        }
+        return -1;
+    }
+
+    public static ThemeGenerationStyle generationStyle(ThemeInstance theme) {
+        if (theme == null) return ThemeGenerationStyle.DEFAULT;
+        return ThemeGenerationStyleResolver.resolve(theme.biomeName, theme.variantName);
+    }
+
+    public static boolean isRooftop(ThemeInstance theme) {
+        return generationStyle(theme) == ThemeGenerationStyle.ROOFTOP_OPEN;
     }
 
     /** バイオーム群のインデックスをシードベースで取得 */

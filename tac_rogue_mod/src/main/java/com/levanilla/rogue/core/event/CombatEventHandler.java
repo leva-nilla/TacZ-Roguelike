@@ -2,6 +2,7 @@ package com.levanilla.rogue.core.event;
 
 import com.levanilla.rogue.core.*;
 import com.levanilla.rogue.core.service.RoguePickupService;
+import com.levanilla.rogue.networking.StealthTakedownHintMessage;
 import com.levanilla.rogue.networking.TacRogueNetworking;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -13,11 +14,15 @@ import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.EntityHitResult;
+import net.minecraft.world.phys.Vec3;
+import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraftforge.event.entity.living.LivingDamageEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.network.NetworkDirection;
 
 import java.util.List;
 import java.util.ArrayList;
@@ -32,8 +37,10 @@ public class CombatEventHandler {
     // Used by regen logic to delay natural healing after damage.
     private static final java.util.Map<java.util.UUID, Long> lastDamageTickMap = new java.util.concurrent.ConcurrentHashMap<>();
     private static final java.util.Map<java.util.UUID, Long> lastKillTick = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<java.util.UUID, Integer> lastStealthHintTarget = new java.util.concurrent.ConcurrentHashMap<>();
     private static final String STEALTH_TAKEDOWN_BY = "TacRogueStealthTakedownBy";
     private static final String STEALTH_TAKEDOWN_TICK = "TacRogueStealthTakedownTick";
+    private static final int STEALTH_HINT_DURATION_MS = 350;
 
     // TacZ damage context is registered by TacZEventHandler and consumed by LivingHurtEvent.
     public static class GunDamageContext {
@@ -61,6 +68,18 @@ public class CombatEventHandler {
 
     public static void markPlayerDamaged(ServerPlayer player) {
         lastDamageTickMap.put(player.getUUID(), player.level().getGameTime());
+    }
+
+    public static void syncStealthTakedownHint(ServerPlayer player) {
+        if (player == null || player.level().dimension() != ROGUE_DIM || player.isSpectator()) return;
+        Mob target = findStealthTakedownTarget(player);
+        int targetId = target == null ? -1 : target.getId();
+        Integer previous = lastStealthHintTarget.put(player.getUUID(), targetId);
+        if (previous != null && previous == targetId && targetId < 0) return;
+        TacRogueNetworking.CHANNEL.sendTo(
+            new StealthTakedownHintMessage(targetId, targetId >= 0 ? STEALTH_HINT_DURATION_MS : 1),
+            player.connection.connection,
+            NetworkDirection.PLAY_TO_CLIENT);
     }
 
     // Stealth target filtering: mobs do not acquire players outside their forward cone unless recently alerted.
@@ -415,9 +434,32 @@ public class CombatEventHandler {
 
     private static boolean isStealthTakedownHit(LivingHurtEvent event, Mob mob) {
         if (mob.level().isClientSide || mob.level().dimension() != ROGUE_DIM) return false;
-        if (mob.getTags().contains("rogue:boss")) return false;
         if (!(event.getSource().getEntity() instanceof ServerPlayer srcPlayer)) return false;
         if (event.getSource().getDirectEntity() != srcPlayer) return false;
+        return isStealthTakedownEligible(srcPlayer, mob);
+    }
+
+    private static Mob findStealthTakedownTarget(ServerPlayer player) {
+        if (player.level().dimension() != ROGUE_DIM) return null;
+        Vec3 eye = player.getEyePosition(1.0F);
+        Vec3 look = player.getViewVector(1.0F);
+        double range = 3.2D;
+        Vec3 end = eye.add(look.scale(range));
+        AABB searchBox = player.getBoundingBox().expandTowards(look.scale(range)).inflate(1.0D);
+        EntityHitResult hit = ProjectileUtil.getEntityHitResult(
+            player,
+            eye,
+            end,
+            searchBox,
+            entity -> entity instanceof Mob candidate && isStealthTakedownEligible(player, candidate),
+            range * range);
+        return hit != null && hit.getEntity() instanceof Mob target ? target : null;
+    }
+
+    private static boolean isStealthTakedownEligible(ServerPlayer srcPlayer, Mob mob) {
+        if (mob == null || !mob.isAlive()) return false;
+        if (mob.level().isClientSide || mob.level().dimension() != ROGUE_DIM) return false;
+        if (mob.getTags().contains("rogue:boss")) return false;
         if (mob.getTarget() != null) return false;
         if (mob.distanceTo(srcPlayer) > 3.0D) return false;
 
@@ -425,8 +467,8 @@ public class CombatEventHandler {
         long lastAlert = mob.getPersistentData().getLong("LastAlertTick");
         if (lastAlert > 0L && now - lastAlert < 80L) return false;
 
-        net.minecraft.world.phys.Vec3 lookVec = mob.getViewVector(1.0F).normalize();
-        net.minecraft.world.phys.Vec3 toPlayer = srcPlayer.position().subtract(mob.position()).normalize();
+        Vec3 lookVec = mob.getViewVector(1.0F).normalize();
+        Vec3 toPlayer = srcPlayer.position().subtract(mob.position()).normalize();
         if (lookVec.dot(toPlayer) >= -0.55D) return false;
         return mob.hasLineOfSight(srcPlayer);
     }
@@ -726,6 +768,7 @@ public class CombatEventHandler {
     public static void clearMemory() {
         lastDamageTickMap.clear();
         lastKillTick.clear();
+        lastStealthHintTarget.clear();
         pendingGunContext.clear();
     }
 }

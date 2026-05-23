@@ -6,6 +6,7 @@ import com.levanilla.rogue.client.hud.HotbarRenderer;
 import com.levanilla.rogue.client.hud.HudRenderer;
 import com.levanilla.rogue.client.hud.NotificationManager;
 import com.levanilla.rogue.client.hud.TutorialGuideManager;
+import com.levanilla.rogue.core.ClientRunState;
 import com.levanilla.rogue.core.RunManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
@@ -61,6 +62,7 @@ final class ClientHudEventDelegate {
             NotificationManager.renderPopups(graphics, mc, width, height);
             renderBackgroundLoadIndicator(graphics, mc, width);
             renderThirdPersonCrosshair(graphics, mc, player, width, height);
+            renderStealthTakedownHint(graphics, mc, player, width, height);
         }
     }
 
@@ -188,6 +190,53 @@ final class ClientHudEventDelegate {
         graphics.fill(x + 2, y, x + 4, y + 1, inner);
         graphics.fill(x, y - 3, x + 1, y - 1, inner);
         graphics.fill(x, y + 2, x + 1, y + 4, inner);
+    }
+
+    private static void renderStealthTakedownHint(GuiGraphics graphics, Minecraft mc, Player player, int width, int height) {
+        if (mc.level == null || player == null || player.isSpectator()) return;
+        if (!"tac_rogue".equals(mc.level.dimension().location().getNamespace())) return;
+        if (RunManager.isFloorCleared()) return;
+        if (isTacZGunStack(player.getMainHandItem())) return;
+
+        int targetId = ClientRunState.getStealthTakedownTargetId();
+        if (targetId < 0) return;
+        net.minecraft.world.entity.Entity target = mc.level.getEntity(targetId);
+        if (!(target instanceof net.minecraft.world.entity.Mob mob) || !mob.isAlive()) return;
+
+        int x = width / 2;
+        int y = height / 2;
+        if (!mc.options.getCameraType().isFirstPerson()) {
+            ScreenPoint point = projectToScreen(mc, mob.getEyePosition(1.0F).add(0.0D, -0.3D, 0.0D), width, height);
+            if (point != null) {
+                x = point.x();
+                y = point.y();
+            }
+        }
+        drawStealthHint(graphics, x, y);
+    }
+
+    private static void drawStealthHint(GuiGraphics graphics, int x, int y) {
+        int outer = 0xD0081116;
+        int inner = 0xFFE6D16A;
+        int gap = 12;
+        int len = 5;
+        graphics.fill(x - gap - len, y - gap, x - gap, y - gap + 1, outer);
+        graphics.fill(x - gap, y - gap, x - gap + 1, y - gap + len, outer);
+        graphics.fill(x + gap, y - gap, x + gap + len, y - gap + 1, outer);
+        graphics.fill(x + gap, y - gap, x + gap + 1, y - gap + len, outer);
+        graphics.fill(x - gap - len, y + gap, x - gap, y + gap + 1, outer);
+        graphics.fill(x - gap, y + gap - len, x - gap + 1, y + gap + 1, outer);
+        graphics.fill(x + gap, y + gap, x + gap + len, y + gap + 1, outer);
+        graphics.fill(x + gap, y + gap - len, x + gap + 1, y + gap + 1, outer);
+
+        graphics.fill(x - gap - len + 1, y - gap, x - gap, y - gap + 1, inner);
+        graphics.fill(x - gap, y - gap + 1, x - gap + 1, y - gap + len, inner);
+        graphics.fill(x + gap, y - gap, x + gap + len - 1, y - gap + 1, inner);
+        graphics.fill(x + gap, y - gap + 1, x + gap + 1, y - gap + len, inner);
+        graphics.fill(x - gap - len + 1, y + gap, x - gap, y + gap + 1, inner);
+        graphics.fill(x - gap, y + gap - len + 1, x - gap + 1, y + gap, inner);
+        graphics.fill(x + gap, y + gap, x + gap + len - 1, y + gap + 1, inner);
+        graphics.fill(x + gap, y + gap - len + 1, x + gap + 1, y + gap, inner);
     }
 
     private record ScreenPoint(int x, int y) {}

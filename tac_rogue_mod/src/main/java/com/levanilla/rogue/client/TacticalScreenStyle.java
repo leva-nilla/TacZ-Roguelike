@@ -12,7 +12,10 @@ public final class TacticalScreenStyle {
     public static boolean isWorldFlowScreen(Screen screen) {
         return screen instanceof net.minecraft.client.gui.screens.worldselection.SelectWorldScreen
             || screen instanceof net.minecraft.client.gui.screens.worldselection.CreateWorldScreen
+            || screen instanceof net.minecraft.client.gui.screens.ConfirmScreen
             || screen instanceof net.minecraft.client.gui.screens.GenericDirtMessageScreen
+            || screen instanceof net.minecraft.client.gui.screens.ReceivingLevelScreen
+            || screen instanceof net.minecraft.client.gui.screens.LevelLoadingScreen
             || screen instanceof net.minecraft.client.gui.screens.ProgressScreen;
     }
 

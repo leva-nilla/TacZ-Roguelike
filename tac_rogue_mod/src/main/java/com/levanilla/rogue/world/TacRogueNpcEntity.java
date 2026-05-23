@@ -1,9 +1,11 @@
 package com.levanilla.rogue.world;
 
+import com.levanilla.rogue.core.service.FloorInstanceManager;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -17,6 +19,10 @@ import net.minecraft.world.level.Level;
 public class TacRogueNpcEntity extends PathfinderMob {
     private static final EntityDataAccessor<String> ROLE =
         SynchedEntityData.defineId(TacRogueNpcEntity.class, EntityDataSerializers.STRING);
+    private static final String EXTRACTION_OFFICER_KEY = "TacRogueExtractionOfficer";
+    private static final double EXTRACTION_FOLLOW_START_DISTANCE_SQR = 4.5D * 4.5D;
+    private static final double EXTRACTION_FOLLOW_STOP_DISTANCE_SQR = 2.5D * 2.5D;
+    private static final double EXTRACTION_FOLLOW_SPEED = 1.05D;
 
     public TacRogueNpcEntity(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
@@ -56,6 +62,13 @@ public class TacRogueNpcEntity extends PathfinderMob {
         this.getPersistentData().putString("TacRogueLobbyRole", role.id);
     }
 
+    public void markExtractionOfficer() {
+        this.addTag("tac_rogue_npc");
+        this.addTag("tac_rogue_extraction_npc");
+        this.getPersistentData().putBoolean(EXTRACTION_OFFICER_KEY, true);
+        enableExtractionMovement();
+    }
+
     public boolean isLobbyNpc() {
         return this.getPersistentData().getBoolean("TacRogueLobbyNpc")
             || this.getTags().contains("tac_rogue_lobby_npc");
@@ -84,6 +97,14 @@ public class TacRogueNpcEntity extends PathfinderMob {
     }
 
     @Override
+    public void aiStep() {
+        super.aiStep();
+        if (!this.level().isClientSide && this.tickCount % 10 == 0) {
+            tickExtractionFollow();
+        }
+    }
+
+    @Override
     protected InteractionResult mobInteract(Player player, InteractionHand hand) {
         if (!this.level().isClientSide && player instanceof ServerPlayer serverPlayer) {
             NpcManager.handleCustomNpcInteraction(serverPlayer, this);
@@ -98,6 +119,9 @@ public class TacRogueNpcEntity extends PathfinderMob {
         if (this.getPersistentData().getBoolean("TacRogueLobbyNpc")) {
             tag.putBoolean("TacRogueLobbyNpc", true);
             tag.putString("TacRogueLobbyRole", this.getPersistentData().getString("TacRogueLobbyRole"));
+        }
+        if (this.getPersistentData().getBoolean(EXTRACTION_OFFICER_KEY)) {
+            tag.putBoolean(EXTRACTION_OFFICER_KEY, true);
         }
     }
 
@@ -114,7 +138,70 @@ public class TacRogueNpcEntity extends PathfinderMob {
             this.addTag("tac_rogue_lobby_npc");
         }
         this.addTag("tac_rogue_npc");
-        this.setNoAi(true);
+        if (tag.getBoolean(EXTRACTION_OFFICER_KEY)) {
+            this.getPersistentData().putBoolean(EXTRACTION_OFFICER_KEY, true);
+            this.addTag("tac_rogue_extraction_npc");
+            enableExtractionMovement();
+        } else {
+            this.setNoAi(true);
+        }
         this.setInvulnerable(true);
+    }
+
+    private void tickExtractionFollow() {
+        if (!this.getPersistentData().getBoolean(EXTRACTION_OFFICER_KEY)) return;
+        if (!(this.level() instanceof ServerLevel)) return;
+        enableExtractionMovement();
+
+        ServerPlayer target = findExtractionFollowTarget();
+        if (target == null || target.isSpectator()) {
+            this.getNavigation().stop();
+            return;
+        }
+
+        double distanceSqr = this.distanceToSqr(target);
+        if (distanceSqr > EXTRACTION_FOLLOW_START_DISTANCE_SQR) {
+            this.getNavigation().moveTo(target, EXTRACTION_FOLLOW_SPEED);
+        } else if (distanceSqr < EXTRACTION_FOLLOW_STOP_DISTANCE_SQR) {
+            this.getNavigation().stop();
+        }
+        this.getLookControl().setLookAt(target, 35.0F, 35.0F);
+    }
+
+    private ServerPlayer findExtractionFollowTarget() {
+        String ownerRaw = this.getPersistentData().getString(FloorInstanceManager.OWNER_KEY);
+        if (!ownerRaw.isBlank()) {
+            try {
+                java.util.UUID ownerId = java.util.UUID.fromString(ownerRaw);
+                if (this.level() instanceof ServerLevel serverLevel) {
+                    ServerPlayer owner = serverLevel.getServer().getPlayerList().getPlayer(ownerId);
+                    if (owner != null && owner.isAlive()) return owner;
+                }
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+
+        java.util.List<ServerPlayer> participants = FloorInstanceManager.getParticipantsForEntity(this);
+        if (participants.isEmpty()) return null;
+
+        ServerPlayer nearest = null;
+        double best = Double.MAX_VALUE;
+        for (ServerPlayer participant : participants) {
+            if (!participant.isAlive()) continue;
+            double distance = this.distanceToSqr(participant);
+            if (distance < best) {
+                best = distance;
+                nearest = participant;
+            }
+        }
+        return nearest;
+    }
+
+    private void enableExtractionMovement() {
+        this.setNoAi(false);
+        var movement = this.getAttribute(Attributes.MOVEMENT_SPEED);
+        if (movement != null && movement.getBaseValue() < 0.2D) {
+            movement.setBaseValue(0.24D);
+        }
     }
 }

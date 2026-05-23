@@ -16,10 +16,14 @@ import com.levanilla.rogue.core.registry.ShopCatalog;
 import com.levanilla.rogue.core.service.FloorInstanceManager;
 import com.levanilla.rogue.core.service.RogueItemFactory;
 import com.levanilla.rogue.core.service.RogueMobAlertService;
+import com.levanilla.rogue.world.MapGenerator;
 import com.levanilla.rogue.world.NpcManager;
 import com.levanilla.rogue.world.TacRogueNpcEntity;
+import com.levanilla.rogue.world.ThemeManager;
 import com.mojang.brigadier.context.CommandContext;
+import net.minecraft.core.BlockPos;
 import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.core.Direction;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
@@ -27,6 +31,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.AABB;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.registries.ForgeRegistries;
 
@@ -43,8 +48,9 @@ public final class SmokeTestService {
     );
     public static final List<String> FULL_SUITES = List.of(
         "quick", "registry", "lobby", "ui", "floor", "combat", "economy", "quest", "deep",
-        "world", "thirdperson", "shooting", "monster"
+        "world", "thirdperson", "shooting", "monster", "generation"
     );
+    private static final List<String> EXTRA_SUITES = List.of("generation_view");
 
     private SmokeTestService() {}
 
@@ -89,6 +95,8 @@ public final class SmokeTestService {
             case "thirdperson" -> thirdPerson(player, counter);
             case "shooting" -> shooting(player, counter);
             case "monster" -> monster(player, counter);
+            case "generation" -> generation(player, counter, false);
+            case "generation_view" -> generation(player, counter, true);
             default -> record(counter, suite, "suite.known", false, "known smoke suite", suite, "unknown suite");
         }
     }
@@ -388,6 +396,109 @@ public final class SmokeTestService {
         }
     }
 
+    private static void generation(ServerPlayer player, Counter counter, boolean keepLastForInspection) {
+        String suite = keepLastForInspection ? "generation_view" : "generation";
+        ServerLevel rogue = player.server.getLevel(CommonEventHandler.ROGUE_DIM);
+        if (rogue == null) {
+            record(counter, suite, "dimension.rogue.available", false,
+                "rogue dimension available for live generation", "not loaded", "");
+            return;
+        }
+        record(counter, suite, "dimension.rogue.available", true,
+            "rogue dimension available for live generation", rogue.dimension().location().toString(), "");
+
+        BlockPos center = new BlockPos(7200, 80, 7200);
+        long runSeed = 0x5EED_0800L;
+        int checked = 0;
+        int failed = 0;
+        long totalUpdates = 0L;
+        BlockPos lastSpawn = null;
+        for (int biome = 0; biome < ThemeManager.biomeCount(); biome++) {
+            for (int variant = 0; variant < ThemeManager.variantCount(biome); variant++) {
+                boolean lastTheme = biome == ThemeManager.biomeCount() - 1
+                    && variant == ThemeManager.variantCount(biome) - 1;
+                ThemeManager.ThemeInstance theme = ThemeManager.getThemeForIndices(biome, variant);
+                int floor = checked + 1;
+                String caseId = "theme." + theme.biomeName.toLowerCase(Locale.ROOT) + "."
+                    + theme.variantName.toLowerCase(Locale.ROOT);
+                String instanceId = "smoke-generation-" + checked;
+                try {
+                    MapGenerator.GenerationJob job = MapGenerator.generateRoomJob(
+                        rogue,
+                        center,
+                        theme,
+                        floor,
+                        runSeed,
+                        0x4500L + checked,
+                        instanceId,
+                        "SMOKE",
+                        1,
+                        0,
+                        checked + 1);
+                    int total = job.totalBlockUpdates();
+                    int ticks = 0;
+                    while (!job.isComplete() && ticks < 80) {
+                        job.tick(25000);
+                        ticks++;
+                    }
+                    BlockPos spawn = job.getSpawnPos();
+                    boolean complete = job.isComplete();
+                    if (spawn != null) {
+                        player.teleportTo(rogue, spawn.getX() + 0.5D, spawn.getY(), spawn.getZ() + 0.5D,
+                            Direction.SOUTH.toYRot(), 0.0F);
+                        player.getPersistentData().putString(FloorInstanceManager.INSTANCE_ID_KEY, instanceId);
+                    }
+                    boolean entered = spawn != null
+                        && player.level() == rogue
+                        && player.blockPosition().distSqr(spawn) <= 4.0D;
+                    boolean spawnClear = spawn != null && rogue.getBlockState(spawn).isAir()
+                        && rogue.getBlockState(spawn.above()).isAir();
+                    boolean spawnFloor = spawn != null && !rogue.getBlockState(spawn.below()).isAir();
+                    boolean hasBlocks = total > 1000;
+                    boolean pass = complete && entered && spawnClear && spawnFloor && hasBlocks;
+                    if (!pass) failed++;
+                    if (pass) lastSpawn = spawn.immutable();
+                    totalUpdates += Math.max(0, total);
+                    record(counter, suite, caseId, pass,
+                        "theme generates physical dungeon blocks and player enters safe spawn",
+                        "complete=" + complete + " ticks=" + ticks + " blocks=" + total
+                            + " spawn=" + spawn + " style=" + ThemeManager.generationStyle(theme),
+                        "entered=" + entered + " spawnClear=" + spawnClear + " spawnFloor=" + spawnFloor);
+                } catch (Throwable ex) {
+                    failed++;
+                    record(counter, suite, caseId, false,
+                        "theme generation does not throw", ex.getClass().getSimpleName(), ex.getMessage());
+                } finally {
+                    if (!keepLastForInspection || !lastTheme) {
+                        discardSmokeEntities(rogue, center);
+                        MapGenerator.clearStoredDungeon(rogue, center);
+                    }
+                }
+                checked++;
+            }
+        }
+        record(counter, suite, "themes.all_45", checked == 45 && failed == 0,
+            "all 45 theme variants generate live dungeon geometry and are entered",
+            "checked=" + checked + " failed=" + failed + " totalBlocks=" + totalUpdates,
+            "center=" + center + " lastSpawn=" + lastSpawn);
+        if (keepLastForInspection) {
+            record(counter, suite, "inspection.left_in_world", lastSpawn != null,
+                "last generated theme remains in world for visual inspection",
+                String.valueOf(lastSpawn),
+                "run /rogue_admin debug smoke generation to clean it after inspection");
+        }
+    }
+
+    private static void discardSmokeEntities(ServerLevel level, BlockPos center) {
+        AABB bounds = new AABB(center).inflate(96.0D, 32.0D, 96.0D);
+        level.getEntitiesOfClass(Mob.class, bounds, mob ->
+            mob.getPersistentData().getString(FloorInstanceManager.INSTANCE_ID_KEY).startsWith("smoke-generation-")
+                || mob.getTags().contains("tac_rogue_spawned")).forEach(Mob::discard);
+        level.getEntitiesOfClass(TacRogueNpcEntity.class, bounds, npc ->
+            npc.getPersistentData().getString(FloorInstanceManager.INSTANCE_ID_KEY).startsWith("smoke-generation-"))
+            .forEach(TacRogueNpcEntity::discard);
+    }
+
     private static void clearAlertData(Mob mob) {
         if (mob == null) return;
         mob.getPersistentData().remove(RogueMobAlertService.ALERT_LEVEL);
@@ -415,7 +526,10 @@ public final class SmokeTestService {
     private static String normalizeSuite(String suite) {
         if (suite == null || suite.isBlank()) return "quick";
         String normalized = suite.toLowerCase(Locale.ROOT);
-        return "all".equals(normalized) || "full".equals(normalized) || FULL_SUITES.contains(normalized) ? normalized : "quick";
+        return "all".equals(normalized) || "full".equals(normalized)
+            || FULL_SUITES.contains(normalized) || EXTRA_SUITES.contains(normalized)
+            ? normalized
+            : "quick";
     }
 
     private static void record(Counter counter, String suite, String caseId, boolean pass, String expected, String actual, String detail) {

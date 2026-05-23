@@ -88,6 +88,7 @@ public final class FloorInstanceManager {
         public final long createdTick;
         public final long runSeed;
         public final long floorSeedSalt;
+        public final int floorAttemptIndex;
         public volatile State state;
         public volatile long activeTick;
         public volatile long lastWaitSyncTick;
@@ -100,7 +101,8 @@ public final class FloorInstanceManager {
         public volatile MapGenerator.GenerationJob generationJob;
 
         FloorInstance(String id, int floor, EntryMode mode, UUID ownerUuid, BlockPos origin,
-                              long createdTick, long runSeed, long floorSeedSalt, boolean questEligible) {
+                              long createdTick, long runSeed, long floorSeedSalt, int floorAttemptIndex,
+                              boolean questEligible) {
             this.id = id;
             this.floor = floor;
             this.mode = mode;
@@ -110,6 +112,7 @@ public final class FloorInstanceManager {
             this.createdTick = createdTick;
             this.runSeed = runSeed;
             this.floorSeedSalt = floorSeedSalt;
+            this.floorAttemptIndex = Math.max(1, floorAttemptIndex);
             this.state = mode == EntryMode.SOLO ? State.ACTIVE : State.WAITING;
         }
     }
@@ -342,7 +345,8 @@ public final class FloorInstanceManager {
             instance.id,
             instance.mode.name(),
             instance.initialParticipantCount,
-            maxClaimableSupplyChests(server, instance));
+            maxClaimableSupplyChests(server, instance),
+            instance.floorAttemptIndex);
         syncGenerationUpdate(server, instance, instance.generationJob);
     }
 
@@ -605,7 +609,7 @@ public final class FloorInstanceManager {
             ServerPlayer player = server.getPlayerList().getPlayer(uuid);
             if (player == null) continue;
             Entity npc = NpcManager.spawnExtractionOfficer(level, NpcManager.findExtractionSpawnNear(level, player), instance.floor);
-            stampEntity(npc, instance.id, instance.floor, instance.mode, null);
+            stampEntity(npc, instance.id, instance.floor, instance.mode, player.getUUID());
 
             PlayerRunData data = RunManager.getData(player);
             boolean questEligible = instance.questEligible && isQuestEligibleFloor(instance.floor, data.getMaxReachedFloor());
@@ -690,6 +694,7 @@ public final class FloorInstanceManager {
                 + " floor=" + instance.floor
                 + " mode=" + instance.mode
                 + " state=" + instance.state
+                + " attempt=" + instance.floorAttemptIndex
                 + " questEligible=" + instance.questEligible
                 + " participants=" + instance.participants.size()
                 + " initial=" + instance.initialParticipantCount

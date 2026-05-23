@@ -432,10 +432,15 @@ public class SpawnAndWorldHandler {
             boolean bossAlive = alive.stream().anyMatch(mob -> mob.getTags().contains("rogue:boss"));
             if (alive.isEmpty() || (bossFloor && !bossAlive)) {
                 // フロア制圧完了。抽出用の情報将校をスポーンさせる
-                com.levanilla.rogue.world.NpcManager.spawnExtractionOfficer(
+                com.levanilla.rogue.world.TacRogueNpcEntity npc = com.levanilla.rogue.world.NpcManager.spawnExtractionOfficer(
                     rogueLevel,
                     com.levanilla.rogue.world.NpcManager.findExtractionSpawnNear(rogueLevel, player),
                     data.getCurrentFloor());
+                if (npc != null) {
+                    npc.getPersistentData().putString(
+                        com.levanilla.rogue.core.service.FloorInstanceManager.OWNER_KEY,
+                        player.getUUID().toString());
+                }
                 
                 com.levanilla.rogue.networking.PopupNotificationMessage.send(
                     player,

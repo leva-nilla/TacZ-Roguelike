@@ -220,6 +220,7 @@ public class NpcManager {
         TacRogueNpcEntity npc = spawnNpc(level, pos, NpcRole.INTEL_OFFICER,
             net.minecraft.network.chat.Component.translatable("npc.tac_rogue.extraction_officer").getString(), false);
         if (npc != null) {
+            npc.markExtractionOfficer();
             npc.getPersistentData().putInt("TacRogueSpawnFloor", floor);
             npc.getPersistentData().putLong("TacRogueSpawnTick", level.getServer().getTickCount());
         }

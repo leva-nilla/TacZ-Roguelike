@@ -41,7 +41,7 @@ public final class FloorService {
             data.setCurrentFloor(targetFloor);
             data.setFloorCleared(false);
             data.setRunActive(false);
-            data.rerollFloorSeedSalt(player.server.getTickCount());
+            data.startFloorAttempt(player.server.getTickCount());
             RunManager.refreshThemeName(data);
             parkInRogueStagingWhileRegenerating(player, data.getDungeonOrigin());
             FloorInstanceManager.enterFloor(player, targetFloor, mode);
@@ -83,7 +83,7 @@ public final class FloorService {
             data.setCurrentFloor(targetFloor);
             data.setFloorCleared(false);
             data.setRunActive(false);
-            data.rerollFloorSeedSalt(player.server.getTickCount());
+            data.startFloorAttempt(player.server.getTickCount());
             RunManager.refreshThemeName(data);
             parkInRogueStagingWhileRegenerating(player, data.getDungeonOrigin());
             FloorInstanceManager.enterFloor(player, targetFloor, mode);
@@ -105,7 +105,7 @@ public final class FloorService {
 
     private static void retryCurrentFloor(ServerPlayer player, FloorInstanceManager.EntryMode mode) {
         PlayerRunData data = RunManager.getData(player);
-        data.rerollFloorSeedSalt(player.server.getTickCount());
+        data.nextFloorAttempt(player.server.getTickCount());
         data.setFloorCleared(false);
         data.setRunActive(false);
         parkInRogueStagingWhileRegenerating(player, data.getDungeonOrigin());
