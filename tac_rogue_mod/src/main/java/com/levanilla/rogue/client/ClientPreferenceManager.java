@@ -15,6 +15,10 @@ public final class ClientPreferenceManager {
     private static final String LANGUAGE_SELECTED = "language_selected";
     private static final String WELCOME_SEEN_PREFIX = "welcome_setup_seen_v2.";
     private static final String TUTORIAL_GUIDE_DONE_PREFIX = "tutorial_guide_done_v1.";
+    private static final String TUTORIAL_CHOICE_MADE = "tutorial_choice_made_v1";
+    private static final String TUTORIAL_ENABLED = "tutorial_enabled_v1";
+    private static final String WELCOME_SEEN_GLOBAL = "welcome_setup_seen_global_v1";
+    private static final String TUTORIAL_GUIDE_DONE_GLOBAL = "tutorial_guide_done_global_v1";
 
     private ClientPreferenceManager() {}
 
@@ -28,28 +32,62 @@ public final class ClientPreferenceManager {
         save(props);
     }
 
+    public static boolean hasChosenTutorialPreference() {
+        return Boolean.parseBoolean(load().getProperty(TUTORIAL_CHOICE_MADE, "false"));
+    }
+
+    public static boolean isTutorialEnabled() {
+        Properties props = load();
+        if (!Boolean.parseBoolean(props.getProperty(TUTORIAL_CHOICE_MADE, "false"))) {
+            return true;
+        }
+        return Boolean.parseBoolean(props.getProperty(TUTORIAL_ENABLED, "true"));
+    }
+
+    public static void markTutorialPreference(boolean enabled) {
+        Properties props = load();
+        props.setProperty(TUTORIAL_CHOICE_MADE, "true");
+        props.setProperty(TUTORIAL_ENABLED, Boolean.toString(enabled));
+        if (!enabled) {
+            props.setProperty(WELCOME_SEEN_GLOBAL, "true");
+            props.setProperty(TUTORIAL_GUIDE_DONE_GLOBAL, "true");
+        }
+        save(props);
+    }
+
     public static boolean hasSeenWelcomeForCurrentWorld() {
-        return Boolean.parseBoolean(load().getProperty(WELCOME_SEEN_PREFIX + currentWorldKey(), "false"));
+        Properties props = load();
+        if (Boolean.parseBoolean(props.getProperty(WELCOME_SEEN_GLOBAL, "false"))) return true;
+        if (Boolean.parseBoolean(props.getProperty(WELCOME_SEEN_PREFIX + currentWorldKey(), "false"))) return true;
+        return hasChosenTutorialPreference() && !isTutorialEnabled();
     }
 
     public static void markWelcomeSeenForCurrentWorld() {
         Properties props = load();
+        props.setProperty(WELCOME_SEEN_GLOBAL, "true");
         props.setProperty(WELCOME_SEEN_PREFIX + currentWorldKey(), "true");
         save(props);
     }
 
     public static boolean hasCompletedTutorialGuideForCurrentWorld() {
-        return Boolean.parseBoolean(load().getProperty(TUTORIAL_GUIDE_DONE_PREFIX + currentWorldKey(), "false"));
+        Properties props = load();
+        if (!isTutorialEnabled()) return true;
+        return Boolean.parseBoolean(props.getProperty(TUTORIAL_GUIDE_DONE_GLOBAL, "false"))
+            || Boolean.parseBoolean(props.getProperty(TUTORIAL_GUIDE_DONE_PREFIX + currentWorldKey(), "false"));
     }
 
     public static void markTutorialGuideCompletedForCurrentWorld() {
         Properties props = load();
+        props.setProperty(TUTORIAL_GUIDE_DONE_GLOBAL, "true");
         props.setProperty(TUTORIAL_GUIDE_DONE_PREFIX + currentWorldKey(), "true");
         save(props);
     }
 
     public static void clearTutorialGuideCompletedForCurrentWorld() {
         Properties props = load();
+        props.setProperty(TUTORIAL_CHOICE_MADE, "true");
+        props.setProperty(TUTORIAL_ENABLED, "true");
+        props.remove(TUTORIAL_GUIDE_DONE_GLOBAL);
         props.remove(TUTORIAL_GUIDE_DONE_PREFIX + currentWorldKey());
         save(props);
     }

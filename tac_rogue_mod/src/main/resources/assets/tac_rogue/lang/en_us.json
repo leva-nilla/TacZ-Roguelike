@@ -764,7 +764,8 @@
   "key.tac_rogue.tutorial_next": "Advance First-run Guide",
   
   "gui.tac_rogue.welcome.title": "Welcome to TacZ: Rogue Protocol",
-  "gui.tac_rogue.welcome.start": "Confirm & Start",
+  "gui.tac_rogue.welcome.start": "Start with Tutorial ON",
+  "gui.tac_rogue.welcome.skip_tutorial": "Start with Tutorial OFF",
   "gui.tac_rogue.welcome.press_key": "Press any key...",
   "gui.tac_rogue.welcome.key_sprint": "Sprint (Run):",
   "gui.tac_rogue.welcome.key_sneak": "Sneak (Vanilla):",

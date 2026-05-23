@@ -14,7 +14,9 @@ final class ClientWelcomeScreenDelegate {
         pendingWelcomeScreen = true;
         pendingWelcomeTicks = 0;
         mc.tell(() -> {
-            pendingWelcomeScreen = mc.player != null && !ClientPreferenceManager.hasSeenWelcomeForCurrentWorld();
+            pendingWelcomeScreen = mc.player != null
+                && (!ClientPreferenceManager.hasChosenTutorialPreference()
+                    || !ClientPreferenceManager.hasSeenWelcomeForCurrentWorld());
         });
     }
 
@@ -24,7 +26,8 @@ final class ClientWelcomeScreenDelegate {
             pendingWelcomeTicks = 0;
             return;
         }
-        if (ClientPreferenceManager.hasSeenWelcomeForCurrentWorld()) {
+        if (ClientPreferenceManager.hasChosenTutorialPreference()
+            && ClientPreferenceManager.hasSeenWelcomeForCurrentWorld()) {
             pendingWelcomeScreen = false;
             pendingWelcomeTicks = 0;
             return;

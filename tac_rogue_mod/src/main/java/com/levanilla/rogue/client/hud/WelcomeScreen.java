@@ -24,6 +24,7 @@ public class WelcomeScreen extends Screen {
     private final List<Row> rows = new ArrayList<>();
 
     private Button closeButton;
+    private Button skipTutorialButton;
     private Button shaderStartupBtn;
     private AbstractWidget fovBtn;
     private AbstractWidget sensitivityBtn;
@@ -94,10 +95,16 @@ public class WelcomeScreen extends Screen {
         y = addSettingsRows(y);
         y += 20;
 
-        this.closeButton = Button.builder(Component.translatable("gui.tac_rogue.welcome.start"), b -> closeAndStart())
-            .bounds(this.layout.contentX(), this.layout.footerY(), this.layout.contentW(), 20)
+        int gap = 8;
+        int buttonW = (this.layout.contentW() - gap) / 2;
+        this.closeButton = Button.builder(Component.translatable("gui.tac_rogue.welcome.start"), b -> closeAndStart(true))
+            .bounds(this.layout.contentX(), this.layout.footerY(), buttonW, 20)
             .build();
         this.addRenderableWidget(this.closeButton);
+        this.skipTutorialButton = Button.builder(Component.translatable("gui.tac_rogue.welcome.skip_tutorial"), b -> closeAndStart(false))
+            .bounds(this.layout.contentX() + buttonW + gap, this.layout.footerY(), this.layout.contentW() - buttonW - gap, 20)
+            .build();
+        this.addRenderableWidget(this.skipTutorialButton);
 
         this.contentHeight = y;
         clampScroll();
@@ -250,12 +257,16 @@ public class WelcomeScreen extends Screen {
         this.rows.add(new Row(label, widget, mapping, y));
     }
 
-    private void closeAndStart() {
+    private void closeAndStart(boolean tutorialEnabled) {
+        ClientPreferenceManager.markTutorialPreference(tutorialEnabled);
         TacRogueNetworking.CHANNEL.sendToServer(new RogueActionMessage(RogueActionMessage.ActionType.TUTORIAL_DONE));
         if (this.minecraft != null && this.minecraft.player != null) {
             this.minecraft.player.addTag("rogue:tutorial_seen");
         }
         ClientPreferenceManager.markWelcomeSeenForCurrentWorld();
+        if (!tutorialEnabled) {
+            ClientPreferenceManager.markTutorialGuideCompletedForCurrentWorld();
+        }
         this.minecraft.options.save();
         this.minecraft.setScreen(null);
     }
