@@ -238,6 +238,8 @@ final class ClientInputEventDelegate {
         Minecraft mc = Minecraft.getInstance();
         if (mc.screen != null || mc.player == null) return;
 
+        handleNonGunCrawlKey(mc, event);
+
         if (event.getAction() == org.lwjgl.glfw.GLFW.GLFW_PRESS) {
             net.minecraft.client.KeyMapping taczInteract = findKeyMapping(mc, "key.tacz.interact.desc", "key.tacz.interact");
             if (taczInteract != null && taczInteract.matches(event.getKey(), event.getScanCode())) {
@@ -245,6 +247,24 @@ final class ClientInputEventDelegate {
                     tryCustomInteractFromClient(mc);
                 }
             }
+        }
+    }
+
+    private static void handleNonGunCrawlKey(Minecraft mc, net.minecraftforge.client.event.InputEvent.Key event) {
+        if (!isRogueContext(mc) || mc.level == null || mc.player == null) return;
+        if (isHoldingTacZGun(mc)) return;
+        net.minecraft.client.KeyMapping crawl = findKeyMapping(mc, "key.tacz.crawl.desc", "key.tacz.crawl");
+        if (crawl == null || !crawl.matches(event.getKey(), event.getScanCode())) return;
+        try {
+            if (!com.tacz.guns.config.sync.SyncConfig.ENABLE_CRAWL.get()) return;
+            var operator = com.tacz.guns.api.client.gameplay.IClientPlayerGunOperator.fromLocalPlayer(mc.player);
+            boolean hold = com.tacz.guns.config.client.KeyConfig.HOLD_TO_CRAWL.get();
+            if (event.getAction() == org.lwjgl.glfw.GLFW.GLFW_PRESS) {
+                operator.crawl(hold || !operator.isCrawl());
+            } else if (hold && event.getAction() == org.lwjgl.glfw.GLFW.GLFW_RELEASE) {
+                operator.crawl(false);
+            }
+        } catch (Throwable ignored) {
         }
     }
 
