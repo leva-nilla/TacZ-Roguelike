@@ -160,31 +160,38 @@ public class PriceManager {
         int price = getAttachmentSlotBasePrice(slot);
         if (data != null) {
             int extLevel = Math.max(0, data.getExtendedMagLevel());
-            if (extLevel > 0) price += 500 + extLevel * 650;
+            if (extLevel > 0) price += 350 + extLevel * 450;
 
             float weight = data.getWeight();
             if (weight < 0.0F) {
-                price += Math.min(2000, Math.round(Math.abs(weight) * 420.0F));
+                price += Math.min(900, Math.round(Math.abs(weight) * 250.0F));
             } else if (weight > 0.0F) {
-                price -= Math.min(350, Math.round(weight * 60.0F));
+                price -= Math.min(250, Math.round(weight * 50.0F));
             }
 
             int modifierCount = data.getModifier() == null ? 0 : data.getModifier().size();
-            price += modifierCount * 420;
+            price += getAttachmentModifierPrice(modifierCount);
         }
         return roundAttachmentPrice(price);
+    }
+
+    private static int getAttachmentModifierPrice(int modifierCount) {
+        if (modifierCount <= 0) return 0;
+        int primary = Math.min(modifierCount, 3) * 250;
+        int extra = Math.max(0, modifierCount - 3) * 100;
+        return Math.min(1400, primary + extra);
     }
 
     private static int getAttachmentSlotBasePrice(String slot) {
         String normalized = slot == null ? "unknown" : slot.toLowerCase(java.util.Locale.ROOT);
         return switch (normalized) {
-            case "scope" -> 1300;
-            case "muzzle" -> 1000;
-            case "grip" -> 850;
-            case "laser" -> 700;
-            case "extended_mag", "extendedmag" -> 1050;
-            case "stock" -> 800;
-            default -> 650;
+            case "scope" -> 1000;
+            case "muzzle" -> 850;
+            case "grip" -> 700;
+            case "laser" -> 550;
+            case "extended_mag", "extendedmag" -> 900;
+            case "stock" -> 650;
+            default -> 500;
         };
     }
 
@@ -194,20 +201,20 @@ public class PriceManager {
         String name = com.levanilla.rogue.core.registry.ShopCatalog.extractName(attachmentId).toUpperCase(java.util.Locale.ROOT);
         int price = getAttachmentSlotBasePrice(slot);
         if ("extended_mag".equals(slot)) {
-            if (name.contains("3") || name.contains("III")) price += 1800;
-            else if (name.contains("2") || name.contains("II")) price += 1200;
-            else price += 800;
+            if (name.contains("3") || name.contains("III")) price += 1400;
+            else if (name.contains("2") || name.contains("II")) price += 900;
+            else price += 600;
         } else if (name.contains("4X") || name.contains("6X") || name.contains("8X") || name.contains("SR") || name.contains("SNIPER")) {
-            price += 900;
+            price += 700;
         } else if (name.contains("SILENCER") || name.contains("SUPPRESSOR")) {
-            price += 900;
+            price += 700;
         }
         return roundAttachmentPrice(price);
     }
 
     private static int roundAttachmentPrice(double price) {
         int rounded = (int) (Math.round(price / 50.0D) * 50);
-        return Math.max(650, Math.min(12000, rounded));
+        return Math.max(450, Math.min(8500, rounded));
     }
 
     public static int getAmmoBuyPrice(String ammoId) {
