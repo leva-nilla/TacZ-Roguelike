@@ -191,6 +191,16 @@ public class RunManager {
         targetLevel.getChunkSource().addRegionTicket(
             TicketType.POST_TELEPORT, new ChunkPos(spawnPos), 1, player.getId());
         player.teleportTo(targetLevel, spawnPos.getX() + 0.5, spawnPos.getY() + 0.2, spawnPos.getZ() + 0.5, 0, 0);
+        if (targetLevel.dimension() == CommonEventHandler.ROGUE_DIM) {
+            requestJourneyMapRefresh(player, spawnPos, 128);
+        }
+    }
+
+    public static void requestJourneyMapRefresh(ServerPlayer player, BlockPos center, int radius) {
+        if (player == null || center == null) return;
+        com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
+            net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+            new com.levanilla.rogue.networking.JourneyMapRefreshMessage(center.getX(), center.getZ(), radius));
     }
 
     // ===== ライフサイクル (プレイヤー固有) =====

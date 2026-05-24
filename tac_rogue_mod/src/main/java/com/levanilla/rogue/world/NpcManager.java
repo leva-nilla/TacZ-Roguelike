@@ -136,7 +136,7 @@ public class NpcManager {
         for (NpcRole role : NpcRole.values()) {
             TacRogueNpcEntity best = null;
             double bestDistance = Double.MAX_VALUE;
-            Vec3 target = Vec3.atBottomCenterOf(lobbyNpcStandingPos(lobbyCenter, role));
+            Vec3 target = Vec3.atBottomCenterOf(lobbyNpcPos(lobbyCenter, role));
             for (TacRogueNpcEntity npc : existingCustom) {
                 if (resolveLobbyRole(npc) != role || !npc.isAlive()) continue;
                 double distance = npc.position().distanceToSqr(target);
@@ -204,10 +204,6 @@ public class NpcManager {
             case INTEL_OFFICER -> center.offset(-13, 0, -13);
             case MEDIC -> center.offset(-13, 0, 13);
         };
-    }
-
-    private static BlockPos lobbyNpcStandingPos(BlockPos center, NpcRole role) {
-        return lobbyNpcPos(center, role).above();
     }
 
     private static String lobbyNpcName(NpcRole role) {
@@ -290,8 +286,7 @@ public class NpcManager {
         TacRogueNpcEntity npc = ModEntities.TAC_ROGUE_NPC.get().create(level);
         if (npc == null) return null;
 
-        double y = lobbyNpc ? pos.getY() + 1.0D : pos.getY();
-        npc.setPos(pos.getX() + 0.5, y, pos.getZ() + 0.5);
+        npc.setPos(pos.getX() + 0.5, pos.getY(), pos.getZ() + 0.5);
         npc.setCustomName(Component.literal(name));
         npc.setCustomNameVisible(true);
         npc.setInvulnerable(true);
@@ -319,7 +314,7 @@ public class NpcManager {
             case INTEL_OFFICER -> net.minecraft.world.level.block.Blocks.BLUE_CARPET;
             case MEDIC -> net.minecraft.world.level.block.Blocks.PINK_CARPET;
         };
-        level.setBlockAndUpdate(pos.above(), carpet.defaultBlockState());
+        level.setBlockAndUpdate(pos, carpet.defaultBlockState());
     }
 
     /** NPCの視線追従（ServerTickで呼び出し） */

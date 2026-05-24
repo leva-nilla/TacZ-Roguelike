@@ -1,6 +1,7 @@
 package com.levanilla.rogue.core.smoke;
 
 import com.levanilla.rogue.core.CommonEventHandler;
+import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.core.service.FloorInstanceManager;
 import com.levanilla.rogue.world.MapGenerator;
 import com.levanilla.rogue.world.ThemeManager;
@@ -122,6 +123,7 @@ public final class SmokeGenerationWalkService {
                 player.teleportTo(rogue, spawn.getX() + 0.5D, spawn.getY(), spawn.getZ() + 0.5D,
                     Direction.SOUTH.toYRot(), 0.0F);
                 player.getPersistentData().putString(FloorInstanceManager.INSTANCE_ID_KEY, instanceId);
+                RunManager.requestJourneyMapRefresh(player, spawn, 128);
             }
             boolean entered = spawn != null && player.level() == rogue && player.blockPosition().distSqr(spawn) <= 4.0D;
             boolean pass = job.isComplete() && entered && job.totalBlockUpdates() > 1000;

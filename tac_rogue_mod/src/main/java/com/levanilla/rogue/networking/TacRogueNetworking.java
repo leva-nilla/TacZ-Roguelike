@@ -221,6 +221,12 @@ public class TacRogueNetworking {
                 .decoder(StealthTakedownHintMessage::decode)
                 .consumerMainThread(StealthTakedownHintMessage::handle)
                 .add();
+
+        CHANNEL.messageBuilder(JourneyMapRefreshMessage.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(JourneyMapRefreshMessage::encode)
+                .decoder(JourneyMapRefreshMessage::decode)
+                .consumerMainThread(JourneyMapRefreshMessage::handle)
+                .add();
     }
 
     /**

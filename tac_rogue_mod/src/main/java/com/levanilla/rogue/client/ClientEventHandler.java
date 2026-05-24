@@ -1,6 +1,7 @@
 package com.levanilla.rogue.client;
 
 import com.levanilla.rogue.client.compat.LeaWindsCompat;
+import com.levanilla.rogue.client.compat.JourneyMapRefreshCompat;
 import com.levanilla.rogue.client.hud.DamageIndicatorRenderer;
 import com.levanilla.rogue.client.hud.NotificationManager;
 import com.levanilla.rogue.client.model.TacRogueBossModel;
@@ -142,6 +143,7 @@ public class ClientEventHandler {
     @SubscribeEvent
     public static void onClientTick(net.minecraftforge.event.TickEvent.ClientTickEvent event) {
         ClientInputEventDelegate.onClientTick(event);
+        JourneyMapRefreshCompat.tick(event);
     }
 
     public static boolean isRogueSneakToggled() {

@@ -590,6 +590,7 @@ public class RogueAdminCommand {
             player.teleportTo(rogue, spawn.getX() + 0.5D, spawn.getY(), spawn.getZ() + 0.5D,
                 Direction.SOUTH.toYRot(), 0.0F);
             player.getPersistentData().putString(FloorInstanceManager.INSTANCE_ID_KEY, instanceId);
+            RunManager.requestJourneyMapRefresh(player, spawn, 128);
         }
 
         boolean complete = job.isComplete();

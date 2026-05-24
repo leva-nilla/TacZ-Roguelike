@@ -57,7 +57,9 @@ public class MapGenerator {
     private static final int ROOFTOP_BACKDROP_MARGIN = 26;
     private static final int CLEAR_RADIUS = ROOM_RADIUS + 8 + ROOFTOP_BACKDROP_MARGIN + 1;
     private static final int CLEAR_MIN_Y_OFFSET = -4;
-    private static final int CLEAR_MAX_Y_OFFSET = ROOM_HEIGHT + 4;
+    private static final int SKY_OCCLUDER_MIN_Y_OFFSET = ROOM_HEIGHT + 12;
+    private static final int SKY_OCCLUDER_MAX_Y_OFFSET = ROOM_HEIGHT + 13;
+    private static final int CLEAR_MAX_Y_OFFSET = SKY_OCCLUDER_MAX_Y_OFFSET;
     private static final int SET_BLOCK_FLAGS = 2 | 16; // 2=クライアント通知, 16=ライト計算スキップ
     private static final int MAX_STORED_FOOTPRINTS = 32;
     private static final float DARK_ROOM_CHANCE = 0.30F;
@@ -767,7 +769,7 @@ public class MapGenerator {
         private BlockState skyOccluder(ThemeManager.ThemeInstance theme) {
             return switch (style) {
                 case ROOFTOP_OPEN, RADAR_OPEN -> Blocks.BLACK_CONCRETE.defaultBlockState();
-                default -> theme.ceil;
+                default -> Blocks.BLACK_CONCRETE.defaultBlockState();
             };
         }
 
@@ -1065,12 +1067,17 @@ public class MapGenerator {
 
     private static void buildSkyLightOccluder(ServerLevel level, ThemeManager.ThemeInstance theme,
                                               BlockPos center, int baseY, ThemeShapeProfile shape) {
-        int y = baseY + ROOM_HEIGHT + 4;
-        int radius = ROOM_RADIUS + 8;
+        // JourneyMap marks caves from a 3x3 ceiling check around the player, but renders
+        // only the player's 16-block Y slice. Keep the opaque cap above that slice.
+        int minY = baseY + SKY_OCCLUDER_MIN_Y_OFFSET;
+        int maxY = baseY + SKY_OCCLUDER_MAX_Y_OFFSET;
+        int radius = CLEAR_RADIUS;
         BlockState occluder = shape.skyOccluder(theme);
-        for (int dx = -radius; dx <= radius; dx++) {
-            for (int dz = -radius; dz <= radius; dz++) {
-                setBlock(level, new BlockPos(center.getX() + dx, y, center.getZ() + dz), occluder);
+        for (int y = minY; y <= maxY; y++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    setBlock(level, new BlockPos(center.getX() + dx, y, center.getZ() + dz), occluder);
+                }
             }
         }
     }

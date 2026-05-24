@@ -517,6 +517,7 @@ public final class SmokeTestService {
         player.teleportTo(rogue, center.getX() + 0.5D, center.getY() + 1.0D, center.getZ() + 0.5D,
             Direction.SOUTH.toYRot(), 0.0F);
         player.getPersistentData().putString(FloorInstanceManager.INSTANCE_ID_KEY, instanceId);
+        RunManager.requestJourneyMapRefresh(player, center, 96);
         record(counter, suite, "arena.entered", player.level() == rogue && player.blockPosition().distSqr(center) <= 9.0D,
             "player enters dedicated AI matrix arena", player.blockPosition().toShortString(), "center=" + center.toShortString());
 
@@ -531,6 +532,7 @@ public final class SmokeTestService {
         if (keepForInspection) {
             player.teleportTo(rogue, center.getX() + 0.5D, center.getY() + 1.0D, center.getZ() + 0.5D,
                 Direction.SOUTH.toYRot(), 0.0F);
+            RunManager.requestJourneyMapRefresh(player, center, 96);
             buildAiMatrixViewCases(rogue, player, center, instanceId);
             record(counter, suite, "inspection.left_in_world", true,
                 "AI matrix arena remains for visual inspection",
@@ -819,6 +821,7 @@ public final class SmokeTestService {
                         player.teleportTo(rogue, spawn.getX() + 0.5D, spawn.getY(), spawn.getZ() + 0.5D,
                             Direction.SOUTH.toYRot(), 0.0F);
                         player.getPersistentData().putString(FloorInstanceManager.INSTANCE_ID_KEY, instanceId);
+                        RunManager.requestJourneyMapRefresh(player, spawn, 128);
                     }
                     boolean entered = spawn != null
                         && player.level() == rogue
