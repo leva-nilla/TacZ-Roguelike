@@ -78,7 +78,7 @@ public class ThemeManager {
     // [biome][variant] の 2D 配列で 45 テーマを網羅
     private static final BlockState[][] FLOORS = {
         /* RUINS       */ {s(Blocks.MOSSY_STONE_BRICKS), s(Blocks.CLAY), s(Blocks.PACKED_ICE), s(Blocks.CRACKED_STONE_BRICKS), s(Blocks.BLACKSTONE)},  // MAGMA_BLOCK→BLACKSTONE (ダメージ回避)
-        /* LAB         */ {s(Blocks.QUARTZ_BLOCK), s(Blocks.SLIME_BLOCK), s(Blocks.POLISHED_ANDESITE), s(Blocks.IRON_BLOCK), s(Blocks.BLACK_CONCRETE)},
+        /* LAB         */ {s(Blocks.QUARTZ_BLOCK), s(Blocks.GREEN_CONCRETE), s(Blocks.POLISHED_ANDESITE), s(Blocks.IRON_BLOCK), s(Blocks.BLACK_CONCRETE)},
         /* UNDERGROUND */ {s(Blocks.STONE), s(Blocks.AMETHYST_BLOCK), s(Blocks.BASALT), s(Blocks.BLUE_ICE), s(Blocks.MYCELIUM)},
         /* MILITARY    */ {s(Blocks.GRAY_CONCRETE), s(Blocks.POLISHED_DEEPSLATE), s(Blocks.IRON_BLOCK), s(Blocks.LIGHT_GRAY_CONCRETE), s(Blocks.SMOOTH_STONE)},
         /* NETHER      */ {s(Blocks.NETHER_BRICKS), s(Blocks.POLISHED_BASALT), s(Blocks.NETHER_BRICKS), s(Blocks.WARPED_PLANKS), s(Blocks.CRIMSON_PLANKS)},  // SOUL_SOIL→NETHER_BRICKS (ダメージ回避)
@@ -102,7 +102,7 @@ public class ThemeManager {
 
     private static final BlockState[][] DECORS = {
         /* RUINS       */ {s(Blocks.VINE), s(Blocks.KELP_PLANT), s(Blocks.SNOW), s(Blocks.COBWEB), s(Blocks.GLOWSTONE)},  // FIRE→GLOWSTONE (燃焼ダメージ回避)
-        /* LAB         */ {s(Blocks.IRON_BARS), s(Blocks.SLIME_BLOCK), s(Blocks.COBWEB), s(Blocks.REDSTONE_LAMP), s(Blocks.CHAIN)},
+        /* LAB         */ {s(Blocks.IRON_BARS), s(Blocks.LIME_TERRACOTTA), s(Blocks.COBWEB), s(Blocks.REDSTONE_LAMP), s(Blocks.CHAIN)},
         /* UNDERGROUND */ {s(Blocks.POINTED_DRIPSTONE), s(Blocks.AMETHYST_CLUSTER), s(Blocks.GLOWSTONE), s(Blocks.ICE), s(Blocks.BROWN_MUSHROOM)},  // FIRE→GLOWSTONE
         /* MILITARY    */ {s(Blocks.CAULDRON), s(Blocks.ANVIL), s(Blocks.BARREL), s(Blocks.IRON_BARS), s(Blocks.LEVER)},
         /* NETHER      */ {s(Blocks.SHROOMLIGHT), s(Blocks.CHAIN), s(Blocks.END_ROD), s(Blocks.WARPED_FUNGUS), s(Blocks.CRIMSON_FUNGUS)},  // SOUL_FIRE→SHROOMLIGHT

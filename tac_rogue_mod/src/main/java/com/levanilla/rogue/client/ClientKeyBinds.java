@@ -36,6 +36,13 @@ public class ClientKeyBinds {
             CATEGORY
     );
 
+    public static final KeyMapping DEBUG_AI_OVERLAY = new KeyMapping(
+            "key.tac_rogue.debug_ai_overlay",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_F10,
+            CATEGORY
+    );
+
     public static final KeyMapping TUTORIAL_NEXT = new KeyMapping(
             "key.tac_rogue.tutorial_next",
             InputConstants.Type.KEYSYM,
@@ -48,6 +55,7 @@ public class ClientKeyBinds {
         event.register(FLASHLIGHT);
         event.register(CAMERA_TOGGLE);
         event.register(DEBUG_MENU);
+        event.register(DEBUG_AI_OVERLAY);
         event.register(TUTORIAL_NEXT);
     }
 

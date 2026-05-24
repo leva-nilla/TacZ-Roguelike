@@ -335,6 +335,11 @@ public class DebugMenuScreen extends Screen {
                 send(DebugActionMessage.ActionType.SET_FLASHLIGHT_LEVEL, String.valueOf(ClientRunState.getFlashlightLevel() + 1))),
             new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.reload_info"), b ->
                 send(DebugActionMessage.ActionType.RELOAD_INFO, "")),
+            new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.ai_overlay",
+                DebugAiOverlayManager.isEnabled() ? "ON" : "OFF"), b -> {
+                DebugAiOverlayManager.toggle();
+                rebuild();
+            }),
             new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.boss_info"), b ->
                 send(DebugActionMessage.ActionType.BOSS_INFO, "")),
             new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.kill_floor_enemies"), b ->

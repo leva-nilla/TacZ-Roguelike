@@ -4,6 +4,9 @@ import com.levanilla.rogue.core.event.CombatEventHandler;
 import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.core.ScalingEngine;
 import com.levanilla.rogue.core.service.FloorInstanceManager;
+import com.levanilla.rogue.core.service.RogueMobAlertService;
+import com.levanilla.rogue.world.goal.RogueMobEngagedTargetMonitorGoal;
+import com.levanilla.rogue.world.goal.RogueMobTacticalAlertGoal;
 import com.levanilla.rogue.world.goal.RogueMobVisionGoal;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleTypes;
@@ -109,6 +112,8 @@ public class TacRogueBossEntity extends Monster {
     @Override
     protected void registerGoals() {
         this.goalSelector.addGoal(0, new FloatGoal(this));
+        this.goalSelector.addGoal(1, new RogueMobTacticalAlertGoal(this));
+        this.goalSelector.addGoal(1, new RogueMobEngagedTargetMonitorGoal(this));
         this.goalSelector.addGoal(2, new MeleeAttackGoal(this, 1.05D, true));
         this.goalSelector.addGoal(6, new RandomStrollGoal(this, 0.75D));
         this.goalSelector.addGoal(7, new LookAtPlayerGoal(this, Player.class, 18.0F));
@@ -418,7 +423,16 @@ public class TacRogueBossEntity extends Monster {
             if (add instanceof Zombie zombie) {
                 zombie.setBaby(false);
             }
-            add.setTarget(getTarget());
+            add.goalSelector.addGoal(1, new RogueMobTacticalAlertGoal(add));
+            add.goalSelector.addGoal(2, new RogueMobEngagedTargetMonitorGoal(add));
+            add.targetSelector.removeAllGoals(goal -> true);
+            add.targetSelector.addGoal(0, new RogueMobVisionGoal(add));
+            if (add instanceof net.minecraft.world.entity.PathfinderMob pathfinderAdd) {
+                add.targetSelector.addGoal(1, new HurtByTargetGoal(pathfinderAdd).setAlertOthers());
+            }
+            if (getTarget() != null) {
+                RogueMobAlertService.engageFromVision(add, getTarget());
+            }
             serverLevel.addFreshEntity(add);
             playSummonEffects(serverLevel, spawn, role);
             spawned++;

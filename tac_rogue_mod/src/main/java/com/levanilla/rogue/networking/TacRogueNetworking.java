@@ -148,6 +148,18 @@ public class TacRogueNetworking {
                 .consumerMainThread(DebugActionMessage::handle)
                 .add();
 
+        CHANNEL.messageBuilder(DebugAiOverlayRequestMessage.class, packetId++, NetworkDirection.PLAY_TO_SERVER)
+                .encoder(DebugAiOverlayRequestMessage::encode)
+                .decoder(DebugAiOverlayRequestMessage::decode)
+                .consumerMainThread(DebugAiOverlayRequestMessage::handle)
+                .add();
+
+        CHANNEL.messageBuilder(DebugAiOverlayStateMessage.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
+                .encoder(DebugAiOverlayStateMessage::encode)
+                .decoder(DebugAiOverlayStateMessage::decode)
+                .consumerMainThread(DebugAiOverlayStateMessage::handle)
+                .add();
+
         // プレイヤー向けポップアップ通知 (S -> C)
         CHANNEL.messageBuilder(PopupNotificationMessage.class, packetId++, NetworkDirection.PLAY_TO_CLIENT)
                 .encoder(PopupNotificationMessage::encode)

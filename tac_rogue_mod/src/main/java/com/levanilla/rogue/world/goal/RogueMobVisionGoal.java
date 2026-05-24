@@ -30,6 +30,10 @@ public class RogueMobVisionGoal extends TargetGoal {
     private static final double FOV_COS = Math.cos(Math.toRadians(60.0));
     /** 発見後の追跡維持距離 */
     private static final double CHASE_RANGE = 32.0;
+    private static final double CLOSE_AWARENESS_RANGE = 3.0;
+    private static final double CLOSE_AWARENESS_MIN_DOT = 0.0D;
+    private static final double INVESTIGATE_FOV_COS = Math.cos(Math.toRadians(95.0D));
+    private static final double WARNED_FOV_COS = Math.cos(Math.toRadians(120.0D));
 
     private final Mob mob;
     private Player targetPlayer;
@@ -47,9 +51,20 @@ public class RogueMobVisionGoal extends TargetGoal {
             return targetPlayer != null;
         }
 
+        if (RogueMobAlertService.isDecoyActive(mob)
+                && RogueMobAlertService.getAlertLevel(mob) != RogueMobAlertService.AlertLevel.ENGAGED) {
+            if (mob.getTarget() instanceof Player) {
+                mob.setTarget(null);
+            }
+            return false;
+        }
+
         // 既にターゲットがいる場合はこのゴールの canUse で再評価しない（canContinueToUse が管理）
         Player current = (mob.getTarget() instanceof Player p) ? p : null;
         if (current != null && !current.isDeadOrDying() && mob.distanceTo(current) < CHASE_RANGE) {
+            if (mob.hasLineOfSight(current)) {
+                RogueMobAlertService.rememberSeenTarget(mob, current);
+            }
             targetPlayer = current;
             return true;
         }
@@ -76,31 +91,22 @@ public class RogueMobVisionGoal extends TargetGoal {
         return false;
     }
 
-    private int losLostTicks = 0;
-
     @Override
     public boolean canContinueToUse() {
         if (targetPlayer == null || targetPlayer.isDeadOrDying()) return false;
         if (isBossMob()) return !targetPlayer.isSpectator();
 
-        // 追跡維持距離内ならターゲット継続（LOS不要だが時間制限あり）
         if (mob.distanceTo(targetPlayer) < CHASE_RANGE) {
-            if (!mob.hasLineOfSight(targetPlayer)) {
-                losLostTicks++;
-                if (losLostTicks >= 100) { // 5秒間見失ったらターゲットを外す
-                    return false;
-                }
-            } else {
-                losLostTicks = 0;
-            }
-            return true;
+            boolean hasLos = mob.hasLineOfSight(targetPlayer);
+            return RogueMobAlertService.monitorEngagedTarget(mob, targetPlayer, hasLos);
         }
+        mob.setTarget(null);
         return false;
     }
 
     @Override
     public void start() {
-        mob.setTarget(targetPlayer);
+        RogueMobAlertService.engageFromVision(mob, targetPlayer);
         super.start();
     }
 
@@ -134,6 +140,7 @@ public class RogueMobVisionGoal extends TargetGoal {
             if (!player.isAlive() || player.isSpectator()) continue;
             double distance = mob.distanceTo(player);
             if (distance > CHASE_RANGE || !mob.hasLineOfSight(player)) continue;
+            if (!isInAlertFov(player, alertLevel)) continue;
             if (!RogueMobAlertService.promoteVisibleInvestigation(mob, player)) continue;
             if (distance < bestDistance) {
                 bestDistance = distance;
@@ -141,6 +148,19 @@ public class RogueMobVisionGoal extends TargetGoal {
             }
         }
         return nearest;
+    }
+
+    private boolean isInAlertFov(Player player, RogueMobAlertService.AlertLevel alertLevel) {
+        Vec3 mobDir = bodyForward();
+        Vec3 toPlayer = player.position()
+            .add(0, player.getEyeHeight() / 2.0, 0)
+            .subtract(mob.position().add(0, mob.getEyeHeight(), 0))
+            .normalize();
+        double dot = mobDir.dot(toPlayer);
+        double required = alertLevel == RogueMobAlertService.AlertLevel.WARNED
+            ? WARNED_FOV_COS
+            : INVESTIGATE_FOV_COS;
+        return dot >= required;
     }
 
     private boolean isBossMob() {
@@ -182,10 +202,12 @@ public class RogueMobVisionGoal extends TargetGoal {
 
         // 距離チェック（姿勢による範囲縮小）
         double effectiveRange = VISION_RANGE * rangeMultiplier;
-        if (mob.distanceTo(player) > effectiveRange) return false;
+        double distance = mob.distanceTo(player);
+        if (distance > effectiveRange) return false;
+        if (!mob.hasLineOfSight(player)) return false;
 
         // Mobの視線方向ベクトル
-        Vec3 mobDir = mob.getLookAngle().normalize();
+        Vec3 mobDir = bodyForward();
         // Mobからプレイヤーへの方向ベクトル
         Vec3 toPlayer = player.position()
             .add(0, player.getEyeHeight() / 2.0, 0)
@@ -194,10 +216,15 @@ public class RogueMobVisionGoal extends TargetGoal {
 
         // 視野角チェック
         double dot = mobDir.dot(toPlayer);
-        if (dot < fovCos) return false;
-
-        // LOS チェック (レイキャスト)
-        return mob.hasLineOfSight(player);
+        if (dot < fovCos) {
+            boolean closeButNotBehind = distance <= CLOSE_AWARENESS_RANGE
+                && dot >= CLOSE_AWARENESS_MIN_DOT
+                && !isSneaking
+                && !isCrawling;
+            if (!closeButNotBehind) return false;
+        }
+        RogueMobAlertService.rememberSeenTarget(mob, player);
+        return true;
     }
 
     private Player findPlayerIlluminatingMob() {
@@ -220,5 +247,10 @@ public class RogueMobVisionGoal extends TargetGoal {
             .subtract(player.getEyePosition(1.0F))
             .normalize();
         return look.dot(toMob) >= threshold;
+    }
+
+    private Vec3 bodyForward() {
+        double radians = Math.toRadians(mob.yBodyRot);
+        return new Vec3(-Math.sin(radians), 0.0D, Math.cos(radians)).normalize();
     }
 }

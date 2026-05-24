@@ -684,6 +684,7 @@
   "gui.tac_rogue.debug.max_floor": "Max=Floor",
   "gui.tac_rogue.debug.flash_up": "Flash +1",
   "gui.tac_rogue.debug.reload_info": "Reload Info",
+  "gui.tac_rogue.debug.ai_overlay": "AI HUD %s",
   "gui.tac_rogue.debug.boss_breach": "Boss BREACH",
   "gui.tac_rogue.debug.boss_cmd": "Boss CMD",
   "gui.tac_rogue.debug.boss_void": "Boss VOID",
@@ -761,6 +762,7 @@
   "key.tac_rogue.flashlight": "Flashlight Toggle",
   "key.tac_rogue.camera_toggle": "Shoulder Camera Toggle",
   "key.tac_rogue.debug_menu": "Debug Menu",
+  "key.tac_rogue.debug_ai_overlay": "AI Debug HUD Toggle",
   "key.tac_rogue.tutorial_next": "Advance First-run Guide",
   
   "gui.tac_rogue.welcome.title": "Welcome to TacZ: Rogue Protocol",
@@ -853,6 +855,7 @@
   "gui.tac_rogue.quick_keys.tacz.inspect": "TacZ Inspect",
   "gui.tac_rogue.quick_keys.rogue.flashlight": "Flashlight",
   "gui.tac_rogue.quick_keys.rogue.camera": "Shoulder Camera",
+  "gui.tac_rogue.quick_keys.rogue.ai_debug": "AI Debug HUD",
   "gui.tac_rogue.quick_keys.rogue.tutorial_next": "Advance First-run Guide",
   "gui.tac_rogue.quick_keys.ysm.model": "YSM Model Change",
   "gui.tac_rogue.quick_keys.ysm.roulette": "YSM Animation Roulette",

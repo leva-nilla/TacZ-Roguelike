@@ -2,6 +2,7 @@ package com.levanilla.rogue.core.event;
 
 import com.levanilla.rogue.core.*;
 import com.levanilla.rogue.core.registry.TacZGunRegistry;
+import com.levanilla.rogue.core.service.RogueMobAlertService;
 import com.levanilla.rogue.networking.TacRogueNetworking;
 import com.tacz.guns.api.event.common.*;
 import net.minecraft.server.level.ServerPlayer;
@@ -52,13 +53,33 @@ public class TacZEventHandler {
         // Animation timing is handled client-side in MixinObjectAnimationRunner.
     }
 
-    // ===== GunFireEvent: 射撃の瞬間 =====
+    // ===== GunShootEvent: 射撃入力 =====
+
+    @SubscribeEvent
+    public static void onGunShoot(GunShootEvent event) {
+        if (event.getLogicalSide() != LogicalSide.SERVER) return;
+        if (!(event.getShooter() instanceof ServerPlayer player)) return;
+
+        if (player.level().dimension() == LOBBY_DIM) {
+            return;
+        }
+
+        if (player.level().dimension() != ROGUE_DIM) return;
+
+        shotsFired.compute(player.getUUID(), (k, v) -> (v == null ? 0 : v) + 1);
+
+        // GunFireEvent is script/fire-stage dependent in TacZ. GunShootEvent is the stable
+        // server-side trigger point, so sound alerting belongs here.
+        TacZGunRegistry.GunSoundProfile sound = TacZGunRegistry.getGunSoundProfile(event.getGunItemStack());
+        RogueMobAlertService.onGunshot(player, sound.suppressed(), sound.alertRadius());
+    }
+
+    // ===== GunFireEvent: 発火ごとの処理 =====
 
     /**
      * プレイヤーが銃を発射した瞬間に呼ばれる。
      * <ul>
-     *   <li>射撃音による敵アラート（サプレッサー考慮）</li>
-     *   <li>射撃統計の記録</li>
+     *   <li>弾薬節約など、実際の発火ごとに処理したい効果</li>
      * </ul>
      */
     @SubscribeEvent
@@ -73,9 +94,6 @@ public class TacZEventHandler {
         }
 
         if (player.level().dimension() != ROGUE_DIM) return;
-
-        // 射撃統計
-        shotsFired.compute(player.getUUID(), (k, v) -> (v == null ? 0 : v) + 1);
 
         // === パーク: AMMO_EFFICIENCY (弾薬節約) ===
         float consumeChance = 1.0f;
@@ -97,11 +115,6 @@ public class TacZEventHandler {
                 }
             }
         }
-
-        // 射撃音アラート — TacZの消音距離をゲームバランス用に丸めて使う。
-        TacZGunRegistry.GunSoundProfile sound = TacZGunRegistry.getGunSoundProfile(event.getGunItemStack());
-        com.levanilla.rogue.core.service.RogueMobAlertService.onGunshot(
-            player, sound.suppressed(), sound.alertRadius());
 
         // === 修飾子: CORRUPTED (自傷ダメージ) ===
         int corruptedCount = 0;
@@ -396,11 +409,12 @@ public class TacZEventHandler {
                 mob.getLookControl().setLookAt(hitPos.x, hitPos.y, hitPos.z, 30.0F, 30.0F);
                 mob.getNavigation().moveTo(hitPos.x, hitPos.y, hitPos.z, 1.2);
 
-                // 毎Tick強制的に着弾地点を見させ続けるための予約
-                mob.getPersistentData().putDouble("DecoyX", hitPos.x);
-                mob.getPersistentData().putDouble("DecoyY", hitPos.y);
-                mob.getPersistentData().putDouble("DecoyZ", hitPos.z);
-                mob.getPersistentData().putLong("DecoyEndTime", mob.level().getGameTime() + 100);
+                // 毎Tick強制的に着弾地点を見させ続け、警戒移動先もデコイ地点へ寄せる。
+                RogueMobAlertService.applyDecoy(
+                    mob,
+                    hitPos,
+                    owner instanceof net.minecraft.world.entity.LivingEntity livingOwner ? livingOwner : null,
+                    100L);
             }
         }
     }

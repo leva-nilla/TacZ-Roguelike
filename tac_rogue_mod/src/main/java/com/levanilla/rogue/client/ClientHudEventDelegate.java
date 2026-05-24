@@ -63,6 +63,7 @@ final class ClientHudEventDelegate {
             renderBackgroundLoadIndicator(graphics, mc, width);
             renderThirdPersonCrosshair(graphics, mc, player, width, height);
             renderStealthTakedownHint(graphics, mc, player, width, height);
+            DebugAiOverlayManager.render(graphics, mc, width, height);
         }
     }
 

@@ -9,6 +9,9 @@ import com.levanilla.rogue.core.ModEntities;
 import com.levanilla.rogue.core.ScalingEngine;
 import com.levanilla.rogue.core.RogueActManager;
 import com.levanilla.rogue.core.service.FloorInstanceManager;
+import com.levanilla.rogue.world.goal.RogueMobEngagedTargetMonitorGoal;
+import com.levanilla.rogue.world.goal.RogueMobGoalUtils;
+import com.levanilla.rogue.world.goal.RogueMobTacticalAlertGoal;
 import com.levanilla.rogue.world.goal.RogueMobVisionGoal;
 import net.minecraft.world.entity.ai.goal.target.HurtByTargetGoal;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -96,6 +99,9 @@ public class RoomManager {
 
                 // 重力固定
                 mob.setNoGravity(false);
+                RogueMobGoalUtils.removePassivePlayerLookGoals(mob);
+                mob.goalSelector.addGoal(1, new RogueMobTacticalAlertGoal(mob));
+                mob.goalSelector.addGoal(2, new RogueMobEngagedTargetMonitorGoal(mob));
 
                 // バニラのTargetGoalを全消去して、360度感知を防止
                 mob.targetSelector.removeAllGoals(goal -> true);
@@ -148,6 +154,9 @@ public class RoomManager {
                 BlockPos spawn = findSafeSpawnPos(level, pos, fallback);
                 fallback.setPos(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5);
                 ScalingEngine.applyBossScaling(fallback, floor, biomeIndex);
+                RogueMobGoalUtils.removePassivePlayerLookGoals(fallback);
+                fallback.goalSelector.addGoal(1, new RogueMobTacticalAlertGoal(fallback));
+                fallback.goalSelector.addGoal(2, new RogueMobEngagedTargetMonitorGoal(fallback));
                 fallback.targetSelector.removeAllGoals(goal -> true);
                 fallback.targetSelector.addGoal(0, new RogueMobVisionGoal(fallback));
                 if (fallback instanceof net.minecraft.world.entity.PathfinderMob pm) {
@@ -212,6 +221,9 @@ public class RoomManager {
             zombie.setPos(spawn.getX() + 0.5, spawn.getY(), spawn.getZ() + 0.5);
             ScalingEngine.applyScaling(zombie, floor);
             applyParticipantHealthScaling(zombie, participantCount, false);
+            RogueMobGoalUtils.removePassivePlayerLookGoals(zombie);
+            zombie.goalSelector.addGoal(1, new RogueMobTacticalAlertGoal(zombie));
+            zombie.goalSelector.addGoal(2, new RogueMobEngagedTargetMonitorGoal(zombie));
             zombie.targetSelector.removeAllGoals(goal -> true);
             zombie.targetSelector.addGoal(0, new RogueMobVisionGoal(zombie));
             zombie.targetSelector.addGoal(1, new HurtByTargetGoal((net.minecraft.world.entity.PathfinderMob) zombie).setAlertOthers());

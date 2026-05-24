@@ -20,6 +20,7 @@ import com.levanilla.rogue.world.MapGenerator;
 import com.levanilla.rogue.world.NpcManager;
 import com.levanilla.rogue.world.TacRogueNpcEntity;
 import com.levanilla.rogue.world.ThemeManager;
+import com.levanilla.rogue.world.goal.RogueMobVisionGoal;
 import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.core.BlockPos;
 import net.minecraft.commands.CommandSourceStack;
@@ -31,7 +32,9 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.fml.ModList;
 import net.minecraftforge.registries.ForgeRegistries;
 
@@ -48,9 +51,10 @@ public final class SmokeTestService {
     );
     public static final List<String> FULL_SUITES = List.of(
         "quick", "registry", "lobby", "ui", "floor", "combat", "economy", "quest", "deep",
-        "world", "thirdperson", "shooting", "monster", "generation"
+        "world", "thirdperson", "shooting", "monster", "ai_matrix", "generation"
     );
-    private static final List<String> EXTRA_SUITES = List.of("generation_view");
+    private static final List<String> EXTRA_SUITES = List.of("generation_view", "ai_matrix_view");
+    private static final BlockPos AI_MATRIX_CENTER = new BlockPos(7800, 80, 7800);
 
     private SmokeTestService() {}
 
@@ -95,6 +99,8 @@ public final class SmokeTestService {
             case "thirdperson" -> thirdPerson(player, counter);
             case "shooting" -> shooting(player, counter);
             case "monster" -> monster(player, counter);
+            case "ai_matrix" -> aiMatrix(player, counter, false);
+            case "ai_matrix_view" -> aiMatrix(player, counter, true);
             case "generation" -> generation(player, counter, false);
             case "generation_view" -> generation(player, counter, true);
             default -> record(counter, suite, "suite.known", false, "known smoke suite", suite, "unknown suite");
@@ -368,7 +374,7 @@ public final class SmokeTestService {
                 "added=" + nearAdded + "/" + allyAdded);
 
             near.setTarget(null);
-            RogueMobAlertService.onGunshot(player, false, GameConstants.GUNSHOT_ALERT_RADIUS);
+            RogueMobAlertService.applyGunshotAlertToMobsForSmoke(player, false, GameConstants.GUNSHOT_ALERT_RADIUS, List.of(near, ally));
             RogueMobAlertService.AlertLevel gunshotLevel = RogueMobAlertService.getAlertLevel(near);
             record(counter, suite, "alert.gunshot", gunshotLevel != RogueMobAlertService.AlertLevel.NONE,
                 "normal gunshot alerts nearby rogue mob", gunshotLevel.name(),
@@ -376,22 +382,82 @@ public final class SmokeTestService {
 
             near.setTarget(null);
             clearAlertData(near);
-            RogueMobAlertService.onGunshot(player, true, GameConstants.SUPPRESSED_ALERT_RADIUS);
+            RogueMobAlertService.clearShotHistoryForSmoke(player.getUUID());
+            RogueMobAlertService.applyGunshotAlertToMobsForSmoke(player, true, GameConstants.SUPPRESSED_ALERT_RADIUS, List.of(near, ally));
             RogueMobAlertService.AlertLevel suppressedLevel = RogueMobAlertService.getAlertLevel(near);
             record(counter, suite, "alert.suppressed", suppressedLevel != RogueMobAlertService.AlertLevel.NONE,
                 "suppressed gunshot still creates bounded alert", suppressedLevel.name(),
                 "target=" + (near.getTarget() == player));
 
             near.setTarget(null);
+            clearAlertData(near);
+            near.moveTo(player.getX() + 7.0D, player.getY(), player.getZ(), 0.0F, 0.0F);
+            faceMobAt(near, player);
+            RogueMobAlertService.clearShotHistoryForSmoke(player.getUUID());
+            RogueMobAlertService.applyGunshotAlertToMobsForSmoke(player, true, GameConstants.SUPPRESSED_ALERT_RADIUS, List.of(near, ally));
+            RogueMobAlertService.AlertLevel firstSuppressed = RogueMobAlertService.getAlertLevel(near);
+            boolean firstSuppressedQuiet = firstSuppressed != RogueMobAlertService.AlertLevel.ENGAGED
+                && near.getTarget() == null;
+            RogueMobAlertService.applyGunshotAlertToMobsForSmoke(player, true, GameConstants.SUPPRESSED_ALERT_RADIUS, List.of(near, ally));
+            RogueMobAlertService.applyGunshotAlertToMobsForSmoke(player, true, GameConstants.SUPPRESSED_ALERT_RADIUS, List.of(near, ally));
+            RogueMobAlertService.AlertLevel burstSuppressed = RogueMobAlertService.getAlertLevel(near);
+            record(counter, suite, "alert.suppressed_burst", firstSuppressedQuiet
+                    && burstSuppressed == RogueMobAlertService.AlertLevel.ENGAGED
+                    && near.getTarget() == player,
+                "suppressed single shot stays cautious, short burst escalates",
+                "first=" + firstSuppressed.name() + " burst=" + burstSuppressed.name()
+                    + " target=" + (near.getTarget() == player), "");
+
+            near.setTarget(null);
+            clearAlertData(near);
+            near.moveTo(player.getX() + 5.0D, player.getY(), player.getZ(), 0.0F, 0.0F);
+            faceMobAt(near, player);
+            RogueMobVisionGoal frontGoal = new RogueMobVisionGoal(near);
+            boolean frontCanUse = frontGoal.canUse();
+            if (frontCanUse) {
+                frontGoal.start();
+            }
+            record(counter, suite, "alert.fov.front_detects", frontCanUse && near.getTarget() == player,
+                "front LOS target is detected by vision goal",
+                "canUse=" + frontCanUse + " target=" + (near.getTarget() == player), "");
+
+            near.setTarget(null);
+            clearAlertData(near);
+            near.moveTo(player.getX() + 5.0D, player.getY(), player.getZ(), 0.0F, 0.0F);
+            faceMobAwayFrom(near, player);
+            RogueMobVisionGoal backGoal = new RogueMobVisionGoal(near);
+            boolean backCanUse = backGoal.canUse();
+            record(counter, suite, "alert.fov.back_quiet", !backCanUse && near.getTarget() == null,
+                "unalerted rear LOS target is not detected outside close awareness",
+                "canUse=" + backCanUse + " target=" + (near.getTarget() == player), "");
+
+            near.setTarget(null);
+            clearAlertData(near);
+            near.moveTo(player.getX() + 5.0D, player.getY(), player.getZ(), 0.0F, 0.0F);
+            faceMobAwayFrom(near, player);
+            float headOnlyYaw = yawTo(near, player);
+            near.setYRot(headOnlyYaw);
+            near.setYHeadRot(headOnlyYaw);
+            RogueMobVisionGoal headOnlyGoal = new RogueMobVisionGoal(near);
+            boolean headOnlyCanUse = headOnlyGoal.canUse();
+            record(counter, suite, "alert.fov.head_turn_back_quiet", !headOnlyCanUse && near.getTarget() == null,
+                "unalerted passive head turn does not count as body-facing vision",
+                "canUse=" + headOnlyCanUse + " bodyYaw=" + near.yBodyRot + " headYaw=" + near.getYHeadRot(), "");
+
+            near.setTarget(null);
             ally.setTarget(null);
             clearAlertData(near);
             clearAlertData(ally);
-            RogueMobAlertService.onAllyHit(player, near);
+            RogueMobAlertService.applyAllyHitAlertToMobsForSmoke(player, near, List.of(ally));
             RogueMobAlertService.AlertLevel allyHitLevel = RogueMobAlertService.getAlertLevel(ally);
             record(counter, suite, "alert.ally_hit.victim", near.getTarget() == player
                     && RogueMobAlertService.getAlertLevel(near) == RogueMobAlertService.AlertLevel.ENGAGED,
                 "ranged hit engages the hurt rogue mob immediately",
                 RogueMobAlertService.getAlertLevel(near).name() + " target=" + (near.getTarget() == player), "");
+            record(counter, suite, "alert.engaged_releases_move_goal", !RogueMobAlertService.shouldTacticalGoalRun(near),
+                "engaged mobs release the tactical MOVE goal to vanilla combat",
+                "tactical=" + RogueMobAlertService.shouldTacticalGoalRun(near)
+                    + " level=" + RogueMobAlertService.getAlertLevel(near).name(), "");
             record(counter, suite, "alert.ally_hit.nearby", ally.getTarget() == player
                     && allyHitLevel == RogueMobAlertService.AlertLevel.ENGAGED,
                 "ranged hit engages nearby rogue mob at close range",
@@ -412,9 +478,291 @@ public final class SmokeTestService {
                     && ally.getTarget() == null,
                 "melee hit does not alert farther nearby rogue mob",
                 meleeFarLevel.name() + " target=" + (ally.getTarget() == player), "");
+
+            near.setTarget(null);
+            ally.setTarget(null);
+            clearAlertData(near);
+            clearAlertData(ally);
+            record(counter, suite, "alert.stealth.quiet", RogueMobAlertService.getAlertLevel(ally) == RogueMobAlertService.AlertLevel.NONE
+                    && ally.getTarget() == null,
+                "stealth takedown path does not propagate an ally alert",
+                RogueMobAlertService.getAlertLevel(ally).name() + " target=" + (ally.getTarget() == player), "");
         } finally {
             near.discard();
             ally.discard();
+        }
+    }
+
+    private static void aiMatrix(ServerPlayer player, Counter counter, boolean keepForInspection) {
+        String suite = keepForInspection ? "ai_matrix_view" : "ai_matrix";
+        ServerLevel rogue = player.server.getLevel(CommonEventHandler.ROGUE_DIM);
+        if (rogue == null) {
+            record(counter, suite, "dimension.rogue.available", false,
+                "rogue dimension available for AI matrix", "not loaded", "");
+            return;
+        }
+
+        BlockPos center = AI_MATRIX_CENTER;
+        String instanceId = "smoke-ai-matrix";
+        ServerLevel originalLevel = player.serverLevel();
+        double originalX = player.getX();
+        double originalY = player.getY();
+        double originalZ = player.getZ();
+        float originalYaw = player.getYRot();
+        float originalPitch = player.getXRot();
+        boolean originalInstancePresent = player.getPersistentData().contains(FloorInstanceManager.INSTANCE_ID_KEY);
+        String originalInstance = player.getPersistentData().getString(FloorInstanceManager.INSTANCE_ID_KEY);
+        clearAiMatrixArena(rogue, center);
+        buildAiMatrixArena(rogue, center);
+        player.teleportTo(rogue, center.getX() + 0.5D, center.getY() + 1.0D, center.getZ() + 0.5D,
+            Direction.SOUTH.toYRot(), 0.0F);
+        player.getPersistentData().putString(FloorInstanceManager.INSTANCE_ID_KEY, instanceId);
+        record(counter, suite, "arena.entered", player.level() == rogue && player.blockPosition().distSqr(center) <= 9.0D,
+            "player enters dedicated AI matrix arena", player.blockPosition().toShortString(), "center=" + center.toShortString());
+
+        int index = 0;
+        for (MatrixAlert alert : MatrixAlert.values()) {
+            for (MatrixDirection direction : MatrixDirection.values()) {
+                runAiMatrixCase(rogue, player, counter, suite, center, instanceId, alert, direction, false, index++);
+                runAiMatrixCase(rogue, player, counter, suite, center, instanceId, alert, direction, true, index++);
+            }
+        }
+
+        if (keepForInspection) {
+            player.teleportTo(rogue, center.getX() + 0.5D, center.getY() + 1.0D, center.getZ() + 0.5D,
+                Direction.SOUTH.toYRot(), 0.0F);
+            buildAiMatrixViewCases(rogue, player, center, instanceId);
+            record(counter, suite, "inspection.left_in_world", true,
+                "AI matrix arena remains for visual inspection",
+                center.toShortString(),
+                "F10 AI Debug HUD can inspect target/alert state; run ai_matrix to rebuild/clean");
+        } else {
+            clearAiMatrixArena(rogue, center);
+            player.teleportTo(originalLevel, originalX, originalY, originalZ, originalYaw, originalPitch);
+        }
+        restorePlayerInstance(player, originalInstancePresent, originalInstance);
+    }
+
+    private static void runAiMatrixCase(
+        ServerLevel level,
+        ServerPlayer player,
+        Counter counter,
+        String suite,
+        BlockPos center,
+        String instanceId,
+        MatrixAlert alert,
+        MatrixDirection direction,
+        boolean blocked,
+        int index
+    ) {
+        Mob mob = EntityType.ZOMBIE.create(level);
+        if (mob == null) {
+            record(counter, suite, matrixCaseId(alert, direction, blocked), false,
+                "matrix mob can be created", "null", "");
+            return;
+        }
+        try {
+            BlockPos mobPos = center.offset(-22 + (index % 8) * 6, 1, -20 + (index / 8) * 6);
+            level.setBlock(mobPos.below(), Blocks.BLACK_CONCRETE.defaultBlockState(), 3);
+            mob.addTag("tac_rogue_spawned");
+            mob.getPersistentData().putString(FloorInstanceManager.INSTANCE_ID_KEY, instanceId);
+            mob.setNoAi(true);
+            mob.setPersistenceRequired();
+            mob.moveTo(mobPos.getX() + 0.5D, mobPos.getY(), mobPos.getZ() + 0.5D, 0.0F, 0.0F);
+            setBodyYaw(mob, 0.0F);
+            level.addFreshEntity(mob);
+
+            Vec3 playerPos = matrixPlayerPos(mob.position(), direction, 6.0D);
+            player.teleportTo(level, playerPos.x, playerPos.y, playerPos.z, Direction.NORTH.toYRot(), 0.0F);
+            clearLine(level, mob.blockPosition(), player.blockPosition());
+            if (blocked) {
+                placeVisionWall(level, mob.blockPosition(), player.blockPosition());
+            }
+
+            applyMatrixAlert(mob, player, alert);
+            RogueMobVisionGoal goal = new RogueMobVisionGoal(mob);
+            boolean canUse = goal.canUse();
+            if (canUse) {
+                goal.start();
+            }
+            boolean canContinue = goal.canContinueToUse();
+            RogueMobAlertService.AlertLevel actualLevel = RogueMobAlertService.getAlertLevel(mob);
+            boolean target = mob.getTarget() == player;
+            boolean pass = expectedMatrixResult(alert, direction, blocked, canUse, canContinue, actualLevel, target);
+            record(counter, suite, matrixCaseId(alert, direction, blocked), pass,
+                "AI vision/target state follows alert, direction and LOS matrix",
+                "canUse=" + canUse + " continue=" + canContinue + " level=" + actualLevel.name()
+                    + " target=" + target + " los=" + mob.hasLineOfSight(player),
+                "bodyYaw=" + mob.yBodyRot + " headYaw=" + mob.getYHeadRot()
+                    + " player=" + direction.name().toLowerCase(Locale.ROOT));
+        } finally {
+            mob.discard();
+        }
+    }
+
+    private static boolean expectedMatrixResult(
+        MatrixAlert alert,
+        MatrixDirection direction,
+        boolean blocked,
+        boolean canUse,
+        boolean canContinue,
+        RogueMobAlertService.AlertLevel actualLevel,
+        boolean target
+    ) {
+        if (alert == MatrixAlert.DECOY) {
+            return !canUse && !target
+                && actualLevel == RogueMobAlertService.AlertLevel.INVESTIGATE;
+        }
+        if (blocked) {
+            if (alert == MatrixAlert.ENGAGED) {
+                return canUse && !canContinue && !target
+                    && actualLevel == RogueMobAlertService.AlertLevel.WARNED;
+            }
+            return !canUse && !target;
+        }
+        return switch (alert) {
+            case NONE -> switch (direction) {
+                case FRONT -> canUse && target && actualLevel == RogueMobAlertService.AlertLevel.ENGAGED;
+                case BACK, LEFT, RIGHT -> !canUse && !target && actualLevel == RogueMobAlertService.AlertLevel.NONE;
+            };
+            case INVESTIGATE -> switch (direction) {
+                case FRONT, LEFT, RIGHT -> canUse && target && actualLevel == RogueMobAlertService.AlertLevel.ENGAGED;
+                case BACK -> !canUse && !target && actualLevel == RogueMobAlertService.AlertLevel.INVESTIGATE;
+            };
+            case WARNED -> switch (direction) {
+                case FRONT, LEFT, RIGHT -> canUse && target && actualLevel == RogueMobAlertService.AlertLevel.ENGAGED;
+                case BACK -> !canUse && !target && actualLevel == RogueMobAlertService.AlertLevel.WARNED;
+            };
+            case DECOY -> false;
+            case ENGAGED -> canUse && canContinue && target
+                && actualLevel == RogueMobAlertService.AlertLevel.ENGAGED;
+        };
+    }
+
+    private static void buildAiMatrixViewCases(ServerLevel level, ServerPlayer player, BlockPos center, String instanceId) {
+        int index = 0;
+        for (MatrixAlert alert : MatrixAlert.values()) {
+            for (MatrixDirection direction : MatrixDirection.values()) {
+                boolean blocked = direction == MatrixDirection.BACK;
+                BlockPos mobPos = center.offset(-18 + direction.ordinal() * 12, 1, -18 + alert.ordinal() * 12);
+                Mob mob = EntityType.ZOMBIE.create(level);
+                if (mob == null) continue;
+                mob.addTag("tac_rogue_spawned");
+                mob.getPersistentData().putString(FloorInstanceManager.INSTANCE_ID_KEY, instanceId);
+                mob.setPersistenceRequired();
+                mob.moveTo(mobPos.getX() + 0.5D, mobPos.getY(), mobPos.getZ() + 0.5D, 0.0F, 0.0F);
+                setBodyYaw(mob, 0.0F);
+                mob.setCustomName(Component.literal(alert.name() + " / " + direction.name()));
+                mob.setCustomNameVisible(true);
+                level.addFreshEntity(mob);
+                applyMatrixAlert(mob, player, alert);
+                Vec3 playerMark = matrixPlayerPos(mob.position(), direction, 4.0D);
+                level.setBlock(BlockPos.containing(playerMark).below(), Blocks.LIME_CONCRETE.defaultBlockState(), 3);
+                if (blocked) {
+                    placeVisionWall(level, mob.blockPosition(), BlockPos.containing(playerMark));
+                }
+                index++;
+            }
+        }
+    }
+
+    private static void applyMatrixAlert(Mob mob, ServerPlayer player, MatrixAlert alert) {
+        clearAlertData(mob);
+        mob.setTarget(null);
+        Vec3 memory = mob.position().add(0.0D, 0.0D, 5.0D);
+        long now = mob.level().getGameTime();
+        switch (alert) {
+            case NONE -> {
+            }
+            case DECOY -> RogueMobAlertService.applyDecoy(mob, memory, player, 200L);
+            case INVESTIGATE, WARNED -> {
+                mob.getPersistentData().putString(RogueMobAlertService.ALERT_LEVEL, alert.name());
+                mob.getPersistentData().putString(RogueMobAlertService.ALERT_REASON,
+                    alert == MatrixAlert.INVESTIGATE ? "matrix_investigate" : "matrix_warned");
+                mob.getPersistentData().putLong(RogueMobAlertService.LAST_ALERT_TICK, now);
+                mob.getPersistentData().putLong(RogueMobAlertService.INVESTIGATE_END_TIME, now + 200L);
+                mob.getPersistentData().putDouble(RogueMobAlertService.INVESTIGATE_X, memory.x);
+                mob.getPersistentData().putDouble(RogueMobAlertService.INVESTIGATE_Y, memory.y);
+                mob.getPersistentData().putDouble(RogueMobAlertService.INVESTIGATE_Z, memory.z);
+            }
+            case ENGAGED -> RogueMobAlertService.engageFromVision(mob, player);
+        }
+    }
+
+    private static String matrixCaseId(MatrixAlert alert, MatrixDirection direction, boolean blocked) {
+        return "matrix." + alert.name().toLowerCase(Locale.ROOT)
+            + "." + direction.name().toLowerCase(Locale.ROOT)
+            + "." + (blocked ? "blocked" : "los");
+    }
+
+    private static Vec3 matrixPlayerPos(Vec3 mobPos, MatrixDirection direction, double distance) {
+        return switch (direction) {
+            case FRONT -> mobPos.add(0.0D, 0.0D, distance);
+            case BACK -> mobPos.add(0.0D, 0.0D, -distance);
+            case LEFT -> mobPos.add(distance, 0.0D, 0.0D);
+            case RIGHT -> mobPos.add(-distance, 0.0D, 0.0D);
+        };
+    }
+
+    private static void setBodyYaw(Mob mob, float yaw) {
+        mob.setYRot(yaw);
+        mob.setYHeadRot(yaw);
+        mob.setYBodyRot(yaw);
+    }
+
+    private static void buildAiMatrixArena(ServerLevel level, BlockPos center) {
+        for (int dx = -34; dx <= 34; dx++) {
+            for (int dz = -34; dz <= 34; dz++) {
+                BlockPos floor = center.offset(dx, 0, dz);
+                level.setBlock(floor, Blocks.DEEPSLATE_TILES.defaultBlockState(), 3);
+                for (int dy = 1; dy <= 4; dy++) {
+                    BlockPos pos = floor.above(dy);
+                    boolean border = Math.abs(dx) == 34 || Math.abs(dz) == 34;
+                    level.setBlock(pos, border ? Blocks.DEEPSLATE_BRICKS.defaultBlockState() : Blocks.AIR.defaultBlockState(), 3);
+                }
+            }
+        }
+        for (int i = -34; i <= 34; i += 4) {
+            level.setBlock(center.offset(i, 0, 0), Blocks.CYAN_CONCRETE.defaultBlockState(), 3);
+            level.setBlock(center.offset(0, 0, i), Blocks.CYAN_CONCRETE.defaultBlockState(), 3);
+        }
+    }
+
+    private static void clearAiMatrixArena(ServerLevel level, BlockPos center) {
+        AABB bounds = new AABB(center).inflate(40.0D, 12.0D, 40.0D);
+        level.getEntitiesOfClass(Mob.class, bounds, mob ->
+            mob.getPersistentData().getString(FloorInstanceManager.INSTANCE_ID_KEY).equals("smoke-ai-matrix")
+                || mob.getTags().contains("tac_rogue_spawned")).forEach(Mob::discard);
+        for (int dx = -36; dx <= 36; dx++) {
+            for (int dz = -36; dz <= 36; dz++) {
+                for (int dy = 0; dy <= 6; dy++) {
+                    level.setBlock(center.offset(dx, dy, dz), Blocks.AIR.defaultBlockState(), 3);
+                }
+            }
+        }
+    }
+
+    private static void clearLine(ServerLevel level, BlockPos a, BlockPos b) {
+        BlockPos min = new BlockPos(Math.min(a.getX(), b.getX()) - 1, Math.min(a.getY(), b.getY()), Math.min(a.getZ(), b.getZ()) - 1);
+        BlockPos max = new BlockPos(Math.max(a.getX(), b.getX()) + 1, Math.max(a.getY(), b.getY()) + 2, Math.max(a.getZ(), b.getZ()) + 1);
+        for (BlockPos pos : BlockPos.betweenClosed(min, max)) {
+            if (pos.getY() <= AI_MATRIX_CENTER.getY()) continue;
+            if (Math.abs(pos.getX() - AI_MATRIX_CENTER.getX()) > 34 || Math.abs(pos.getZ() - AI_MATRIX_CENTER.getZ()) > 34) continue;
+            level.setBlock(pos.immutable(), Blocks.AIR.defaultBlockState(), 3);
+        }
+    }
+
+    private static void placeVisionWall(ServerLevel level, BlockPos mobPos, BlockPos playerPos) {
+        BlockPos mid = new BlockPos(
+            (mobPos.getX() + playerPos.getX()) / 2,
+            mobPos.getY(),
+            (mobPos.getZ() + playerPos.getZ()) / 2);
+        for (int dx = -1; dx <= 1; dx++) {
+            for (int dy = 0; dy <= 2; dy++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    level.setBlock(mid.offset(dx, dy, dz), Blocks.DEEPSLATE_BRICKS.defaultBlockState(), 3);
+                }
+            }
         }
     }
 
@@ -430,6 +778,8 @@ public final class SmokeTestService {
             "rogue dimension available for live generation", rogue.dimension().location().toString(), "");
 
         BlockPos center = new BlockPos(7200, 80, 7200);
+        boolean originalInstancePresent = player.getPersistentData().contains(FloorInstanceManager.INSTANCE_ID_KEY);
+        String originalInstance = player.getPersistentData().getString(FloorInstanceManager.INSTANCE_ID_KEY);
         long runSeed = 0x5EED_0800L;
         int checked = 0;
         int failed = 0;
@@ -509,6 +859,16 @@ public final class SmokeTestService {
                 String.valueOf(lastSpawn),
                 "run /rogue_admin debug smoke generation to clean it after inspection");
         }
+        restorePlayerInstance(player, originalInstancePresent, originalInstance);
+    }
+
+    private static void restorePlayerInstance(ServerPlayer player, boolean originalPresent, String originalValue) {
+        if (player == null) return;
+        if (originalPresent) {
+            player.getPersistentData().putString(FloorInstanceManager.INSTANCE_ID_KEY, originalValue == null ? "" : originalValue);
+        } else {
+            player.getPersistentData().remove(FloorInstanceManager.INSTANCE_ID_KEY);
+        }
     }
 
     private static void discardSmokeEntities(ServerLevel level, BlockPos center) {
@@ -529,6 +889,40 @@ public final class SmokeTestService {
         mob.getPersistentData().remove(RogueMobAlertService.INVESTIGATE_Y);
         mob.getPersistentData().remove(RogueMobAlertService.INVESTIGATE_Z);
         mob.getPersistentData().remove(RogueMobAlertService.LAST_ALERT_TICK);
+        mob.getPersistentData().remove(RogueMobAlertService.ALERT_REASON);
+        mob.getPersistentData().remove(RogueMobAlertService.ALERT_TARGET_UUID);
+        mob.getPersistentData().remove(RogueMobAlertService.LAST_SEEN_TICK);
+        mob.getPersistentData().remove(RogueMobAlertService.LAST_SEEN_X);
+        mob.getPersistentData().remove(RogueMobAlertService.LAST_SEEN_Y);
+        mob.getPersistentData().remove(RogueMobAlertService.LAST_SEEN_Z);
+        mob.getPersistentData().remove(RogueMobAlertService.FLASHLIGHT_FOCUS_TICK);
+        mob.getPersistentData().remove(RogueMobAlertService.FLASHLIGHT_FOCUS_TARGET);
+        mob.getPersistentData().remove(RogueMobAlertService.DECOY_X);
+        mob.getPersistentData().remove(RogueMobAlertService.DECOY_Y);
+        mob.getPersistentData().remove(RogueMobAlertService.DECOY_Z);
+        mob.getPersistentData().remove(RogueMobAlertService.DECOY_END_TIME);
+        mob.getPersistentData().remove(RogueMobAlertService.DECOY_OWNER);
+    }
+
+    private static void faceMobAt(Mob mob, net.minecraft.world.entity.Entity target) {
+        float yaw = yawTo(mob, target);
+        mob.setYRot(yaw);
+        mob.setYHeadRot(yaw);
+        mob.setYBodyRot(yaw);
+    }
+
+    private static float yawTo(Mob mob, net.minecraft.world.entity.Entity target) {
+        double dx = target.getX() - mob.getX();
+        double dz = target.getZ() - mob.getZ();
+        return (float) (Math.toDegrees(Math.atan2(dz, dx)) - 90.0D);
+    }
+
+    private static void faceMobAwayFrom(Mob mob, net.minecraft.world.entity.Entity target) {
+        faceMobAt(mob, target);
+        float yaw = mob.getYRot() + 180.0F;
+        mob.setYRot(yaw);
+        mob.setYHeadRot(yaw);
+        mob.setYBodyRot(yaw);
     }
 
     private static ItemStack ensureRepresentativeGunInHand(ServerPlayer player, Counter counter, String suite) {
@@ -600,6 +994,21 @@ public final class SmokeTestService {
     @FunctionalInterface
     private interface ListSupplier<T> {
         List<T> get();
+    }
+
+    private enum MatrixAlert {
+        NONE,
+        INVESTIGATE,
+        WARNED,
+        DECOY,
+        ENGAGED
+    }
+
+    private enum MatrixDirection {
+        FRONT,
+        BACK,
+        LEFT,
+        RIGHT
     }
 
     private static final class Counter {

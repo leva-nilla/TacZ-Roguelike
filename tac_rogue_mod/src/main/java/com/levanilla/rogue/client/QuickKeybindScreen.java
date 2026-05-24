@@ -99,6 +99,7 @@ public class QuickKeybindScreen extends Screen {
         addRow("gui.tac_rogue.quick_keys.tacz.inspect", find("key.tacz.inspect.desc", "key.tacz.inspect"));
         addRow("gui.tac_rogue.quick_keys.rogue.flashlight", ClientKeyBinds.FLASHLIGHT);
         addRow("gui.tac_rogue.quick_keys.rogue.camera", ClientKeyBinds.CAMERA_TOGGLE);
+        addRow("gui.tac_rogue.quick_keys.rogue.ai_debug", ClientKeyBinds.DEBUG_AI_OVERLAY);
         addRow("gui.tac_rogue.quick_keys.rogue.tutorial_next", ClientKeyBinds.TUTORIAL_NEXT);
         addRow("gui.tac_rogue.quick_keys.ysm.model", find("key.yes_steve_model.player_model.desc"));
         addRow("gui.tac_rogue.quick_keys.ysm.roulette", find("key.yes_steve_model.animation_roulette.desc"));

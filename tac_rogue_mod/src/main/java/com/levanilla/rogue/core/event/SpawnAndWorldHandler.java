@@ -1,7 +1,9 @@
 package com.levanilla.rogue.core.event;
 
 import com.levanilla.rogue.core.*;
+import com.levanilla.rogue.core.service.RogueMobAlertService;
 import com.levanilla.rogue.networking.TacRogueNetworking;
+import com.levanilla.rogue.world.goal.RogueMobGoalUtils;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Mob;
@@ -88,6 +90,9 @@ public class SpawnAndWorldHandler {
             if (!isSpawnedOrNpc) {
                 event.setCanceled(true);
                 return;
+            }
+            if (mob.getTags().contains("tac_rogue_spawned")) {
+                RogueMobGoalUtils.removePassivePlayerLookGoals(mob);
             }
             if (event.getLevel() instanceof ServerLevel sl) {
                 PlayerRunData data = RunManager.findDataForDungeonPosition(sl, mob.getX(), mob.getZ());
@@ -230,12 +235,12 @@ public class SpawnAndWorldHandler {
         if (level.dimension() != ROGUE_DIM || !(event.getEntity() instanceof Mob mob)) return;
 
         // デコイ注視状態 (雪玉誘導) の強制
-        long decoyEndTime = mob.getPersistentData().getLong("DecoyEndTime");
+        long decoyEndTime = mob.getPersistentData().getLong(RogueMobAlertService.DECOY_END_TIME);
         if (decoyEndTime > 0) {
             if (level.getGameTime() < decoyEndTime && mob.getTarget() == null) {
-                double sx = mob.getPersistentData().getDouble("DecoyX");
-                double sy = mob.getPersistentData().getDouble("DecoyY");
-                double sz = mob.getPersistentData().getDouble("DecoyZ");
+                double sx = mob.getPersistentData().getDouble(RogueMobAlertService.DECOY_X);
+                double sy = mob.getPersistentData().getDouble(RogueMobAlertService.DECOY_Y);
+                double sz = mob.getPersistentData().getDouble(RogueMobAlertService.DECOY_Z);
                 
                 mob.getLookControl().setLookAt(sx, sy, sz, 100.0F, 100.0F); // 強い力で視点固定
                 // バニラのRandomLookAroundGoalによる首振りを強制的に上書き固定する
@@ -243,7 +248,11 @@ public class SpawnAndWorldHandler {
                 mob.setYHeadRot(targetYaw);
                 mob.setYBodyRot(targetYaw);
             } else {
-                mob.getPersistentData().remove("DecoyEndTime");
+                mob.getPersistentData().remove(RogueMobAlertService.DECOY_END_TIME);
+                mob.getPersistentData().remove(RogueMobAlertService.DECOY_X);
+                mob.getPersistentData().remove(RogueMobAlertService.DECOY_Y);
+                mob.getPersistentData().remove(RogueMobAlertService.DECOY_Z);
+                mob.getPersistentData().remove(RogueMobAlertService.DECOY_OWNER);
             }
         }
 

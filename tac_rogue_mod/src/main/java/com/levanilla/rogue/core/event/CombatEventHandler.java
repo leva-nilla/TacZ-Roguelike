@@ -1,6 +1,7 @@
 package com.levanilla.rogue.core.event;
 
 import com.levanilla.rogue.core.*;
+import com.levanilla.rogue.core.service.RogueMobAlertService;
 import com.levanilla.rogue.core.service.RoguePickupService;
 import com.levanilla.rogue.networking.StealthTakedownHintMessage;
 import com.levanilla.rogue.networking.TacRogueNetworking;
@@ -45,6 +46,7 @@ public class CombatEventHandler {
     private static final double STEALTH_HEAD_SEES_PLAYER_DOT = 0.25D;
     private static final double STEALTH_BODY_BACK_DOT = -0.25D;
     private static final double STEALTH_HEAD_BACK_DOT = -0.55D;
+    private static final double DECOY_STEALTH_HEAD_SEES_PLAYER_DOT = 0.85D;
 
     // TacZ damage context is registered by TacZEventHandler and consumed by LivingHurtEvent.
     public static class GunDamageContext {
@@ -92,6 +94,11 @@ public class CombatEventHandler {
         if (event.getEntity().level().isClientSide) return;
         if (event.getNewTarget() instanceof ServerPlayer player && event.getEntity() instanceof Mob mob) {
             if (mob.getTags().contains("rogue:boss")) return;
+            if (RogueMobAlertService.isDecoyActive(mob)
+                    && RogueMobAlertService.getAlertLevel(mob) != RogueMobAlertService.AlertLevel.ENGAGED) {
+                event.setCanceled(true);
+                return;
+            }
 
             long lastAlertTick = mob.getPersistentData().getLong("LastAlertTick");
             long currentTick = mob.level().getGameTime();
@@ -470,19 +477,32 @@ public class CombatEventHandler {
         if (mob.level().isClientSide || mob.level().dimension() != ROGUE_DIM) return false;
         if (mob.getTags().contains("rogue:boss")) return false;
         if (mob.getTarget() != null) return false;
-        if (mob.distanceTo(srcPlayer) > 3.0D) return false;
 
         long now = mob.level().getGameTime();
-        long lastAlert = mob.getPersistentData().getLong("LastAlertTick");
-        if (lastAlert > 0L && now - lastAlert < 80L) return false;
+        boolean decoyActive = isActiveDecoyDistraction(mob, now);
+        if (mob.distanceTo(srcPlayer) > (decoyActive ? 3.5D : 3.0D)) return false;
+
+        RogueMobAlertService.AlertLevel alertLevel = RogueMobAlertService.getAlertLevel(mob);
+        if (alertLevel != RogueMobAlertService.AlertLevel.NONE
+                && !(decoyActive && alertLevel != RogueMobAlertService.AlertLevel.ENGAGED)) {
+            return false;
+        }
 
         Vec3 toPlayer = srcPlayer.position().subtract(mob.position()).normalize();
         double headDot = horizontalFacingFromYaw(mob.getYHeadRot()).dot(flatten(toPlayer));
+        if (decoyActive) {
+            return headDot < DECOY_STEALTH_HEAD_SEES_PLAYER_DOT && mob.hasLineOfSight(srcPlayer);
+        }
         if (headDot >= STEALTH_HEAD_SEES_PLAYER_DOT) return false;
 
         double bodyDot = horizontalFacingFromYaw(mob.yBodyRot).dot(flatten(toPlayer));
         if (bodyDot >= STEALTH_BODY_BACK_DOT && headDot >= STEALTH_HEAD_BACK_DOT) return false;
         return mob.hasLineOfSight(srcPlayer);
+    }
+
+    private static boolean isActiveDecoyDistraction(Mob mob, long now) {
+        long decoyEnd = mob.getPersistentData().getLong(RogueMobAlertService.DECOY_END_TIME);
+        return decoyEnd > now;
     }
 
     private static Vec3 flatten(Vec3 vec) {

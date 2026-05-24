@@ -15,6 +15,7 @@ import com.levanilla.rogue.core.WeaponRarity;
 import com.levanilla.rogue.core.registry.ShopCatalog;
 import com.levanilla.rogue.core.service.FloorService;
 import com.levanilla.rogue.core.service.FloorInstanceManager;
+import com.levanilla.rogue.core.service.RogueMobAlertService;
 import com.levanilla.rogue.core.service.RogueItemFactory;
 import com.levanilla.rogue.core.service.ShopPlacementService;
 import com.levanilla.rogue.core.smoke.SmokeGenerationWalkService;
@@ -37,7 +38,10 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Mob;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -73,6 +77,23 @@ public class RogueAdminCommand {
                     )
                     .then(Commands.literal("reloadinfo")
                         .executes(context -> debugReloadInfo(context.getSource()))
+                    )
+                    .then(Commands.literal("clear_instance")
+                        .executes(context -> debugClearPlayerInstance(context.getSource()))
+                    )
+                    .then(Commands.literal("alert_probe")
+                        .executes(context -> debugAlertProbe(context.getSource(), 24, false))
+                        .then(Commands.argument("radius", IntegerArgumentType.integer(4, 80))
+                            .executes(context -> debugAlertProbe(
+                                context.getSource(),
+                                IntegerArgumentType.getInteger(context, "radius"),
+                                false))
+                            .then(Commands.argument("suppressed", BoolArgumentType.bool())
+                                .executes(context -> debugAlertProbe(
+                                    context.getSource(),
+                                    IntegerArgumentType.getInteger(context, "radius"),
+                                    BoolArgumentType.getBool(context, "suppressed"))))
+                        )
                     )
                     .then(Commands.literal("stamina")
                         .executes(context -> debugStamina(context.getSource()))
@@ -129,6 +150,10 @@ public class RogueAdminCommand {
                             .executes(context -> debugSmoke(context.getSource(), "shooting")))
                         .then(Commands.literal("monster")
                             .executes(context -> debugSmoke(context.getSource(), "monster")))
+                        .then(Commands.literal("ai_matrix")
+                            .executes(context -> debugSmoke(context.getSource(), "ai_matrix")))
+                        .then(Commands.literal("ai_matrix_view")
+                            .executes(context -> debugSmoke(context.getSource(), "ai_matrix_view")))
                         .then(Commands.literal("generation")
                             .executes(context -> debugSmoke(context.getSource(), "generation")))
                         .then(Commands.literal("generation_view")
@@ -361,6 +386,105 @@ public class RogueAdminCommand {
         } catch (Throwable ex) {
             send(source, "TacZ reload state unavailable: " + ex.getClass().getSimpleName());
         }
+        return 1;
+    }
+
+    private static int debugAlertProbe(CommandSourceStack source, int radius, boolean suppressed) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+        if (player.level().dimension() != CommonEventHandler.ROGUE_DIM || !(player.level() instanceof ServerLevel level)) {
+            source.sendFailure(Component.literal("[DEBUG] alert_probe must be run inside rogue dimension."));
+            return 0;
+        }
+
+        RogueMobAlertService.clearShotHistoryForSmoke(player.getUUID());
+        RogueMobAlertService.onGunshot(player, suppressed, radius);
+        Vec3 soundPos = player.position();
+        String playerInstance = player.getPersistentData().getString(FloorInstanceManager.INSTANCE_ID_KEY);
+        List<Mob> allMobs = level.getEntitiesOfClass(Mob.class, new AABB(player.blockPosition()).inflate(radius), mob ->
+            mob.isAlive()
+                && mob.distanceTo(player) <= radius);
+        List<Mob> mobs = level.getEntitiesOfClass(Mob.class, new AABB(player.blockPosition()).inflate(radius), mob ->
+            mob.isAlive()
+                && mob.distanceTo(player) <= radius
+                && mob.getTags().contains("tac_rogue_spawned")
+                && sameDebugInstance(playerInstance, mob.getPersistentData().getString(FloorInstanceManager.INSTANCE_ID_KEY)));
+        mobs.sort(java.util.Comparator.comparingDouble(mob -> mob.distanceToSqr(player)));
+        allMobs.sort(java.util.Comparator.comparingDouble(mob -> mob.distanceToSqr(player)));
+        long taggedCount = allMobs.stream().filter(mob -> mob.getTags().contains("tac_rogue_spawned")).count();
+        long bossCount = allMobs.stream().filter(mob -> mob.getTags().contains("rogue:boss")).count();
+        long sameInstanceCount = allMobs.stream()
+            .filter(mob -> sameDebugInstance(playerInstance, mob.getPersistentData().getString(FloorInstanceManager.INSTANCE_ID_KEY)))
+            .count();
+
+        send(source, "Alert probe radius=" + radius
+            + " suppressed=" + suppressed
+            + " soundPos=" + formatVec(soundPos)
+            + " playerInstance=" + shortenDebug(playerInstance)
+            + " mobs=" + mobs.size()
+            + " allMobs=" + allMobs.size()
+            + " tagged=" + taggedCount
+            + " boss=" + bossCount
+            + " sameInstance=" + sameInstanceCount);
+        if (mobs.isEmpty() && !allMobs.isEmpty()) {
+            int debugLimit = Math.min(8, allMobs.size());
+            for (int i = 0; i < debugLimit; i++) {
+                Mob mob = allMobs.get(i);
+                String mobInstance = mob.getPersistentData().getString(FloorInstanceManager.INSTANCE_ID_KEY);
+                send(source, "near#" + mob.getId()
+                    + " " + mob.getType().toShortString()
+                    + " dist=" + String.format(Locale.ROOT, "%.1f", mob.distanceTo(player))
+                    + " tags=" + compactDebugTags(mob)
+                    + " instance=" + shortenDebug(mobInstance)
+                    + " same=" + sameDebugInstance(playerInstance, mobInstance));
+            }
+        }
+        int limit = Math.min(8, mobs.size());
+        for (int i = 0; i < limit; i++) {
+            Mob mob = mobs.get(i);
+            RogueMobAlertService.AlertLevel alert = RogueMobAlertService.getAlertLevel(mob);
+            Vec3 investigate = RogueMobAlertService.getInvestigatePos(mob);
+            CompoundTag data = mob.getPersistentData();
+            BlockPos targetBlock = BlockPos.containing(investigate);
+            boolean targetStandable = isStandable(level, targetBlock);
+            boolean pathDirect = mob.getNavigation().createPath(targetBlock, 0) != null;
+            boolean navigationActive = !mob.getNavigation().isDone();
+            long now = level.getGameTime();
+            long end = data.getLong(RogueMobAlertService.INVESTIGATE_END_TIME);
+            long losLostSince = data.getLong(RogueMobAlertService.LOS_LOST_SINCE);
+            long flashlightFocusTick = data.getLong(RogueMobAlertService.FLASHLIGHT_FOCUS_TICK);
+            send(source, "#" + i
+                + " " + mob.getType().toShortString()
+                + " dist=" + format((float) mob.distanceTo(player))
+                + " alert=" + alert.name()
+                + " reason=" + data.getString(RogueMobAlertService.ALERT_REASON)
+                + " target=" + (mob.getTarget() == player)
+                + " los=" + mob.hasLineOfSight(player)
+                + " inv=" + formatVec(investigate)
+                + " endIn=" + (end > 0L ? end - now : 0L)
+                + " lastSeen=" + formatSavedVec(data,
+                    RogueMobAlertService.LAST_SEEN_X,
+                    RogueMobAlertService.LAST_SEEN_Y,
+                    RogueMobAlertService.LAST_SEEN_Z)
+                + " losLostFor=" + (losLostSince > 0L ? now - losLostSince : 0L)
+                + " flashFocusFor=" + (flashlightFocusTick > 0L ? now - flashlightFocusTick : 0L)
+                + " targetUuid=" + data.getString(RogueMobAlertService.ALERT_TARGET_UUID)
+                + " standable=" + targetStandable
+                + " path=" + pathDirect
+                + " navActive=" + navigationActive);
+        }
+        if (mobs.size() > limit) {
+            send(source, "... +" + (mobs.size() - limit) + " more mobs");
+        }
+        return mobs.isEmpty() ? 0 : 1;
+    }
+
+    private static int debugClearPlayerInstance(CommandSourceStack source) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+        String old = player.getPersistentData().getString(FloorInstanceManager.INSTANCE_ID_KEY);
+        player.getPersistentData().remove(FloorInstanceManager.INSTANCE_ID_KEY);
+        send(source, "Cleared player instance id: " + shortenDebug(old));
         return 1;
     }
 
@@ -816,6 +940,46 @@ public class RogueAdminCommand {
 
     private static String format(float value) {
         return String.format(Locale.ROOT, "%.2f", value);
+    }
+
+    private static String formatVec(Vec3 value) {
+        return String.format(Locale.ROOT, "%.2f,%.2f,%.2f", value.x, value.y, value.z);
+    }
+
+    private static String formatSavedVec(CompoundTag data, String xKey, String yKey, String zKey) {
+        if (data == null || !data.contains(xKey) || !data.contains(yKey) || !data.contains(zKey)) {
+            return "-";
+        }
+        return String.format(Locale.ROOT, "%.2f,%.2f,%.2f",
+            data.getDouble(xKey),
+            data.getDouble(yKey),
+            data.getDouble(zKey));
+    }
+
+    private static boolean sameDebugInstance(String playerInstance, String mobInstance) {
+        return playerInstance == null || playerInstance.isBlank()
+            || mobInstance == null || mobInstance.isBlank()
+            || playerInstance.equals(mobInstance);
+    }
+
+    private static String shortenDebug(String value) {
+        if (value == null || value.isBlank()) return "-";
+        return value.length() <= 14 ? value : value.substring(0, 14);
+    }
+
+    private static String compactDebugTags(Mob mob) {
+        if (mob == null || mob.getTags().isEmpty()) return "-";
+        return mob.getTags().stream()
+            .filter(tag -> tag.startsWith("tac_rogue") || tag.startsWith("rogue:"))
+            .limit(4)
+            .reduce((left, right) -> left + "," + right)
+            .orElse("-");
+    }
+
+    private static boolean isStandable(ServerLevel level, BlockPos pos) {
+        return !level.getBlockState(pos.below()).isAir()
+            && level.getBlockState(pos).isAir()
+            && level.getBlockState(pos.above()).isAir();
     }
 
     private static ServerPlayer getPlayer(CommandSourceStack source) {

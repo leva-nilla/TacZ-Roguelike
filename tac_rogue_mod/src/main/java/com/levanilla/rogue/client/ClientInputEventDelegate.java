@@ -28,6 +28,7 @@ final class ClientInputEventDelegate {
             DynamicLightManager.tick();
 
             Minecraft mc = Minecraft.getInstance();
+            DebugAiOverlayManager.tick(mc);
             ClientWelcomeScreenDelegate.handlePendingWelcomeScreen(mc);
             ensureTacRogueGuiScale(mc);
             TutorialGuideManager.tick(mc);
@@ -55,6 +56,10 @@ final class ClientInputEventDelegate {
 
             while (ClientKeyBinds.DEBUG_MENU.consumeClick()) {
                 DebugMenuScreen.open();
+            }
+
+            while (ClientKeyBinds.DEBUG_AI_OVERLAY.consumeClick()) {
+                DebugAiOverlayManager.toggle();
             }
 
             while (ClientKeyBinds.TUTORIAL_NEXT.consumeClick()) {
