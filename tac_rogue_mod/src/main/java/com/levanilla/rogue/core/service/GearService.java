@@ -116,13 +116,11 @@ public final class GearService {
         player.getInventory().add(createMedkitStack(GameConstants.STARTER_MEDKIT_COUNT));
 
         // 4. 携帯食料
-        ItemStack steak = new ItemStack(Items.COOKED_BEEF, GameConstants.STARTER_STEAK_COUNT);
-        CompoundTag steakTag = new CompoundTag();
-        steakTag.putBoolean("rogue_always_eat", true);
-        steakTag.putBoolean("rogue_item", true);
-        steakTag.putInt("CustomModelData", 39003);
-        steak.setTag(steakTag);
-        player.getInventory().add(steak);
+        ItemStack ration = RogueItemFactory.createRecoveryItem("rogue:field_ration");
+        if (!ration.isEmpty()) {
+            ration.setCount(GameConstants.STARTER_STEAK_COUNT);
+            player.getInventory().add(ration);
+        }
 
         // 4.5 雪玉 (ステルス用)
         ItemStack snowballs = new ItemStack(Items.SNOWBALL, 16);

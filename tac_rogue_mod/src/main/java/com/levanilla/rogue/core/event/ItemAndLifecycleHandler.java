@@ -245,8 +245,7 @@ public class ItemAndLifecycleHandler {
                     event.setCanceled(true);
                 } else if (stack.is(Items.GLASS_BOTTLE)) {
                     // ADRENALINE — ダメージ+30% & 速度+20% (20秒) → 終了後スロー2秒
-                    player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                        net.minecraft.world.effect.MobEffects.DAMAGE_BOOST, 400, 0, false, true));
+                    RogueCombatEffects.activateAdrenaline(player);
                     player.addEffect(new net.minecraft.world.effect.MobEffectInstance(
                         net.minecraft.world.effect.MobEffects.MOVEMENT_SPEED, 400, 0, false, true));
                     // 20秒後にスロー付与

@@ -540,6 +540,7 @@ public final class LeaWindsCompat {
 
             // TacZ 銃所持チェック
             boolean holdingGun = isHoldingTacZGun(mc.player);
+            boolean holdingAimControlledItem = holdingGun || isHoldingRogueMelee(mc.player);
 
             // === スコープ付き武器のADS時は常に一人称に切替 ===
             if (holdingGun) {
@@ -583,7 +584,7 @@ public final class LeaWindsCompat {
                 }
             }
 
-            if (!holdingGun) {
+            if (!holdingAimControlledItem) {
                 restoreLeaWindsRotateMode();
                 return;
             }
@@ -636,6 +637,18 @@ public final class LeaWindsCompat {
         }
         try {
             return com.tacz.guns.api.item.IGun.getIGunOrNull(player.getMainHandItem()) != null;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    private static boolean isHoldingRogueMelee(net.minecraft.client.player.LocalPlayer player) {
+        if (player == null) return false;
+        net.minecraft.world.item.ItemStack stack = player.getMainHandItem();
+        if (stack.isEmpty()) return false;
+        if (stack.hasTag() && stack.getTag() != null && stack.getTag().contains("MeleeWeaponId")) return true;
+        try {
+            return com.levanilla.rogue.core.registry.LrTacticalRegistry.isMeleeWeapon(stack);
         } catch (Throwable ignored) {
             return false;
         }

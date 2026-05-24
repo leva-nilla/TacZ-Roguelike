@@ -230,6 +230,7 @@ public class CombatEventHandler {
 
                 float damageBonus = sumPerkEffect(attacker, "perk:DAMAGE") / 100.0f;
                 damage *= (1.0f + damageBonus);
+                damage = RogueCombatEffects.applyAdrenalineDamage(attacker, damage);
 
                 float rawCritChance = sumPerkEffect(attacker, "perk:FORTUNE") / 100.0f;
                 float critChance = Math.min(0.70f, rawCritChance);
@@ -246,7 +247,7 @@ public class CombatEventHandler {
                 }
 
                 boolean isSneaking = attacker.isShiftKeyDown();
-                boolean isCrawling = attacker.isSwimming();
+                boolean isCrawling = CombatPostureHelper.isProne(attacker);
                 if (isCrawling) damage *= GameConstants.CRAWL_DAMAGE_MULT;
                 else if (isSneaking) damage *= GameConstants.SNEAK_DAMAGE_MULT;
 

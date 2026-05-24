@@ -270,8 +270,9 @@ public final class HudRenderer {
     private static void renderStaminaWarning(GuiGraphics graphics, Minecraft mc, int screenWidth, int screenHeight, StatusData data) {
         if (!RunManager.isRunActive()) return;
         if (!data.staminaExhausted && data.staminaRatio > 0.18F) return;
-        int cx = screenWidth / 2 + 13;
-        int cy = screenHeight / 2 + 12;
+        HotbarRenderer.Bounds hotbar = HotbarRenderer.bounds(screenWidth, screenHeight);
+        int cx = Math.max(6, hotbar.x() + 8);
+        int cy = Math.max(6, hotbar.y() - 12);
         int color = data.staminaExhausted ? 0xFFFF8A30 : 0xFFFFD166;
         graphics.fill(cx - 3, cy, cx, cy + 3, 0xAA000000);
         graphics.fill(cx, cy - 3, cx + 3, cy, 0xAA000000);

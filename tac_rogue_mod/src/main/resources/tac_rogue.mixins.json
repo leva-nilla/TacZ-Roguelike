@@ -15,6 +15,7 @@
     "MixinGunDataShootInterval",
     "MixinLivingEntityReload",
     "MixinLivingEntityCrawl",
+    "MixinLrTacticalMeleeItem",
     "MixinLivingEntityShootBurst",
     "MixinModernKineticGunScriptAPI",
     "MixinPlayerAdvancements",

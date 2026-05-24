@@ -194,7 +194,7 @@ public class RogueMobVisionGoal extends TargetGoal {
      */
     private boolean isInFovAndLOS(Player player) {
         // プレイヤーの姿勢による検知修正
-        boolean isCrawling = player.isSwimming(); // 伏せ
+        boolean isCrawling = com.levanilla.rogue.core.CombatPostureHelper.isProne(player);
         boolean isSneaking = player.isShiftKeyDown();
         double rangeMultiplier = isCrawling ? 0.2 : (isSneaking ? 0.4 : 1.0);
         double fovDeg = isCrawling ? 30.0 : (isSneaking ? 40.0 : 60.0);

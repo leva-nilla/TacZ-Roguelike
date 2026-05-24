@@ -589,7 +589,7 @@ public class StaminaManager {
 
     private static float getAdsStaminaCost(Player player) {
         float cost = GameConstants.STAMINA_ADS_CONSUME_RATE;
-        if (player.hasPose(Pose.SWIMMING)) {
+        if (CombatPostureHelper.isProne(player)) {
             return cost * GameConstants.STAMINA_ADS_PRONE_MULT;
         }
         if (player.hasPose(Pose.CROUCHING) || player.isShiftKeyDown()) {

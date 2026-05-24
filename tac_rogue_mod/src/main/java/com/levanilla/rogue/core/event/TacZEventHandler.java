@@ -207,6 +207,7 @@ public class TacZEventHandler {
 
         // === 武器レアリティダメージ倍率 ===
         damage *= WeaponRarity.getDamageMult(heldGun);
+        damage = RogueCombatEffects.applyAdrenalineDamage(attacker, damage);
         damage *= com.levanilla.rogue.core.service.DeepProgressService.damageMultiplier(
             attacker,
             event.getHurtEntity() instanceof net.minecraft.world.entity.LivingEntity living ? living : null,
@@ -223,7 +224,7 @@ public class TacZEventHandler {
         }
 
         // === スニーク/伏せ時のダメージボーナス ===
-        boolean isCrawling = attacker.isSwimming();
+        boolean isCrawling = CombatPostureHelper.isProne(attacker);
         boolean isSneaking = attacker.isShiftKeyDown();
         if (isCrawling) {
             damage *= GameConstants.CRAWL_DAMAGE_MULT;

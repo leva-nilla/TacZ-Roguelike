@@ -543,7 +543,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
 
         int bottomY = tacticalY;
         drawPanel(graphics, lx, bottomY, leftW + rightW + 10, tacticalH, tr("gui.tac_rogue.status.panel.tactical_state"), 0xFFAAFFCC);
-        boolean prone = player.hasPose(net.minecraft.world.entity.Pose.SWIMMING) || player.isSwimming();
+        boolean prone = com.levanilla.rogue.core.CombatPostureHelper.isProne(player);
         boolean sneaking = player.hasPose(net.minecraft.world.entity.Pose.CROUCHING)
             || player.isShiftKeyDown()
             || ClientEventHandler.isRogueSneakToggled();

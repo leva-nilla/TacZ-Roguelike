@@ -239,19 +239,26 @@ public class PriceManager {
         // TacZ 銃
         if (tag.contains("GunId")) {
             String gunId = tag.getString("GunId");
-            int buyPrice = getPrice(gunId);
-            int gunSell = (int)(buyPrice * GameConstants.GUN_SELL_RATE);
+            int buyPrice = getWeaponStackBuyPrice(gunId, stack);
+            int gunSell = Math.round(buyPrice * GameConstants.GUN_SELL_RATE);
             // アタッチメント価格を加算
             if (tag.contains("Attachments")) {
                 net.minecraft.nbt.CompoundTag attachments = tag.getCompound("Attachments");
                 for (String key : attachments.getAllKeys()) {
-                    String attId = attachments.getCompound(key).getString("AttachmentId");
+                    String attId = readAttachmentId(attachments, key);
                     if (attId != null && !attId.isEmpty()) {
-                        gunSell += (int)(getAttachmentBuyPrice(attId) * GameConstants.GUN_SELL_RATE);
+                        gunSell += Math.round(getAttachmentStackBuyPrice(attId) * GameConstants.GUN_SELL_RATE);
                     }
                 }
             }
             return gunSell;
+        }
+
+        // LrTactical 近接武器
+        if (tag.contains("MeleeWeaponId")) {
+            String meleeId = tag.getString("MeleeWeaponId");
+            int buyPrice = getMeleeStackBuyPrice(meleeId, stack);
+            return Math.round(buyPrice * GameConstants.GUN_SELL_RATE);
         }
 
         // TacZ ammo
@@ -265,8 +272,8 @@ public class PriceManager {
         // TacZ アタッチメント
         if (tag.contains("AttachmentId")) {
             String attId = tag.getString("AttachmentId");
-            int buyPrice = getAttachmentBuyPrice(attId);
-            return (int)(buyPrice * GameConstants.GUN_SELL_RATE) * stack.getCount();
+            int buyPrice = getAttachmentStackBuyPrice(attId);
+            return Math.round(buyPrice * GameConstants.GUN_SELL_RATE) * stack.getCount();
         }
 
         // ローグアイテム（消耗品）
@@ -282,5 +289,46 @@ public class PriceManager {
         }
 
         return 0; // 売却不可
+    }
+
+    private static int getWeaponStackBuyPrice(String gunId, net.minecraft.world.item.ItemStack stack) {
+        int basePrice = getPrice(gunId);
+        return roundPrice(basePrice * getRarityPriceMultiplier(WeaponRarity.getRarity(stack)));
+    }
+
+    private static int getMeleeStackBuyPrice(String meleeId, net.minecraft.world.item.ItemStack stack) {
+        ShopCatalog.ShopItem item = findCatalogItem(meleeId);
+        int basePrice = item != null ? item.price : 1000;
+        return roundPrice(basePrice * getRarityPriceMultiplier(WeaponRarity.getRarity(stack)));
+    }
+
+    private static int getAttachmentStackBuyPrice(String attachmentId) {
+        ShopCatalog.ShopItem item = findCatalogItem(attachmentId);
+        if (item != null && item.category == ShopCatalog.Category.ATTACHMENT) {
+            return item.price;
+        }
+        return getAttachmentBuyPrice(attachmentId);
+    }
+
+    private static ShopCatalog.ShopItem findCatalogItem(String id) {
+        if (id == null || id.isBlank()) return null;
+        try {
+            for (ShopCatalog.ShopItem item : TacZRegistryHelper.getAllShopItems()) {
+                if (id.equals(item.id)) return item;
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    private static String readAttachmentId(net.minecraft.nbt.CompoundTag attachments, String key) {
+        net.minecraft.nbt.Tag raw = attachments.get(key);
+        if (raw instanceof net.minecraft.nbt.CompoundTag compound) {
+            return compound.getString("AttachmentId");
+        }
+        if (raw instanceof net.minecraft.nbt.StringTag stringTag) {
+            return stringTag.getAsString();
+        }
+        return "";
     }
 }

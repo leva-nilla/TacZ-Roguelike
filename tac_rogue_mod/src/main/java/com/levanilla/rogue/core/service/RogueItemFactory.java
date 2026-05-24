@@ -233,8 +233,30 @@ public final class RogueItemFactory {
                 stack.getOrCreateTag().putInt("CustomModelData", 39013);
                 yield stack;
             }
+            case "rogue:inv_upgrade" -> createSpecialPreviewItem(
+                Items.LEATHER, "shop_item.tac_rogue.inv_upgrade", 39100);
+            case "rogue:stash_upgrade" -> createSpecialPreviewItem(
+                Items.ENDER_CHEST, "shop_item.tac_rogue.stash_upgrade", 39101);
+            case "rogue:ammo_capacity_upgrade" -> createSpecialPreviewItem(
+                Items.ARROW, "shop_item.tac_rogue.ammo_capacity_upgrade", 39102);
+            case "rogue:melee_upgrade" -> createSpecialPreviewItem(
+                Items.IRON_SWORD, "shop_item.tac_rogue.melee_upgrade", 39103);
+            case "rogue:flashlight_upgrade" -> createSpecialPreviewItem(
+                Items.TORCH, "shop_item.tac_rogue.flashlight_upgrade", 39104);
+            case "rogue:random_perk" -> createSpecialPreviewItem(
+                Items.ENCHANTED_BOOK, "shop_item.tac_rogue.random_perk", 39105);
             default -> ItemStack.EMPTY;
         };
+    }
+
+    private static ItemStack createSpecialPreviewItem(net.minecraft.world.item.Item item, String nameKey, int customModelData) {
+        ItemStack stack = new ItemStack(item);
+        stack.setHoverName(Component.translatable(nameKey));
+        CompoundTag tag = stack.getOrCreateTag();
+        tag.putBoolean("rogue_item", true);
+        tag.putBoolean("TacRoguePreviewOnly", true);
+        tag.putInt("CustomModelData", customModelData);
+        return stack;
     }
 
     private static boolean isKnownAttachment(String fullId) {

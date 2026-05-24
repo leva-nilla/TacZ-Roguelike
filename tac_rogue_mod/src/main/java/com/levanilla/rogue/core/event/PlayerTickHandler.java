@@ -128,7 +128,7 @@ public class PlayerTickHandler {
     private static void applyStealth(ServerPlayer player, PlayerPerkTickService.PerkSnapshot perks) {
         float stealthExtend = perks.effect(PerkDefinition.Category.STEALTH_EXTEND);
         boolean isSneaking = player.hasPose(net.minecraft.world.entity.Pose.CROUCHING);
-        boolean isCrawling = player.hasPose(net.minecraft.world.entity.Pose.SWIMMING);
+        boolean isCrawling = CombatPostureHelper.isProne(player);
         double rangeMul = isCrawling ? GameConstants.STEALTH_CRAWL_RANGE :
                            (isSneaking ? GameConstants.STEALTH_SNEAK_RANGE : 1.0);
         
