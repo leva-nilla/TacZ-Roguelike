@@ -7,6 +7,7 @@ import com.levanilla.rogue.world.generation.plan.DungeonCorridor;
 import com.levanilla.rogue.world.generation.plan.DungeonPlan;
 import com.levanilla.rogue.world.generation.plan.DungeonRoom;
 import com.levanilla.rogue.world.generation.plan.RoomRole;
+import com.levanilla.rogue.core.service.FloorObjectiveService;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Container;
@@ -37,6 +38,8 @@ public class MapGenerator {
     public enum LayoutPattern {
         SCATTER, LINEAR, RING, GRID, BRANCH, HYBRID
     }
+
+    private record MobRoom(int[] room, RoomRole role) {}
 
     // ===== グリッドセルの状態 =====
     private static final int VOID   = 0;
@@ -221,6 +224,8 @@ public class MapGenerator {
         ThemeManager.ThemeInstance theme = themeOverride != null ? themeOverride : ThemeManager.getThemeForFloor(floor, worldSeed);
 
         boolean isBoss = ThemeManager.isBossFloor(floor);
+        String objectiveType = FloorObjectiveService.objectiveNameForGeneration(
+            instanceId, floor, theme, isBoss, runSeed, floorSeedSalt);
         FloorGenerationContext generationContext = new FloorGenerationContext(
             runSeed,
             floor,
@@ -228,6 +233,7 @@ public class MapGenerator {
             Math.max(1, floorAttemptIndex),
             instanceId,
             mode,
+            objectiveType,
             participantCount,
             worldSeed);
         DungeonPlan plan = DungeonPlanGenerator.generate(generationContext, isBoss, theme);
@@ -330,7 +336,8 @@ public class MapGenerator {
         // D3: 一部の部屋を暗闇エリアにする（照明スキップ）
         Set<int[]> darkRooms = new HashSet<>();
         for (int ri = 1; ri < rooms.size(); ri++) { // スポーン部屋(0)は常に照明あり
-            if (rand.nextFloat() < DARK_ROOM_CHANCE) {
+            RoomRole role = ri < plan.rooms().size() ? plan.rooms().get(ri).role() : RoomRole.COMBAT_SMALL;
+            if (role == RoomRole.DARK_ROOM || rand.nextFloat() < DARK_ROOM_CHANCE) {
                 darkRooms.add(rooms.get(ri));
             }
         }
@@ -429,13 +436,16 @@ public class MapGenerator {
                 setBlock(level, new BlockPos(bx + 1, baseY + 1, bz), theme.wall);
             }
 
-            boolean supplyCandidate = role == RoomRole.SUPPLY_RISK || role == RoomRole.SIDE_REWARD || rand.nextFloat() < 0.30F;
-            if (decorateRoomArchetype(level, rand, theme, baseY, ri, isBoss, rx, rz, rw, rd,
-                supplyChests < maxSupplyChests && supplyCandidate, floor, instanceId, mode, supplyChests)) {
+            boolean supplyCandidate = role == RoomRole.SUPPLY_RISK || role == RoomRole.SIDE_REWARD
+                || role == RoomRole.LOCKED_REWARD || role == RoomRole.ELITE_ARENA || rand.nextFloat() < 0.30F;
+            if (decorateRoomArchetype(level, rand, theme, baseY, role, ri, isBoss, rx, rz, rw, rd,
+                supplyChests < maxSupplyChests && supplyCandidate, floor, instanceId, mode, supplyChests, objectiveType)) {
                 supplyChests++;
             }
             decorateRoomVolume(level, rand, theme, shape, baseY, role, isBoss, rx, rz, rw, rd);
             decorateThemeRoomDetails(level, rand, theme, shape, baseY, role, isBoss, rx, rz, rw, rd);
+            FloorObjectiveService.registerObjectiveRoom(instanceId, floor, role,
+                new BlockPos(rx + rw / 2, baseY + 1, rz + rd / 2));
         }
         if (supplyChests == 0 && maxSupplyChests > 0 && !rooms.isEmpty()) {
             int fallbackIndex = isBoss && rooms.size() > 2 ? 2 : Math.min(1, rooms.size() - 1);
@@ -544,9 +554,10 @@ public class MapGenerator {
             totalMobsSpawned++;
         }
 
-        List<int[]> eligibleMobRooms = new ArrayList<>();
+        List<MobRoom> eligibleMobRooms = new ArrayList<>();
         for (int i = 1; i < rooms.size(); i++) {
             int[] room = rooms.get(i);
+            RoomRole role = i < plan.rooms().size() ? plan.rooms().get(i).role() : RoomRole.COMBAT_SMALL;
             int rx = center.getX() + room[0] + room[2] / 2;
             int rz = center.getZ() + room[1] + room[3] / 2;
 
@@ -571,23 +582,82 @@ public class MapGenerator {
                 spawnMobsAfterBlocks(level, mobSpawn, bossAdds, floor, biomeIndex, instanceId, mode, participantCount);
                 totalMobsSpawned += bossAdds;
             } else {
-                eligibleMobRooms.add(room);
+                eligibleMobRooms.add(new MobRoom(room, role));
             }
         }
         if (!isBoss && !eligibleMobRooms.isEmpty()) {
             Collections.shuffle(eligibleMobRooms, rand);
             int remainingBudget = RoomManager.getTotalMobBudgetForFloor(level, floor, eligibleMobRooms.size(), participantCount);
             int maxPerRoom = RoomManager.getMaxMobsPerRoomForFloor(floor);
+            FloorObjectiveService.ObjectiveType objective = FloorObjectiveService.ObjectiveType.parse(objectiveType);
+            int totalWeight = eligibleMobRooms.stream()
+                .mapToInt(mobRoom -> FloorObjectiveService.roomWeight(mobRoom.role(), objective))
+                .sum();
+            boolean objectiveEliteReserved = false;
+            if (objective == FloorObjectiveService.ObjectiveType.HUNT_ELITE && remainingBudget > 0) {
+                for (int i = 0; i < eligibleMobRooms.size(); i++) {
+                    MobRoom mobRoom = eligibleMobRooms.get(i);
+                    boolean eliteRoom = mobRoom.role() == RoomRole.ELITE || mobRoom.role() == RoomRole.ELITE_ARENA;
+                    if (!eliteRoom) continue;
+                    BlockPos mobSpawn = pickMobSpawnInRoom(center, mobRoom.room(), baseY, rand);
+                    FloorObjectiveService.registerObjectiveTargetBlock(instanceId, floor, objective, mobSpawn);
+                    spawnEliteMobsAfterBlocks(level, mobSpawn, 1, floor, biomeIndex,
+                        instanceId, mode, participantCount, true);
+                    totalMobsSpawned++;
+                    remainingBudget--;
+                    totalWeight = Math.max(0, totalWeight - FloorObjectiveService.roomWeight(mobRoom.role(), objective));
+                    eligibleMobRooms.remove(i);
+                    objectiveEliteReserved = true;
+                    break;
+                }
+                if (!objectiveEliteReserved) {
+                    for (int i = 0; i < eligibleMobRooms.size(); i++) {
+                        MobRoom mobRoom = eligibleMobRooms.get(i);
+                        int roleWeight = FloorObjectiveService.roomWeight(mobRoom.role(), objective);
+                        if (roleWeight <= 0) continue;
+                        BlockPos mobSpawn = pickMobSpawnInRoom(center, mobRoom.room(), baseY, rand);
+                        FloorObjectiveService.registerObjectiveTargetBlock(instanceId, floor, objective, mobSpawn);
+                        spawnEliteMobsAfterBlocks(level, mobSpawn, 1, floor, biomeIndex,
+                            instanceId, mode, participantCount, true);
+                        totalMobsSpawned++;
+                        remainingBudget--;
+                        totalWeight = Math.max(0, totalWeight - roleWeight);
+                        eligibleMobRooms.remove(i);
+                        objectiveEliteReserved = true;
+                        break;
+                    }
+                }
+            }
 
             for (int i = 0; i < eligibleMobRooms.size() && remainingBudget > 0; i++) {
-                int[] room = eligibleMobRooms.get(i);
-                int roomsLeft = eligibleMobRooms.size() - i;
-                int mobCount = Math.min(maxPerRoom, (int) Math.ceil(remainingBudget / (double) roomsLeft));
+                MobRoom mobRoom = eligibleMobRooms.get(i);
+                int[] room = mobRoom.room();
+                int roleWeight = FloorObjectiveService.roomWeight(mobRoom.role(), objective);
+                if (roleWeight <= 0) continue;
+                int cap = FloorObjectiveService.roomCap(mobRoom.role(), objective, maxPerRoom);
+                if (cap <= 0) continue;
+                int mobCount = Math.min(cap, Math.max(1, (int) Math.ceil(remainingBudget * (roleWeight / (double) Math.max(1, totalWeight)))));
+                if (i == eligibleMobRooms.size() - 1) {
+                    mobCount = Math.min(cap, Math.max(mobCount, remainingBudget));
+                }
                 BlockPos mobSpawn = pickMobSpawnInRoom(center, room, baseY, rand);
 
-                spawnMobsAfterBlocks(level, mobSpawn, mobCount, floor, biomeIndex, instanceId, mode, participantCount);
-                totalMobsSpawned += mobCount;
-                remainingBudget -= mobCount;
+                boolean eliteRoom = mobRoom.role() == RoomRole.ELITE || mobRoom.role() == RoomRole.ELITE_ARENA;
+                boolean objectiveElite = eliteRoom
+                    && objective == FloorObjectiveService.ObjectiveType.HUNT_ELITE
+                    && !objectiveEliteReserved;
+                int spawnedHere = mobCount;
+                if (eliteRoom) {
+                    spawnedHere = Math.max(1, Math.min(2, mobCount));
+                    spawnEliteMobsAfterBlocks(level, mobSpawn, spawnedHere, floor, biomeIndex,
+                        instanceId, mode, participantCount, objectiveElite);
+                    if (objectiveElite) objectiveEliteReserved = true;
+                } else {
+                    spawnMobsAfterBlocks(level, mobSpawn, mobCount, floor, biomeIndex, instanceId, mode, participantCount);
+                }
+                totalMobsSpawned += spawnedHere;
+                remainingBudget -= spawnedHere;
+                totalWeight = Math.max(0, totalWeight - roleWeight);
             }
         }
         if (isVerboseLogging()) {
@@ -796,11 +866,61 @@ public class MapGenerator {
     }
 
     private static boolean decorateRoomArchetype(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,
-                                              int baseY, int roomIndex, boolean isBoss,
+                                              int baseY, RoomRole role, int roomIndex, boolean isBoss,
                                               int rx, int rz, int rw, int rd,
                                               boolean allowSupplyChest, int floor, String instanceId, String mode,
-                                              int chestIndex) {
+                                              int chestIndex, String objectiveType) {
         if (rw < 7 || rd < 7) return false;
+        FloorObjectiveService.ObjectiveType objective = FloorObjectiveService.ObjectiveType.parse(objectiveType);
+
+        switch (role) {
+            case OBJECTIVE_TERMINAL -> {
+                BlockPos target = buildTerminalRoom(level, theme, baseY, rx, rz, rw, rd);
+                if (objective == FloorObjectiveService.ObjectiveType.SECURE_TERMINAL) {
+                    markObjectiveBlock(level, target, floor, instanceId, mode, objective);
+                }
+                return false;
+            }
+            case DEFENSE_POINT -> {
+                BlockPos target = buildDefensePointRoom(level, theme, baseY, rx, rz, rw, rd);
+                if (objective == FloorObjectiveService.ObjectiveType.HOLD_POSITION) {
+                    FloorObjectiveService.registerObjectiveTargetBlock(instanceId, floor, objective, target);
+                }
+                return false;
+            }
+            case STEALTH_ROUTE -> {
+                BlockPos target = buildStealthRouteRoom(level, theme, baseY, rx, rz, rw, rd);
+                if (objective == FloorObjectiveService.ObjectiveType.ESCAPE_ROUTE) {
+                    markObjectiveBlock(level, target, floor, instanceId, mode, objective);
+                }
+                return false;
+            }
+            case DARK_ROOM -> {
+                buildLowVisibilityRoom(level, rand, theme, baseY, rx, rz, rw, rd);
+                return false;
+            }
+            case ELITE_ARENA -> {
+                buildArenaMarks(level, theme, baseY, rx, rz, rw, rd);
+                return buildSupplyCorner(level, rand, theme, baseY, rx, rz, rw, rd, allowSupplyChest,
+                    floor, instanceId, mode, chestIndex);
+            }
+            case LOCKED_REWARD -> {
+                if (objective == FloorObjectiveService.ObjectiveType.RECOVER_CACHE) {
+                    buildObjectiveCache(level, theme, baseY, rx, rz, rw, rd, floor, instanceId, mode, objective);
+                    return false;
+                }
+                return buildSupplyCorner(level, rand, theme, baseY, rx, rz, rw, rd, allowSupplyChest,
+                    floor, instanceId, mode, chestIndex);
+            }
+            case SUPPLY_RISK -> {
+                if (objective == FloorObjectiveService.ObjectiveType.RECOVER_CACHE) {
+                    buildObjectiveCache(level, theme, baseY, rx, rz, rw, rd, floor, instanceId, mode, objective);
+                    return false;
+                }
+            }
+            default -> {
+            }
+        }
 
         int archetype = isBoss && roomIndex == 0 ? 4 : Math.floorMod(roomIndex + rand.nextInt(5), 6);
         switch (archetype) {
@@ -1222,6 +1342,52 @@ public class MapGenerator {
         setBlock(level, new BlockPos(cx + 2, baseY + 2, cz + 2), theme.accent);
     }
 
+    private static BlockPos buildTerminalRoom(ServerLevel level, ThemeManager.ThemeInstance theme,
+                                              int baseY, int rx, int rz, int rw, int rd) {
+        int cx = rx + rw / 2;
+        int cz = rz + rd / 2;
+        BlockPos target = new BlockPos(cx, baseY + 1, cz);
+        setBlock(level, target, Blocks.LECTERN.defaultBlockState());
+        setBlock(level, new BlockPos(cx - 1, baseY + 1, cz), Blocks.IRON_BARS.defaultBlockState());
+        setBlock(level, new BlockPos(cx + 1, baseY + 1, cz), Blocks.IRON_BARS.defaultBlockState());
+        setBlock(level, new BlockPos(cx, baseY, cz), theme.accent);
+        setBlock(level, new BlockPos(cx, baseY + ROOM_HEIGHT, cz), theme.light);
+        return target;
+    }
+
+    private static BlockPos buildDefensePointRoom(ServerLevel level, ThemeManager.ThemeInstance theme,
+                                                  int baseY, int rx, int rz, int rw, int rd) {
+        int cx = rx + rw / 2;
+        int cz = rz + rd / 2;
+        for (int d = -3; d <= 3; d++) {
+            if (Math.abs(d) <= 1) continue;
+            setBlock(level, new BlockPos(cx + d, baseY + 1, cz - 3), theme.wall);
+            setBlock(level, new BlockPos(cx + d, baseY + 1, cz + 3), theme.wall);
+            setBlock(level, new BlockPos(cx - 3, baseY + 1, cz + d), theme.wall);
+            setBlock(level, new BlockPos(cx + 3, baseY + 1, cz + d), theme.wall);
+        }
+        setBlock(level, new BlockPos(cx, baseY, cz), theme.accent);
+        BlockPos target = new BlockPos(cx, baseY + 1, cz);
+        setBlock(level, target, Blocks.HEAVY_WEIGHTED_PRESSURE_PLATE.defaultBlockState());
+        setBlock(level, new BlockPos(cx, baseY + ROOM_HEIGHT, cz), theme.light);
+        return target;
+    }
+
+    private static BlockPos buildStealthRouteRoom(ServerLevel level, ThemeManager.ThemeInstance theme,
+                                                  int baseY, int rx, int rz, int rw, int rd) {
+        int cx = rx + rw / 2;
+        int cz = rz + rd / 2;
+        for (int dz = -3; dz <= 3; dz++) {
+            if (dz == 0) continue;
+            setBlock(level, new BlockPos(cx - 2, baseY + 1, cz + dz), theme.wall);
+            setBlock(level, new BlockPos(cx + 2, baseY + 1, cz + dz), theme.wall);
+        }
+        setBlock(level, new BlockPos(cx, baseY, cz), theme.accent);
+        BlockPos target = new BlockPos(cx, baseY + 1, cz);
+        setBlock(level, target, Blocks.LODESTONE.defaultBlockState());
+        return target;
+    }
+
     private static void buildConnectorRoom(ServerLevel level, ThemeManager.ThemeInstance theme,
                                            int baseY, int rx, int rz, int rw, int rd) {
         int cx = rx + rw / 2;
@@ -1253,6 +1419,37 @@ public class MapGenerator {
         setBlock(level, new BlockPos(sx + 2, baseY + 1, sz), theme.wall);
         setBlock(level, new BlockPos(sx + 2, baseY + 2, sz), theme.wall);
         return allowChest;
+    }
+
+    private static void buildObjectiveCache(ServerLevel level, ThemeManager.ThemeInstance theme,
+                                            int baseY, int rx, int rz, int rw, int rd,
+                                            int floor, String instanceId, String mode,
+                                            FloorObjectiveService.ObjectiveType objective) {
+        int sx = rx + 2;
+        int sz = rz + rd - 3;
+        setBlock(level, new BlockPos(sx, baseY + 1, sz), theme.wall);
+        BlockPos cachePos = new BlockPos(sx + 1, baseY + 1, sz);
+        setBlock(level, cachePos, Blocks.BARREL.defaultBlockState());
+        setBlock(level, new BlockPos(sx, baseY + 2, sz), theme.light);
+        setBlock(level, new BlockPos(sx + 2, baseY + 1, sz), theme.accent);
+        setBlock(level, new BlockPos(sx + 2, baseY + 2, sz), theme.accent);
+        markObjectiveBlock(level, cachePos, floor, instanceId, mode, objective);
+    }
+
+    private static void markObjectiveBlock(ServerLevel level, BlockPos pos, int floor, String instanceId, String mode,
+                                           FloorObjectiveService.ObjectiveType objective) {
+        FloorObjectiveService.registerObjectiveTargetBlock(instanceId, floor, objective, pos);
+        runAfterGenerationBlocks(() -> {
+            net.minecraft.world.level.block.entity.BlockEntity blockEntity = level.getBlockEntity(pos);
+            if (blockEntity != null) {
+                FloorObjectiveService.markObjectiveBlock(
+                    blockEntity,
+                    instanceId,
+                    floor,
+                    com.levanilla.rogue.core.service.FloorInstanceManager.EntryMode.parse(mode),
+                    objective);
+            }
+        });
     }
 
     private static void markSupplyChest(ServerLevel level, BlockPos pos, int floor, int chestIndex, String instanceId, String mode) {
@@ -1308,6 +1505,13 @@ public class MapGenerator {
                                              String instanceId, String mode, int participantCount) {
         runAfterGenerationBlocks(() ->
             RoomManager.spawnMobs(level, pos, count, floor, biomeIndex, instanceId, mode, participantCount));
+    }
+
+    private static void spawnEliteMobsAfterBlocks(ServerLevel level, BlockPos pos, int count, int floor, int biomeIndex,
+                                                  String instanceId, String mode, int participantCount,
+                                                  boolean objectiveElite) {
+        runAfterGenerationBlocks(() ->
+            RoomManager.spawnEliteMobs(level, pos, count, floor, biomeIndex, instanceId, mode, participantCount, objectiveElite));
     }
 
     private static void runAfterGenerationBlocks(Runnable action) {

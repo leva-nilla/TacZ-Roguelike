@@ -618,6 +618,7 @@ public class SpawnAndWorldHandler {
         CombatEventHandler.clearMemory();
         TacZEventHandler.clearMemory();
         com.levanilla.rogue.core.service.BossRewardService.clearMemory();
+        com.levanilla.rogue.core.service.FloorObjectiveService.clearMemory();
         com.levanilla.rogue.core.StaminaManager.clearMemory();
         com.levanilla.rogue.networking.RogueActionMessage.clearMemory();
         com.levanilla.rogue.core.QuestManager.clearMemory();

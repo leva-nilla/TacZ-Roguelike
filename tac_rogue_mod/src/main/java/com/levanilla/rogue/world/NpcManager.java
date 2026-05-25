@@ -9,7 +9,9 @@ import com.levanilla.rogue.core.QuestManager;
 import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.core.StashSavedData;
 import com.levanilla.rogue.core.TacZRegistryHelper;
+import com.levanilla.rogue.core.WeaponRarity;
 import com.levanilla.rogue.core.registry.AttachmentDatabase;
+import com.levanilla.rogue.core.registry.ShopCatalog;
 import com.levanilla.rogue.core.service.GoldGainService;
 import com.levanilla.rogue.core.service.RogueItemFactory;
 import com.levanilla.rogue.core.service.ShopPlacementService;
@@ -22,6 +24,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.decoration.ArmorStand;
 import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -227,6 +230,39 @@ public class NpcManager {
         return npc;
     }
 
+    /** Objective completion support team visual. They are temporary and non-menu NPCs. */
+    public static TacRogueNpcEntity spawnSupportOperator(ServerLevel level, BlockPos pos, int floor, int index) {
+        String[] callsigns = {"Raptor", "Viper", "Specter", "Warden"};
+        TacRogueNpcEntity npc = spawnNpc(level, pos, NpcRole.COMMANDER,
+            "§8[SOF] §f" + callsigns[Math.floorMod(index, callsigns.length)] + "-" + (index + 1), false);
+        if (npc != null) {
+            npc.markSupportOperator(20 * 30);
+            npc.getPersistentData().putInt("TacRogueSpawnFloor", floor);
+            npc.getPersistentData().putLong("TacRogueSpawnTick", level.getServer().getTickCount());
+            ItemStack gun = createSupportGun(index);
+            if (!gun.isEmpty()) {
+                npc.setItemSlot(EquipmentSlot.MAINHAND, gun);
+                npc.setDropChance(EquipmentSlot.MAINHAND, 0.0F);
+            }
+        }
+        return npc;
+    }
+
+    private static ItemStack createSupportGun(int index) {
+        List<ShopCatalog.ShopItem> candidates = new ArrayList<>();
+        candidates.addAll(TacZRegistryHelper.getItemsByCategory(ShopCatalog.Category.SMG));
+        candidates.addAll(TacZRegistryHelper.getItemsByCategory(ShopCatalog.Category.RIFLE));
+        if (!candidates.isEmpty()) {
+            String id = candidates.get(Math.floorMod(index, candidates.size())).id;
+            return RogueItemFactory.createGunStack(id, WeaponRarity.Rarity.RARE);
+        }
+        List<String> allGuns = TacZRegistryHelper.getAllGunIds();
+        if (!allGuns.isEmpty()) {
+            return RogueItemFactory.createGunStack(allGuns.get(Math.floorMod(index, allGuns.size())), WeaponRarity.Rarity.RARE);
+        }
+        return ItemStack.EMPTY;
+    }
+
     public static BlockPos findExtractionSpawnNear(ServerLevel level, ServerPlayer player) {
         BlockPos base = player.blockPosition();
         Vec3 look = player.getLookAngle();
@@ -350,6 +386,15 @@ public class NpcManager {
 
     /** NPC インタラクション処理 */
     public static void handleCustomNpcInteraction(ServerPlayer player, TacRogueNpcEntity npc) {
+        if (npc.getTags().contains("tac_rogue_support_npc")) {
+            PopupNotificationMessage.send(
+                player,
+                PopupNotificationMessage.PopupType.SYSTEM,
+                Component.translatable("popup.tac_rogue.objective_support.title"),
+                Component.translatable("message.tac_rogue.objective_support_ready"),
+                80);
+            return;
+        }
         NpcRole role = npc.getRole();
         MENU_SESSIONS.put(player.getUUID(), new MenuSession(
             npc.getId(),

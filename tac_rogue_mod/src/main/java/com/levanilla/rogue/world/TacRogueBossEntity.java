@@ -112,9 +112,7 @@ public class TacRogueBossEntity extends Monster {
     @Override
     protected void registerGoals() {
         this.goalSelector.addGoal(0, new FloatGoal(this));
-        this.goalSelector.addGoal(1, new RogueMobTacticalAlertGoal(this));
-        this.goalSelector.addGoal(1, new RogueMobEngagedTargetMonitorGoal(this));
-        this.goalSelector.addGoal(2, new MeleeAttackGoal(this, 1.05D, true));
+        this.goalSelector.addGoal(1, new MeleeAttackGoal(this, 1.05D, true));
         this.goalSelector.addGoal(6, new RandomStrollGoal(this, 0.75D));
         this.goalSelector.addGoal(7, new LookAtPlayerGoal(this, Player.class, 18.0F));
         this.goalSelector.addGoal(8, new RandomLookAroundGoal(this));
@@ -149,6 +147,8 @@ public class TacRogueBossEntity extends Monster {
         setCustomName(Component.literal("§c§l[BOSS] §e" + role.label));
         setCustomNameVisible(false);
         setGlowingTag(true);
+        setNoAi(false);
+        setAggressive(true);
         setPersistenceRequired();
     }
 
@@ -158,15 +158,10 @@ public class TacRogueBossEntity extends Monster {
         if (level().isClientSide || !isAlive()) return;
         setPersistenceRequired();
         setNoGravity(false);
+        setNoAi(false);
         noPhysics = false;
 
-        LivingEntity target = getTarget();
-        if (target == null || !target.isAlive() || (target instanceof Player player && player.isSpectator())
-            || tickCount % 20 == 0) {
-            Player nearest = findNearestBossTarget();
-            if (nearest != null && nearest != target) setTarget(nearest);
-            target = getTarget();
-        }
+        LivingEntity target = resolveBossTarget();
         if (target == null) return;
 
         BossRole role = getRole();
@@ -192,6 +187,38 @@ public class TacRogueBossEntity extends Monster {
             doPressure(role);
             pressureCooldown = role == BossRole.PYRO ? 120 : 180;
         }
+    }
+
+    private LivingEntity resolveBossTarget() {
+        LivingEntity target = getTarget();
+        if (isValidBossTarget(target) && tickCount % 10 != 0) {
+            return target;
+        }
+
+        Player nearest = findNearestBossTarget();
+        if (nearest != null) {
+            if (nearest != target) {
+                setTarget(nearest);
+                navigationRefreshCooldown = 0;
+            }
+            setAggressive(true);
+            return nearest;
+        }
+
+        if (!isValidBossTarget(target)) {
+            setTarget(null);
+            setAggressive(false);
+            getNavigation().stop();
+            return null;
+        }
+        return target;
+    }
+
+    private boolean isValidBossTarget(LivingEntity target) {
+        return target != null
+            && target.isAlive()
+            && !target.isRemoved()
+            && !(target instanceof Player player && player.isSpectator());
     }
 
     private Player findNearestBossTarget() {

@@ -1,6 +1,5 @@
 package com.levanilla.rogue.core.service;
 
-import com.levanilla.rogue.core.GameConstants;
 import com.levanilla.rogue.core.PerkDefinition;
 import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.networking.RogueActionMessage;
@@ -11,9 +10,6 @@ import java.util.List;
 
 /** Single server-side path for validating and applying perk choices. */
 public final class PerkApplyService {
-    private static final int MAX_TITANIC_PERKS = 2;
-    private static final int MAX_CORRUPTED_PERKS = 3;
-
     private PerkApplyService() {}
 
     public static boolean applySelectedPerk(ServerPlayer player, String rawTag) {
@@ -33,8 +29,6 @@ public final class PerkApplyService {
             return false;
         }
 
-        if (!validateModifierLimit(player, perk.modifier)) return false;
-
         RogueActionMessage.clearPerkChoices(player.getUUID());
         int serial = player.getPersistentData().getInt("TacRoguePerkSerial") + 1;
         player.getPersistentData().putInt("TacRoguePerkSerial", serial);
@@ -51,32 +45,5 @@ public final class PerkApplyService {
             "message.tac_rogue.perk_acquired", acquired));
         RunManager.syncPlayer(player);
         return true;
-    }
-
-    private static boolean validateModifierLimit(ServerPlayer player, PerkDefinition.Modifier modifier) {
-        int limit = switch (modifier) {
-            case OVERCLOCKED -> GameConstants.MAX_OVERCLOCKED_PERKS;
-            case CURSED -> GameConstants.MAX_CURSED_PERKS;
-            case TITANIC -> MAX_TITANIC_PERKS;
-            case CORRUPTED -> MAX_CORRUPTED_PERKS;
-            default -> -1;
-        };
-        if (limit < 0) return true;
-        int count = countModifier(player, modifier);
-        if (count >= limit) {
-            player.sendSystemMessage(Component.literal(
-                "\u00A7c[PERK] " + modifier.name() + " limit reached (" + limit + "/" + limit + ")"));
-            return false;
-        }
-        return true;
-    }
-
-    private static int countModifier(ServerPlayer player, PerkDefinition.Modifier modifier) {
-        int count = 0;
-        String token = ":" + modifier.name() + ":";
-        for (String tag : player.getTags()) {
-            if (tag.startsWith("perk:") && tag.contains(token)) count++;
-        }
-        return count;
     }
 }

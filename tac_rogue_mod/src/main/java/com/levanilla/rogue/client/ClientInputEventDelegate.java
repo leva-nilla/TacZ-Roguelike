@@ -243,9 +243,7 @@ final class ClientInputEventDelegate {
         if (event.getAction() == org.lwjgl.glfw.GLFW.GLFW_PRESS) {
             net.minecraft.client.KeyMapping taczInteract = findKeyMapping(mc, "key.tacz.interact.desc", "key.tacz.interact");
             if (taczInteract != null && taczInteract.matches(event.getKey(), event.getScanCode())) {
-                if (!isHoldingTacZGun(mc)) {
-                    tryCustomInteractFromClient(mc);
-                }
+                tryCustomInteractFromClient(mc);
             }
         }
     }
@@ -273,8 +271,8 @@ final class ClientInputEventDelegate {
         if (mc.screen != null || mc.player == null) return;
         if (event.getAction() != org.lwjgl.glfw.GLFW.GLFW_PRESS) return;
         net.minecraft.client.KeyMapping taczInteract = findKeyMapping(mc, "key.tacz.interact.desc", "key.tacz.interact");
-        if (taczInteract != null && taczInteract.matchesMouse(event.getButton()) && !isHoldingTacZGun(mc)) {
-            tryCustomInteractFromClient(mc);
+        if (taczInteract != null && taczInteract.matchesMouse(event.getButton()) && tryCustomInteractFromClient(mc)) {
+            event.setCanceled(true);
         }
     }
 
@@ -291,6 +289,17 @@ final class ClientInputEventDelegate {
             }
         }
         return null;
+    }
+
+    static boolean hasObjectiveInteractTarget(Minecraft mc) {
+        return findLookedAtObjectiveBlock(mc) != null;
+    }
+
+    static String getTacZInteractKeyName(Minecraft mc) {
+        net.minecraft.client.KeyMapping mapping = findKeyMapping(mc, "key.tacz.interact.desc", "key.tacz.interact");
+        if (mapping == null) return "O";
+        String translated = mapping.getTranslatedKeyMessage().getString();
+        return translated == null || translated.isBlank() ? "O" : translated;
     }
 
     private static boolean isHoldingTacZGun(Minecraft mc) {
@@ -310,6 +319,15 @@ final class ClientInputEventDelegate {
             return true;
         }
 
+        net.minecraft.core.BlockPos objectivePos = findLookedAtObjectiveBlock(mc);
+        if (objectivePos != null) {
+            com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.sendToServer(
+                new com.levanilla.rogue.networking.RogueActionMessage(
+                    com.levanilla.rogue.networking.RogueActionMessage.ActionType.INTERACT_OBJECTIVE,
+                    objectivePos.getX() + ":" + objectivePos.getY() + ":" + objectivePos.getZ()));
+            return true;
+        }
+
         net.minecraft.core.BlockPos stashPos = findLookedAtStash(mc);
         if (stashPos != null) {
             com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.sendToServer(
@@ -319,6 +337,28 @@ final class ClientInputEventDelegate {
             return true;
         }
         return false;
+    }
+
+    private static net.minecraft.core.BlockPos findLookedAtObjectiveBlock(Minecraft mc) {
+        if (!(mc.hitResult instanceof net.minecraft.world.phys.BlockHitResult blockHit)) return null;
+        net.minecraft.resources.ResourceLocation dimension = mc.level.dimension().location();
+        if (!dimension.getNamespace().equals("tac_rogue") || !dimension.getPath().equals("rogue_dimension")) return null;
+        net.minecraft.core.BlockPos pos = blockHit.getBlockPos();
+        if (mc.player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > 42.25D) return null;
+        net.minecraft.world.level.block.state.BlockState state = mc.level.getBlockState(pos);
+        if (state.is(net.minecraft.world.level.block.Blocks.LECTERN)
+            || state.is(net.minecraft.world.level.block.Blocks.BARREL)
+            || state.is(net.minecraft.world.level.block.Blocks.LODESTONE)) {
+            com.levanilla.rogue.core.ClientRunState.ObjectiveState objective =
+                com.levanilla.rogue.core.ClientRunState.getObjectiveState();
+            if (objective != null && objective.hasTarget()) {
+                net.minecraft.core.BlockPos target =
+                    new net.minecraft.core.BlockPos(objective.targetX(), objective.targetY(), objective.targetZ());
+                return target.distSqr(pos) <= 2.25D ? pos : null;
+            }
+            return pos;
+        }
+        return null;
     }
 
     private static com.levanilla.rogue.world.TacRogueNpcEntity findLookedAtNpc(Minecraft mc) {

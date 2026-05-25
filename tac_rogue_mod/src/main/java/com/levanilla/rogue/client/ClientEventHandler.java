@@ -4,6 +4,7 @@ import com.levanilla.rogue.client.compat.LeaWindsCompat;
 import com.levanilla.rogue.client.compat.JourneyMapRefreshCompat;
 import com.levanilla.rogue.client.hud.DamageIndicatorRenderer;
 import com.levanilla.rogue.client.hud.NotificationManager;
+import com.levanilla.rogue.client.hud.ObjectiveMarkerRenderer;
 import com.levanilla.rogue.client.model.TacRogueBossModel;
 import com.levanilla.rogue.client.model.TacRogueNpcModel;
 import com.levanilla.rogue.client.renderer.TacRogueBossRenderer;
@@ -101,15 +102,19 @@ public class ClientEventHandler {
                 "tooltip.tac_rogue.rarity.magazine",
                 String.format(java.util.Locale.ROOT, "%.2f", WeaponRarity.getMagSizeMult(stack))
             ));
+            boolean meleeStack = stack.getTag() != null && stack.getTag().contains("MeleeWeaponId")
+                || com.levanilla.rogue.core.registry.LrTacticalRegistry.isMeleeWeapon(stack);
             float fireRateMult = WeaponRarity.getFireRateMult(stack);
             event.getToolTip().add(Component.translatable(
-                "tooltip.tac_rogue.rarity.fire_rate",
+                meleeStack ? "tooltip.tac_rogue.rarity.melee_speed" : "tooltip.tac_rogue.rarity.fire_rate",
                 String.format(java.util.Locale.ROOT, "%.2f", fireRateMult)
             ));
-            float effectiveFireRateMult = WeaponRarity.getEffectiveFireRateMult(stack, event.getEntity());
+            float effectiveFireRateMult = meleeStack
+                ? WeaponRarity.getEffectiveMeleeFireRateMult(stack, event.getEntity())
+                : WeaponRarity.getEffectiveFireRateMult(stack, event.getEntity());
             if (effectiveFireRateMult > fireRateMult + 0.005f) {
                 event.getToolTip().add(Component.translatable(
-                    "tooltip.tac_rogue.rarity.fire_rate_effective",
+                    meleeStack ? "tooltip.tac_rogue.rarity.melee_speed_effective" : "tooltip.tac_rogue.rarity.fire_rate_effective",
                     String.format(java.util.Locale.ROOT, "%.2f", effectiveFireRateMult)
                 ));
             }
@@ -133,6 +138,22 @@ public class ClientEventHandler {
     @SubscribeEvent
     public static void onRenderGuiOverlay(RenderGuiOverlayEvent.Pre event) {
         ClientHudEventDelegate.onRenderGuiOverlay(event);
+    }
+
+    @SubscribeEvent
+    public static void onRenderLivingPre(net.minecraftforge.client.event.RenderLivingEvent.Pre<?, ?> event) {
+        net.minecraft.world.entity.Entity entity = event.getEntity();
+        if (entity == null) return;
+        String name = entity.getCustomName() == null ? "" : entity.getCustomName().getString();
+        float scale = 1.0F;
+        if (entity.getTags().contains("TacRogueObjectiveElite") || name.contains("[PRIME]")) {
+            scale = 1.18F;
+        } else if (entity.getTags().contains("TacRogueEliteRoom") || name.contains("[ELITE]")) {
+            scale = 1.10F;
+        }
+        if (scale > 1.0F) {
+            event.getPoseStack().scale(scale, scale, scale);
+        }
     }
 
     @SubscribeEvent
@@ -161,6 +182,7 @@ public class ClientEventHandler {
     @SubscribeEvent
     public static void onRenderLevelStage(net.minecraftforge.client.event.RenderLevelStageEvent event) {
         DamageIndicatorRenderer.renderWorld(event);
+        ObjectiveMarkerRenderer.renderWorld(event);
         if (event.getStage() == net.minecraftforge.client.event.RenderLevelStageEvent.Stage.AFTER_WEATHER) {
             lastViewMatrix.set(event.getPoseStack().last().pose());
             lastProjectionMatrix.set(event.getProjectionMatrix());

@@ -67,6 +67,7 @@ public class RogueActionMessage {
         APPLY_PERK,
         FLASHLIGHT_TOGGLE,
         INTERACT_STASH,
+        INTERACT_OBJECTIVE,
         SELL_ITEM,
         TUTORIAL_DONE,
         REROLL_PERK,
@@ -173,6 +174,17 @@ public class RogueActionMessage {
                         if (player.level().getBlockState(pos).is(com.levanilla.rogue.core.ModBlocks.STASH_TERMINAL.get())) {
                             com.levanilla.rogue.world.StashBlock.openFor(player);
                         }
+                    } catch (Exception ignored) {}
+                }
+                case INTERACT_OBJECTIVE -> {
+                    try {
+                        String[] parts = msg.data.split(":");
+                        if (parts.length != 3) return;
+                        net.minecraft.core.BlockPos pos = new net.minecraft.core.BlockPos(
+                            Integer.parseInt(parts[0]),
+                            Integer.parseInt(parts[1]),
+                            Integer.parseInt(parts[2]));
+                        com.levanilla.rogue.core.service.FloorObjectiveService.handleObjectiveBlockInteract(player, pos);
                     } catch (Exception ignored) {}
                 }
 

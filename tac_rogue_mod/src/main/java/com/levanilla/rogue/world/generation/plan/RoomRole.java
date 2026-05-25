@@ -10,5 +10,11 @@ public enum RoomRole {
     AMBUSH,
     ELITE,
     BOSS_ENTRY,
-    BOSS_ARENA
+    BOSS_ARENA,
+    STEALTH_ROUTE,
+    DARK_ROOM,
+    OBJECTIVE_TERMINAL,
+    DEFENSE_POINT,
+    ELITE_ARENA,
+    LOCKED_REWARD
 }

@@ -91,6 +91,14 @@ public final class ClientSyncHandler {
                 ClientRunState.clearBossBarState();
                 return;
             }
+            if (data.startsWith("objective:")) {
+                handleObjective(data);
+                return;
+            }
+            if (data.equals("objective_clear")) {
+                ClientRunState.clearObjectiveState();
+                return;
+            }
             if (data.startsWith("enemy_dir:")) {
                 handleEnemyDirection(data);
                 return;
@@ -381,6 +389,40 @@ public final class ClientSyncHandler {
             Double.parseDouble(parts[1]),
             Integer.parseInt(parts[2]),
             1600L);
+    }
+
+    private static void handleObjective(String data) {
+        String[] parts = data.substring(10).split(":", 7);
+        if (parts.length < 5) return;
+        String type = parts[0];
+        int progress = Integer.parseInt(parts[1]);
+        int target = Integer.parseInt(parts[2]);
+        boolean complete = Boolean.parseBoolean(parts[3]);
+        String title = new String(Base64.getUrlDecoder().decode(parts[4]), StandardCharsets.UTF_8);
+        String statusKey = parts.length >= 7 && !parts[6].isBlank()
+            ? new String(Base64.getUrlDecoder().decode(parts[6]), StandardCharsets.UTF_8)
+            : "";
+        int targetX = ClientRunState.ObjectiveState.NO_TARGET;
+        int targetY = ClientRunState.ObjectiveState.NO_TARGET;
+        int targetZ = ClientRunState.ObjectiveState.NO_TARGET;
+        double dx = Double.NaN;
+        double dz = Double.NaN;
+        if (parts.length >= 6 && !parts[5].isBlank()) {
+            String posRaw = new String(Base64.getUrlDecoder().decode(parts[5]), StandardCharsets.UTF_8);
+            String[] xyz = posRaw.split(",");
+            if (xyz.length >= 3) {
+                targetX = Integer.parseInt(xyz[0]);
+                targetY = Integer.parseInt(xyz[1]);
+                targetZ = Integer.parseInt(xyz[2]);
+                var mc = net.minecraft.client.Minecraft.getInstance();
+                if (mc.player != null) {
+                    dx = targetX + 0.5D - mc.player.getX();
+                    dz = targetZ + 0.5D - mc.player.getZ();
+                }
+            }
+        }
+        ClientRunState.setObjectiveState(type, title, statusKey, progress, target, complete,
+            targetX, targetY, targetZ, dx, dz, 5000L);
     }
 
     private static void handlePerfStart(String data) {

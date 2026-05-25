@@ -359,6 +359,7 @@ public class CombatEventHandler {
                     if (event.getEntity().getTags().contains("rogue:boss")) {
                         com.levanilla.rogue.core.service.BossRewardService.handleBossKill(killer, event.getEntity());
                     }
+                    com.levanilla.rogue.core.service.FloorObjectiveService.onEliteKilled(killer, event.getEntity());
 
                     com.levanilla.rogue.core.service.KillGoldRewardService.award(killer, event.getEntity(), false);
 

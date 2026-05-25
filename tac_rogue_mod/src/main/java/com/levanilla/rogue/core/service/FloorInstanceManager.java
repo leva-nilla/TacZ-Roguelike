@@ -95,10 +95,22 @@ public final class FloorInstanceManager {
         public volatile long lastTrackingAuditTick;
         public volatile long lastBossBarSyncTick;
         public volatile long lastEnemyLocatorSyncTick;
+        public volatile long lastObjectiveSyncTick;
         public volatile int initialParticipantCount;
         public volatile int generatedSupplyChestTotal;
         public volatile BlockPos spawnPos;
         public volatile MapGenerator.GenerationJob generationJob;
+        public volatile String objectiveType = FloorObjectiveService.ObjectiveType.ELIMINATE.name();
+        public volatile BlockPos objectiveTargetPos;
+        public volatile UUID objectiveEliteUuid;
+        public volatile boolean objectiveEliteRegistered;
+        public volatile int objectiveProgress;
+        public volatile int objectiveTarget = 1;
+        public volatile int objectiveHoldTicks;
+        public volatile boolean objectiveCompleted;
+        public volatile boolean objectiveActivated;
+        public volatile boolean objectiveContested;
+        public volatile String objectiveStatusKey = "";
 
         FloorInstance(String id, int floor, EntryMode mode, UUID ownerUuid, BlockPos origin,
                               long createdTick, long runSeed, long floorSeedSalt, int floorAttemptIndex,
@@ -163,6 +175,7 @@ public final class FloorInstanceManager {
             } else if (instance.state == State.ACTIVE) {
                 syncBossBar(server, instance, false);
                 syncEnemyLocator(server, instance, false);
+                FloorObjectiveService.sync(server, instance, false);
             }
         }
 
@@ -185,6 +198,7 @@ public final class FloorInstanceManager {
         String id = PLAYER_INSTANCES.remove(player.getUUID());
         syncWaitClear(player);
         syncBossBarClear(player);
+        FloorObjectiveService.clear(player);
         LowHealthChallengeService.clearActive(player);
         if (id == null) {
             if (markRunInactive) {
@@ -334,6 +348,8 @@ public final class FloorInstanceManager {
 
         instance.state = State.PREPARING;
         instance.initialParticipantCount = Math.max(Math.max(1, instance.participants.size()), getDebugPartySize(server, instance));
+        ThemeManager.ThemeInstance theme = ThemeManager.getThemeForFloor(instance.floor, server.getWorldData().worldGenOptions().seed());
+        FloorObjectiveService.prepareInstance(server, instance, theme);
         FloorService.clearDungeonEntities(rogueLevel, instance.origin);
         instance.generationJob = MapGenerator.generateRoomJob(
             rogueLevel,
@@ -428,6 +444,7 @@ public final class FloorInstanceManager {
             syncWaitClear(participant);
             syncGenerationClear(participant);
             syncBossBarClear(participant);
+            FloorObjectiveService.sync(server, instance, true);
             teleportParticipant(participant, instance);
             schedulePostTeleportSync(server, participant);
 
@@ -445,6 +462,7 @@ public final class FloorInstanceManager {
             destroyInstance(server, instance);
         } else {
             syncBossBar(server, instance, true);
+            FloorObjectiveService.sync(server, instance, true);
         }
     }
 
@@ -596,14 +614,14 @@ public final class FloorInstanceManager {
 
     private static boolean isInstanceCleared(ServerLevel level, FloorInstance instance) {
         List<Mob> alive = getAliveSpawnedMobs(level, instance);
-        boolean bossFloor = ThemeManager.isBossFloor(instance.floor);
-        boolean bossAlive = alive.stream().anyMatch(mob -> mob.getTags().contains("rogue:boss"));
-        return alive.isEmpty() || (bossFloor && !bossAlive);
+        return FloorObjectiveService.shouldClearInstance(level.getServer(), level, instance, alive);
     }
 
     private static void completeInstance(MinecraftServer server, ServerLevel level, FloorInstance instance) {
         instance.state = State.CLEARED;
+        FloorObjectiveService.callObjectiveSupport(level, instance);
         syncBossBarClear(server, instance);
+        FloorObjectiveService.sync(server, instance, true);
 
         for (UUID uuid : List.copyOf(instance.participants)) {
             ServerPlayer player = server.getPlayerList().getPlayer(uuid);
@@ -818,6 +836,7 @@ public final class FloorInstanceManager {
             PLAYER_INSTANCES.remove(uuid, instance.id);
             ServerPlayer player = server == null ? null : server.getPlayerList().getPlayer(uuid);
             if (player != null) syncBossBarClear(player);
+            if (player != null) FloorObjectiveService.clear(player);
         }
 
         if (server == null) return;

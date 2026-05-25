@@ -14,12 +14,17 @@ import com.levanilla.rogue.core.registry.AttachmentDatabase;
 import com.levanilla.rogue.core.registry.LrTacticalRegistry;
 import com.levanilla.rogue.core.registry.ShopCatalog;
 import com.levanilla.rogue.core.service.FloorInstanceManager;
+import com.levanilla.rogue.core.service.FloorObjectiveService;
 import com.levanilla.rogue.core.service.RogueItemFactory;
 import com.levanilla.rogue.core.service.RogueMobAlertService;
 import com.levanilla.rogue.world.MapGenerator;
 import com.levanilla.rogue.world.NpcManager;
 import com.levanilla.rogue.world.TacRogueNpcEntity;
 import com.levanilla.rogue.world.ThemeManager;
+import com.levanilla.rogue.world.generation.DungeonPlanGenerator;
+import com.levanilla.rogue.world.generation.FloorGenerationContext;
+import com.levanilla.rogue.world.generation.plan.DungeonPlan;
+import com.levanilla.rogue.world.generation.plan.RoomRole;
 import com.levanilla.rogue.world.goal.RogueMobVisionGoal;
 import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.core.BlockPos;
@@ -51,9 +56,9 @@ public final class SmokeTestService {
     );
     public static final List<String> FULL_SUITES = List.of(
         "quick", "registry", "lobby", "ui", "floor", "combat", "economy", "quest", "deep",
-        "world", "thirdperson", "shooting", "monster", "ai_matrix", "generation"
+        "world", "thirdperson", "shooting", "monster", "ai_matrix", "generation", "objective", "encounter"
     );
-    private static final List<String> EXTRA_SUITES = List.of("generation_view", "ai_matrix_view");
+    private static final List<String> EXTRA_SUITES = List.of("generation_view", "ai_matrix_view", "objective", "encounter");
     private static final BlockPos AI_MATRIX_CENTER = new BlockPos(7800, 80, 7800);
 
     private SmokeTestService() {}
@@ -103,6 +108,8 @@ public final class SmokeTestService {
             case "ai_matrix_view" -> aiMatrix(player, counter, true);
             case "generation" -> generation(player, counter, false);
             case "generation_view" -> generation(player, counter, true);
+            case "objective" -> objective(counter);
+            case "encounter" -> encounter(counter);
             default -> record(counter, suite, "suite.known", false, "known smoke suite", suite, "unknown suite");
         }
     }
@@ -766,6 +773,164 @@ public final class SmokeTestService {
                 }
             }
         }
+    }
+
+    private static void objective(Counter counter) {
+        String suite = "objective";
+        int checked = 0;
+        int failed = 0;
+        for (FloorObjectiveService.ObjectiveType type : FloorObjectiveService.ObjectiveType.values()) {
+            FloorObjectiveService.ObjectiveType parsed = FloorObjectiveService.ObjectiveType.parse(type.name());
+            record(counter, suite, "type." + type.name().toLowerCase(Locale.ROOT),
+                parsed == type,
+                "objective type parses by name",
+                parsed.name(),
+                "");
+            FloorObjectiveService.ObjectiveType lowerParsed = FloorObjectiveService.ObjectiveType.parse(type.name().toLowerCase(Locale.ROOT));
+            record(counter, suite, "type_lower." + type.name().toLowerCase(Locale.ROOT),
+                lowerParsed == type,
+                "objective type parses case-insensitively",
+                lowerParsed.name(),
+                "");
+
+            int target = FloorObjectiveService.progressTarget(type);
+            boolean targetValid = switch (type) {
+                case SECURE_TERMINAL -> target == 240;
+                case HOLD_POSITION -> target == 500;
+                case ELIMINATE, RECOVER_CACHE, HUNT_ELITE, ESCAPE_ROUTE -> target == 1;
+            };
+            record(counter, suite, "target." + type.name().toLowerCase(Locale.ROOT),
+                targetValid,
+                "objective progress target matches completion model",
+                String.valueOf(target),
+                "");
+
+            RoomRole required = requiredRole(type);
+            boolean roomValid = required == null || FloorObjectiveService.matchesObjectiveRoom(type, required);
+            record(counter, suite, "room." + type.name().toLowerCase(Locale.ROOT),
+                roomValid,
+                "objective accepts its required dungeon room role",
+                String.valueOf(required),
+                "");
+
+            ThemeManager.ThemeInstance theme = representativeTheme(type);
+            ThemeManager.ThemeGenerationStyle style = ThemeManager.generationStyle(theme);
+            FloorGenerationContext context = new FloorGenerationContext(
+                0x0B1EC7_1E57L,
+                Math.max(4, 10 + checked),
+                0xACCE55L + checked,
+                checked + 1,
+                "smoke-objective-" + type.name().toLowerCase(Locale.ROOT),
+                "SMOKE",
+                type.name(),
+                1,
+                0x0B1EC7_1E57L);
+            DungeonPlan plan = DungeonPlanGenerator.generate(context, false, style);
+            boolean hasRequired = required == null || plan.rooms().stream().anyMatch(room -> room.role() == required);
+            boolean hasSpawnableRoom = plan.rooms().stream().anyMatch(room ->
+                FloorObjectiveService.roomWeight(room.role(), type) > 0
+                    && FloorObjectiveService.roomCap(room.role(), type, 6) > 0);
+            boolean pass = !plan.rooms().isEmpty() && hasRequired && hasSpawnableRoom;
+            if (!pass) failed++;
+            record(counter, suite, "plan." + type.name().toLowerCase(Locale.ROOT),
+                pass,
+                "representative dungeon plan supports objective completion and enemy placement",
+                "style=" + style + " rooms=" + plan.rooms().size() + " required=" + required,
+                "hasRequired=" + hasRequired + " hasSpawnableRoom=" + hasSpawnableRoom);
+            checked++;
+        }
+        record(counter, suite, "non_eliminate.count",
+            FloorObjectiveService.ObjectiveType.values().length >= 6,
+            "multiple non kill-all objectives exist",
+            String.valueOf(FloorObjectiveService.ObjectiveType.values().length),
+            "");
+        record(counter, suite, "parse.invalid_fallback",
+            FloorObjectiveService.ObjectiveType.parse("missing-objective") == FloorObjectiveService.ObjectiveType.ELIMINATE,
+            "unknown objective falls back to eliminate",
+            FloorObjectiveService.ObjectiveType.parse("missing-objective").name(),
+            "");
+        record(counter, suite, "room.recover_cache_supply_risk",
+            FloorObjectiveService.matchesObjectiveRoom(FloorObjectiveService.ObjectiveType.RECOVER_CACHE, RoomRole.SUPPLY_RISK),
+            "recover cache can use high-risk supply rooms without completing on proximity",
+            String.valueOf(RoomRole.SUPPLY_RISK),
+            "");
+        record(counter, suite, "room.escape_route_long",
+            FloorObjectiveService.matchesObjectiveRoom(FloorObjectiveService.ObjectiveType.ESCAPE_ROUTE, RoomRole.COMBAT_LONG),
+            "escape route can use long traversal rooms",
+            String.valueOf(RoomRole.COMBAT_LONG),
+            "");
+        record(counter, suite, "plans.each_objective",
+            checked == FloorObjectiveService.ObjectiveType.values().length && failed == 0,
+            "all objective types have a representative valid plan",
+            "checked=" + checked + " failed=" + failed,
+            "");
+    }
+
+    private static void encounter(Counter counter) {
+        String suite = "encounter";
+        long runSeed = 0x5EED_0E77L;
+        int checked = 0;
+        int failed = 0;
+        for (int biome = 0; biome < ThemeManager.biomeCount(); biome++) {
+            for (int variant = 0; variant < ThemeManager.variantCount(biome); variant++) {
+                ThemeManager.ThemeInstance theme = ThemeManager.getThemeForIndices(biome, variant);
+                ThemeManager.ThemeGenerationStyle style = ThemeManager.generationStyle(theme);
+                for (FloorObjectiveService.ObjectiveType objective : FloorObjectiveService.ObjectiveType.values()) {
+                    if (objective == FloorObjectiveService.ObjectiveType.ELIMINATE) continue;
+                    FloorGenerationContext context = new FloorGenerationContext(
+                        runSeed,
+                        8 + checked,
+                        0xE770L + checked,
+                        checked + 1,
+                        "smoke-encounter-" + checked,
+                        "SMOKE",
+                        objective.name(),
+                        1,
+                        runSeed);
+                    DungeonPlan plan = DungeonPlanGenerator.generate(context, false, style);
+                    RoomRole required = requiredRole(objective);
+                    boolean hasRequired = required == null || plan.rooms().stream().anyMatch(room -> room.role() == required);
+                    boolean hasVariety = plan.rooms().stream().map(room -> room.role()).distinct().count() >= 4;
+                    boolean pass = hasRequired && hasVariety && !plan.rooms().isEmpty();
+                    if (!pass) failed++;
+                    record(counter, suite, theme.biomeName.toLowerCase(Locale.ROOT) + "."
+                            + theme.variantName.toLowerCase(Locale.ROOT) + "." + objective.name().toLowerCase(Locale.ROOT),
+                        pass,
+                        "theme/objective dungeon plan contains required encounter role and role variety",
+                        "style=" + style + " archetype=" + plan.archetype() + " rooms=" + plan.rooms().size()
+                            + " required=" + required,
+                        "hasRequired=" + hasRequired + " hasVariety=" + hasVariety);
+                    checked++;
+                }
+            }
+        }
+        record(counter, suite, "plans.all_objectives",
+            checked > 0 && failed == 0,
+            "all theme/objective plan combinations are valid",
+            "checked=" + checked + " failed=" + failed,
+            "");
+    }
+
+    private static RoomRole requiredRole(FloorObjectiveService.ObjectiveType objective) {
+        return switch (objective) {
+            case ELIMINATE -> null;
+            case SECURE_TERMINAL -> RoomRole.OBJECTIVE_TERMINAL;
+            case HOLD_POSITION -> RoomRole.DEFENSE_POINT;
+            case RECOVER_CACHE -> RoomRole.LOCKED_REWARD;
+            case HUNT_ELITE -> RoomRole.ELITE_ARENA;
+            case ESCAPE_ROUTE -> RoomRole.STEALTH_ROUTE;
+        };
+    }
+
+    private static ThemeManager.ThemeInstance representativeTheme(FloorObjectiveService.ObjectiveType objective) {
+        return switch (objective) {
+            case SECURE_TERMINAL -> ThemeManager.getThemeForIndices(1, 0); // LAB / STERILE
+            case HOLD_POSITION -> ThemeManager.getThemeForIndices(3, 1); // MILITARY / COMMAND
+            case RECOVER_CACHE -> ThemeManager.getThemeForIndices(0, 0); // RUINS / OVERGROWN
+            case HUNT_ELITE -> ThemeManager.getThemeForIndices(6, 4); // URBAN / ROOFTOP
+            case ESCAPE_ROUTE -> ThemeManager.getThemeForIndices(6, 0); // URBAN / SUBWAY
+            case ELIMINATE -> ThemeManager.getThemeForIndices(2, 0); // UNDERGROUND / CAVE
+        };
     }
 
     private static void generation(ServerPlayer player, Counter counter, boolean keepLastForInspection) {

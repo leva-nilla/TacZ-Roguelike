@@ -39,6 +39,7 @@ class ThemeGenerationTest {
                     0,
                     "theme-test-" + biome + "-" + variant,
                     "SOLO",
+                    "ELIMINATE",
                     1,
                     0xCAFEBABEL);
                 boolean bossFloor = floor % 5 == 0;
@@ -83,6 +84,7 @@ class ThemeGenerationTest {
                 0,
                 "boss-theme-test-" + biome,
                 "SOLO",
+                "ELIMINATE",
                 1,
                 0x11223344L);
             DungeonPlan plan = DungeonPlanGenerator.generate(context, true, style);

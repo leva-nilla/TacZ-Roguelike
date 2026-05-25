@@ -8,7 +8,9 @@ import net.minecraft.core.BlockPos;
 import com.levanilla.rogue.core.ModEntities;
 import com.levanilla.rogue.core.ScalingEngine;
 import com.levanilla.rogue.core.RogueActManager;
+import com.levanilla.rogue.core.DifficultyManager;
 import com.levanilla.rogue.core.service.FloorInstanceManager;
+import com.levanilla.rogue.core.service.FloorObjectiveService;
 import com.levanilla.rogue.world.goal.RogueMobEngagedTargetMonitorGoal;
 import com.levanilla.rogue.world.goal.RogueMobGoalUtils;
 import com.levanilla.rogue.world.goal.RogueMobTacticalAlertGoal;
@@ -50,6 +52,17 @@ public class RoomManager {
 
     public static void spawnMobs(ServerLevel level, BlockPos pos, int count, int floor, int biomeIndex,
                                  String instanceId, String mode, int participantCount) {
+        spawnMobsInternal(level, pos, count, floor, biomeIndex, instanceId, mode, participantCount, false, false);
+    }
+
+    public static void spawnEliteMobs(ServerLevel level, BlockPos pos, int count, int floor, int biomeIndex,
+                                      String instanceId, String mode, int participantCount, boolean objectiveElite) {
+        spawnMobsInternal(level, pos, count, floor, biomeIndex, instanceId, mode, participantCount, true, objectiveElite);
+    }
+
+    private static void spawnMobsInternal(ServerLevel level, BlockPos pos, int count, int floor, int biomeIndex,
+                                          String instanceId, String mode, int participantCount,
+                                          boolean forceElite, boolean objectiveElite) {
         EntityType<? extends Mob>[] pool = BIOME_MOBS[biomeIndex % BIOME_MOBS.length];
 
         // ダンジョン内の最近プレイヤーを取得（aggro用）
@@ -68,6 +81,9 @@ public class RoomManager {
                 mob.moveTo(spawn.getX() + 0.5D, spawn.getY(), spawn.getZ() + 0.5D, RANDOM.nextFloat() * 360.0F, 0.0F);
 
                 ScalingEngine.applyScaling(mob, floor);
+                if (forceElite) {
+                    applyEliteRoomScaling(mob, objectiveElite);
+                }
                 RogueMobVariant.apply(variantRoll, floor, RANDOM);
                 applyParticipantHealthScaling(mob, participantCount, false);
 
@@ -119,6 +135,9 @@ public class RoomManager {
                 mob.getPersistentData().putLong("TacRogueSpawnTick", level.getServer().getTickCount());
                 FloorInstanceManager.stampEntity(mob, instanceId, floor,
                     FloorInstanceManager.EntryMode.parse(mode), null);
+                if (forceElite) {
+                    FloorObjectiveService.registerEliteMob(mob, objectiveElite);
+                }
                 level.addFreshEntity(mob);
             } catch (Exception e) {
                 spawnFallbackZombie(level, pos, floor, nearest, instanceId, mode, participantCount);
@@ -213,6 +232,65 @@ public class RoomManager {
         }
     }
 
+    private static void applyEliteRoomScaling(Mob mob, boolean objectiveElite) {
+        if (mob == null) return;
+        double healthMult = objectiveElite ? 3.20D : 2.40D;
+        double attackMult = objectiveElite ? 1.55D : 1.40D;
+        var maxHealth = mob.getAttribute(Attributes.MAX_HEALTH);
+        if (maxHealth != null) {
+            maxHealth.setBaseValue(maxHealth.getBaseValue() * healthMult);
+            mob.setHealth(mob.getMaxHealth());
+        }
+        var attack = mob.getAttribute(Attributes.ATTACK_DAMAGE);
+        if (attack != null) {
+            attack.setBaseValue(attack.getBaseValue() * attackMult);
+        }
+        var speed = mob.getAttribute(Attributes.MOVEMENT_SPEED);
+        if (speed != null) {
+            speed.setBaseValue(Math.min(0.34D, speed.getBaseValue() * (objectiveElite ? 1.10D : 1.06D)));
+        }
+        var armor = mob.getAttribute(Attributes.ARMOR);
+        if (armor != null) {
+            armor.setBaseValue(Math.max(armor.getBaseValue(), objectiveElite ? 8.0D : 5.0D));
+        }
+        var knockback = mob.getAttribute(Attributes.KNOCKBACK_RESISTANCE);
+        if (knockback != null) {
+            knockback.setBaseValue(Math.max(knockback.getBaseValue(), objectiveElite ? 0.55D : 0.35D));
+        }
+        var follow = mob.getAttribute(Attributes.FOLLOW_RANGE);
+        if (follow != null) {
+            follow.setBaseValue(Math.max(follow.getBaseValue(), objectiveElite ? 48.0D : 36.0D));
+        }
+        mob.addTag("tac_rogue_variant");
+        mob.getPersistentData().putBoolean("TacRogueElite", true);
+        mob.getPersistentData().putBoolean("TacRogueObjectiveElite", objectiveElite);
+        String codename = eliteCodename(mob, objectiveElite);
+        mob.setCustomName(net.minecraft.network.chat.Component.literal((objectiveElite ? "§6§l[PRIME] §f" : "§6[ELITE] §f")
+            + codename));
+        mob.setCustomNameVisible(false);
+    }
+
+    private static String eliteCodename(Mob mob, boolean objectiveElite) {
+        String[] prime = {
+            "Vanguard Helix",
+            "Grave Anchor",
+            "Iron Meridian",
+            "Null Receiver",
+            "Breach Regent"
+        };
+        String[] elite = {
+            "Signal Warden",
+            "Glass Talon",
+            "Rust Herald",
+            "Pale Vector",
+            "Static Lance",
+            "Blackline Scout"
+        };
+        String[] names = objectiveElite ? prime : elite;
+        int hash = (mob.getUUID().hashCode() * 31) ^ mob.getType().getDescriptionId().hashCode();
+        return names[Math.floorMod(hash, names.length)];
+    }
+
     private static void spawnFallbackZombie(ServerLevel level, BlockPos pos, int floor, Player nearest,
                                             String instanceId, String mode, int participantCount) {
         Mob zombie = (Mob) EntityType.ZOMBIE.create(level);
@@ -274,12 +352,43 @@ public class RoomManager {
         if (eligibleRoomCount <= 0) return 0;
 
         int safeFloor = Math.max(1, floor);
-        int soloBudget = switch (safeFloor) {
-            case 1 -> 8;
-            case 2 -> 12;
-            case 3 -> 16;
-            case 4 -> 22;
-            default -> Math.min(70, 18 + safeFloor * 3 + RogueActManager.getPhase(safeFloor).mobCountBonus * 3);
+        int phaseBonus = RogueActManager.getPhase(safeFloor).mobCountBonus;
+        int soloBudget = switch (DifficultyManager.getDifficulty()) {
+            case EASY -> switch (safeFloor) {
+                case 1 -> 6;
+                case 2 -> 9;
+                case 3 -> 12;
+                case 4 -> 16;
+                default -> Math.min(34, 12 + safeFloor * 1 + phaseBonus);
+            };
+            case HARD -> switch (safeFloor) {
+                case 1 -> 10;
+                case 2 -> 14;
+                case 3 -> 18;
+                case 4 -> 24;
+                default -> Math.min(56, 20 + safeFloor * 2 + phaseBonus * 2);
+            };
+            case EXTREME -> switch (safeFloor) {
+                case 1 -> 12;
+                case 2 -> 16;
+                case 3 -> 20;
+                case 4 -> 26;
+                default -> Math.min(66, 24 + safeFloor * 2 + phaseBonus * 3);
+            };
+            case IRONMAN -> switch (safeFloor) {
+                case 1 -> 14;
+                case 2 -> 18;
+                case 3 -> 22;
+                case 4 -> 28;
+                default -> Math.min(74, 28 + safeFloor * 2 + phaseBonus * 3);
+            };
+            default -> switch (safeFloor) {
+                case 1 -> 8;
+                case 2 -> 12;
+                case 3 -> 16;
+                case 4 -> 22;
+                default -> Math.min(44, 16 + safeFloor * 2 + phaseBonus * 2);
+            };
         };
 
         int players = Math.max(1, participantCount);
@@ -296,7 +405,7 @@ public class RoomManager {
             case 2 -> 3;
             case 3 -> 4;
             case 4 -> 4;
-            default -> Math.min(7, 3 + (int) Math.sqrt(safeFloor) + RogueActManager.getPhase(safeFloor).mobCountBonus);
+            default -> Math.min(6, 3 + (int) Math.sqrt(safeFloor) + RogueActManager.getPhase(safeFloor).mobCountBonus);
         };
     }
 

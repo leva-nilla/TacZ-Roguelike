@@ -13,8 +13,13 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
@@ -56,13 +61,19 @@ public class ItemAndLifecycleHandler {
         event.setCanceled(true);
     }
 
-    @SubscribeEvent
+    @SubscribeEvent(priority = EventPriority.HIGHEST, receiveCanceled = true)
     public static void onRightClickBlock(PlayerInteractEvent.RightClickBlock event) {
         if (event.getLevel().isClientSide) return;
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
         if (player.level().dimension() != ROGUE_DIM) return;
 
         BlockPos pos = event.getPos();
+        if (com.levanilla.rogue.core.service.FloorObjectiveService.handleObjectiveBlockInteract(player, pos)) {
+            event.setCanceled(true);
+            event.setCancellationResult(InteractionResult.SUCCESS);
+            return;
+        }
+        if (event.isCanceled()) return;
         if (!(event.getLevel().getBlockEntity(pos) instanceof net.minecraft.world.level.block.entity.ChestBlockEntity chest)) {
             return;
         }
@@ -156,6 +167,13 @@ public class ItemAndLifecycleHandler {
     public static void onRightClickItem(PlayerInteractEvent.RightClickItem event) {
         if (event.getLevel().isClientSide) return;
         ItemStack stack = event.getItemStack();
+        if (event.getEntity() instanceof ServerPlayer objectivePlayer
+                && objectivePlayer.level().dimension() == ROGUE_DIM
+                && tryObjectiveUseFromHeldItem(objectivePlayer)) {
+            event.setCanceled(true);
+            event.setCancellationResult(InteractionResult.SUCCESS);
+            return;
+        }
 
         // rogue_always_eat タグ付きステーキ: 満腹でも食べられるようにする
         if (stack.getItem() == Items.COOKED_BEEF
@@ -278,6 +296,20 @@ public class ItemAndLifecycleHandler {
                 }
             }
         }
+    }
+
+    private static boolean tryObjectiveUseFromHeldItem(ServerPlayer player) {
+        if (player == null || player.level().dimension() != ROGUE_DIM) return false;
+        Vec3 eye = player.getEyePosition(1.0F);
+        Vec3 end = eye.add(player.getLookAngle().scale(5.75D));
+        BlockHitResult hit = player.level().clip(new ClipContext(
+            eye,
+            end,
+            ClipContext.Block.OUTLINE,
+            ClipContext.Fluid.NONE,
+            player));
+        if (hit.getType() != HitResult.Type.BLOCK) return false;
+        return com.levanilla.rogue.core.service.FloorObjectiveService.handleObjectiveBlockInteract(player, hit.getBlockPos());
     }
 
     // ===== ログイン =====

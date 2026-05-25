@@ -332,6 +332,7 @@ public class TacZEventHandler {
         if (killed instanceof net.minecraft.world.entity.LivingEntity living && killed.getTags().contains("rogue:boss")) {
             com.levanilla.rogue.core.service.BossRewardService.handleBossKill(killer, living);
         }
+        com.levanilla.rogue.core.service.FloorObjectiveService.onEliteKilled(killer, killed);
 
         // キル報酬
         com.levanilla.rogue.core.service.KillGoldRewardService.award(killer, killed, event.isHeadShot());

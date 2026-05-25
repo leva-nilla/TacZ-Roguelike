@@ -7,6 +7,7 @@ public record FloorGenerationContext(
     int attemptIndex,
     String instanceId,
     String mode,
+    String objectiveType,
     int participantCount,
     long worldSeed
 ) {
@@ -51,6 +52,7 @@ public record FloorGenerationContext(
             ^ Long.rotateLeft(worldSeed, 29)
             ^ (long) safe(instanceId).hashCode() * 0xD6E8FEB86659FD93L
             ^ (long) safe(mode).hashCode() * 0xA0761D6478BD642FL
+            ^ (long) safe(objectiveType).hashCode() * 0xE1BB7A44D6B1A27BL
             ^ (long) stream.hashCode() * 0xE7037ED1A0B428DBL
             ^ salt;
         return mix64(value == 0L ? 0xD1B54A32D192ED03L : value);

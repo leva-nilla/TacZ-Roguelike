@@ -97,6 +97,7 @@ public final class RogueActManager {
                 PerkDefinition.Category.DAMAGE,
                 PerkDefinition.Category.GUN_PROFICIENCY,
                 PerkDefinition.Category.FIRE_RATE,
+                PerkDefinition.Category.MELEE_SPEED,
                 PerkDefinition.Category.HANDLING,
                 PerkDefinition.Category.RELOAD_SPEED,
                 PerkDefinition.Category.AUTOLOADER,
@@ -107,12 +108,14 @@ public final class RogueActManager {
                 PerkDefinition.Category.STEALTH_EXTEND,
                 PerkDefinition.Category.SHARPSHOOTER,
                 PerkDefinition.Category.EXECUTIONER,
+                PerkDefinition.Category.MELEE_SPEED,
                 PerkDefinition.Category.VELOCITY,
                 PerkDefinition.Category.FORTUNE
             );
             case BOSS_BREAKER -> List.of(
                 PerkDefinition.Category.DAMAGE,
                 PerkDefinition.Category.FIRE_RATE,
+                PerkDefinition.Category.MELEE_SPEED,
                 PerkDefinition.Category.RESISTANCE,
                 PerkDefinition.Category.VAMPIRE,
                 PerkDefinition.Category.BLOODLUST,

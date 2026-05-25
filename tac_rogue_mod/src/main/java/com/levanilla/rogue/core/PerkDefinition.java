@@ -2,11 +2,11 @@ package com.levanilla.rogue.core;
 
 /**
  * パークの「設計図」を保持するデータクラス。
- * カテゴリ(27) × 修飾子(11) × レベル(1-10) = 2,970 種類のプロシージャル生成パーク。
+ * カテゴリ × 修飾子 × レベルでプロシージャル生成されるパーク。
  */
 public class PerkDefinition {
 
-    /** パークの効果カテゴリ (27 種) */
+    /** パークの効果カテゴリ */
     public enum Category {
         VITALITY("Vitality", "perk.tac_rogue.cat.vitality", 0xFF00FF88),
         REGENERATION("Regeneration", "perk.tac_rogue.cat.regeneration", 0xFF00FF00),
@@ -16,6 +16,7 @@ public class PerkDefinition {
         DAMAGE("Damage", "perk.tac_rogue.cat.damage", 0xFFFF4444),
         GUN_PROFICIENCY("Gun Proficiency", "perk.tac_rogue.cat.gun_proficiency", 0xFFFFAA00),
         FIRE_RATE("Fire Rate", "perk.tac_rogue.cat.fire_rate", 0xFFFF7744),
+        MELEE_SPEED("Melee Speed", "perk.tac_rogue.cat.melee_speed", 0xFFFF5555),
         RELOAD_SPEED("Reload Speed", "perk.tac_rogue.cat.reload_speed", 0xFFFFCC00),
         MAG_SIZE("Mag Size", "perk.tac_rogue.cat.mag_size", 0xFFAAFFCC),
         AUTOLOADER("Autoloader", "perk.tac_rogue.cat.autoloader", 0xFF66EEFF),
@@ -125,7 +126,7 @@ public class PerkDefinition {
 
     private static float categoryScale(Category category) {
         return switch (category) {
-            case DAMAGE, FIRE_RATE, RELOAD_SPEED, MAG_SIZE, GOLD_RUSH, VELOCITY, STAMINA, DODGE ->
+            case DAMAGE, FIRE_RATE, MELEE_SPEED, RELOAD_SPEED, MAG_SIZE, GOLD_RUSH, VELOCITY, STAMINA, DODGE ->
                 GameConstants.PERK_STRONG_CATEGORY_SCALE;
             case AUTOLOADER, REGENERATION, VAMPIRE, BLOODLUST, QUICK_FIX ->
                 GameConstants.PERK_RECOVERY_CATEGORY_SCALE;

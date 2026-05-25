@@ -15,6 +15,7 @@ import com.levanilla.rogue.core.WeaponRarity;
 import com.levanilla.rogue.core.registry.ShopCatalog;
 import com.levanilla.rogue.core.service.FloorService;
 import com.levanilla.rogue.core.service.FloorInstanceManager;
+import com.levanilla.rogue.core.service.FloorObjectiveService;
 import com.levanilla.rogue.core.service.RogueMobAlertService;
 import com.levanilla.rogue.core.service.RogueItemFactory;
 import com.levanilla.rogue.core.service.ShopPlacementService;
@@ -158,6 +159,10 @@ public class RogueAdminCommand {
                             .executes(context -> debugSmoke(context.getSource(), "generation")))
                         .then(Commands.literal("generation_view")
                             .executes(context -> debugSmoke(context.getSource(), "generation_view")))
+                        .then(Commands.literal("objective")
+                            .executes(context -> debugSmoke(context.getSource(), "objective")))
+                        .then(Commands.literal("encounter")
+                            .executes(context -> debugSmoke(context.getSource(), "encounter")))
                         .then(Commands.literal("generation_walk")
                             .executes(context -> debugGenerationWalk(context.getSource(), 8))
                             .then(Commands.argument("seconds", IntegerArgumentType.integer(2, 30))
@@ -184,6 +189,12 @@ public class RogueAdminCommand {
                                 context.getSource(),
                                 IntegerArgumentType.getInteger(context, "floor")))
                         )
+                    )
+                    .then(Commands.literal("objective")
+                        .then(Commands.argument("type", StringArgumentType.word())
+                            .executes(context -> debugSetObjectiveOverride(
+                                context.getSource(),
+                                StringArgumentType.getString(context, "type"))))
                     )
                     .then(Commands.literal("enterfloor")
                         .executes(context -> debugEnterFloor(context.getSource()))
@@ -640,6 +651,31 @@ public class RogueAdminCommand {
         RunManager.syncPlayer(player);
         send(source, "Current floor=" + floor);
         return debugState(source);
+    }
+
+    private static int debugSetObjectiveOverride(CommandSourceStack source, String rawType) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        FloorObjectiveService.ObjectiveType type = parseObjectiveStrict(rawType);
+        if (type == null) {
+            source.sendFailure(Component.literal("Unknown objective: " + rawType
+                + " / valid=" + java.util.Arrays.toString(FloorObjectiveService.ObjectiveType.values())));
+            return 0;
+        }
+
+        FloorObjectiveService.setDebugObjectiveOverride(player.getUUID(), type);
+        send(source, "Next generated floor objective=" + type.name());
+        return 1;
+    }
+
+    private static FloorObjectiveService.ObjectiveType parseObjectiveStrict(String rawType) {
+        if (rawType == null || rawType.isBlank()) return null;
+        try {
+            return FloorObjectiveService.ObjectiveType.valueOf(rawType.trim().toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 
     private static int debugEnterFloor(CommandSourceStack source) {

@@ -861,7 +861,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
                 int effectiveLines = Math.min(maxSummaryLines, Math.max(0, availableHeight / 10));
                 if (effectiveLines > 0 && summaryY < panelBottom) {
                     graphics.fill(rightX, summaryY - 2, rightX + 280, summaryY + 12 + effectiveLines * 10, 0x44990033);
-                    graphics.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.cursed_count", cursedCount, GameConstants.MAX_CURSED_PERKS),
+                    graphics.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.cursed_count", cursedCount),
                         rightX + 4, summaryY, 0xFFFF4444, false);
                     int lineY = summaryY + 12;
                     int shown = 0;
@@ -987,6 +987,8 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
                 Math.min(35.0f, totalEffect * 0.35f));
             case FIRE_RATE -> tr("gui.tac_rogue.status.summary.fire_rate",
                 fmtMult(1.0f + WeaponRarity.getFireRatePerkBonusPercent(player) / 100.0f));
+            case MELEE_SPEED -> tr("gui.tac_rogue.status.summary.melee_speed",
+                fmtMult(1.0f + WeaponRarity.getMeleeSpeedPerkBonusPercent(player) / 100.0f));
             case STAMINA, DAMAGE, GOLD_RUSH, HANDLING, FORTUNE -> fmtMult(1.0f + totalEffect / 100.0f);
             case RESISTANCE -> fmtMult(specialResistanceTaken(totalEffect));
             case RELOAD_SPEED -> tr("gui.tac_rogue.status.summary.reload", fmtPercent(totalEffect));
@@ -1265,7 +1267,75 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         int rightX = x + 10;
         graphics.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.mission_intel"), rightX, y + 10, 0xFF00AAFF, false);
         graphics.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.theme", RunManager.getCurrentThemeName()), rightX + 5, y + 26, 0xFFFFFFFF, false);
-        graphics.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.objective_eliminate"), rightX + 5, y + 38, 0xFFFFFFFF, false);
+        ClientRunState.ObjectiveState objective = ClientRunState.getObjectiveState();
+        if (objective == null) {
+            graphics.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.objective_unknown"), rightX + 5, y + 42, 0xFF888888, false);
+            return;
+        }
+
+        String objectiveName = objectiveTitle(objective).getString();
+        graphics.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.objective_line", objectiveName), rightX + 5, y + 42, 0xFFFFFFFF, false);
+        graphics.drawString(this.font, objectiveStatus(objective), rightX + 5, y + 55, 0xFFB8C7D0, false);
+        graphics.drawString(this.font, objectiveProgressLine(objective), rightX + 5, y + 68, 0xFFFFD166, false);
+        if (!"ELIMINATE".equals(objective.type()) && objective.hasDirection()) {
+            graphics.drawString(this.font, Component.translatable("gui.tac_rogue.inventory.objective_target",
+                objectiveDirectionLabel(objective)), rightX + 5, y + 81, 0xFF9BEAFF, false);
+        }
+    }
+
+    private static Component objectiveTitle(ClientRunState.ObjectiveState objective) {
+        String type = objective.type() == null || objective.type().isBlank() ? "ELIMINATE" : objective.type();
+        return Component.translatable("objective.tac_rogue." + type.toLowerCase(java.util.Locale.ROOT) + ".title");
+    }
+
+    private static Component objectiveStatus(ClientRunState.ObjectiveState objective) {
+        String key = objective.statusKey();
+        if (key != null && !key.isBlank()) {
+            return Component.translatable(key);
+        }
+        String type = objective.type() == null || objective.type().isBlank() ? "ELIMINATE" : objective.type();
+        return Component.translatable("objective.tac_rogue." + type.toLowerCase(java.util.Locale.ROOT) + ".description");
+    }
+
+    private static Component objectiveProgressLine(ClientRunState.ObjectiveState objective) {
+        String type = objective.type();
+        if ("SECURE_TERMINAL".equals(type) || "HOLD_POSITION".equals(type)) {
+            return Component.translatable("gui.tac_rogue.inventory.objective_seconds",
+                Math.max(0, objective.progress() / 20),
+                Math.max(1, objective.target() / 20));
+        }
+        if ("ELIMINATE".equals(type)) {
+            int remaining = Math.max(0, objective.target() - objective.progress());
+            return Component.translatable("gui.tac_rogue.inventory.objective_remaining", remaining);
+        }
+        return Component.translatable("gui.tac_rogue.inventory.objective_progress",
+            objective.progress(), objective.target());
+    }
+
+    private static Component objectiveDirectionLabel(ClientRunState.ObjectiveState objective) {
+        net.minecraft.client.Minecraft mc = net.minecraft.client.Minecraft.getInstance();
+        if (mc.player == null || !objective.hasDirection()) {
+            return Component.translatable("gui.tac_rogue.direction.front");
+        }
+        double length = Math.sqrt(objective.dx() * objective.dx() + objective.dz() * objective.dz());
+        if (length < 0.0001D) return Component.translatable("gui.tac_rogue.direction.front");
+        double dirX = objective.dx() / length;
+        double dirZ = objective.dz() / length;
+        double yawRad = Math.toRadians(mc.player.getYRot());
+        double forwardX = -Math.sin(yawRad);
+        double forwardZ = Math.cos(yawRad);
+        double rightX = -Math.cos(yawRad);
+        double rightZ = -Math.sin(yawRad);
+        double forward = dirX * forwardX + dirZ * forwardZ;
+        double right = dirX * rightX + dirZ * rightZ;
+        if (Math.abs(forward) >= Math.abs(right)) {
+            return forward >= 0.0D
+                ? Component.translatable("gui.tac_rogue.direction.front")
+                : Component.translatable("gui.tac_rogue.direction.back");
+        }
+        return right >= 0.0D
+            ? Component.translatable("gui.tac_rogue.direction.right")
+            : Component.translatable("gui.tac_rogue.direction.left");
     }
 
     @Override

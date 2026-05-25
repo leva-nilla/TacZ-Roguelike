@@ -32,6 +32,8 @@ public final class ClientRunState {
     private static long generationStatusUntilMs = 0L;
     private static BossBarState bossBarState = null;
     private static long bossBarStateUntilMs = 0L;
+    private static ObjectiveState objectiveState = null;
+    private static long objectiveUntilMs = 0L;
     private static EnemyDirectionState enemyDirectionState = null;
     private static long enemyDirectionUntilMs = 0L;
     private static long medicalBuffUntilMs = 0L;
@@ -184,6 +186,38 @@ public final class ClientRunState {
         return bossBarState;
     }
 
+    public static void setObjectiveState(String type, String title, String statusKey, int progress, int target,
+                                         boolean complete, int targetX, int targetY, int targetZ,
+                                         double dx, double dz, long durationMs) {
+        objectiveState = new ObjectiveState(
+            type == null ? "" : type,
+            title == null || title.isBlank() ? "Objective" : title,
+            statusKey == null ? "" : statusKey,
+            Math.max(0, progress),
+            Math.max(1, target),
+            complete,
+            targetX,
+            targetY,
+            targetZ,
+            dx,
+            dz);
+        objectiveUntilMs = System.currentTimeMillis() + Math.max(0L, durationMs);
+    }
+
+    public static void clearObjectiveState() {
+        objectiveState = null;
+        objectiveUntilMs = 0L;
+    }
+
+    public static ObjectiveState getObjectiveState() {
+        if (objectiveState == null) return null;
+        if (System.currentTimeMillis() > objectiveUntilMs) {
+            clearObjectiveState();
+            return null;
+        }
+        return objectiveState;
+    }
+
     public static void setEnemyDirection(double dx, double dz, int count, long durationMs) {
         if (!Double.isFinite(dx) || !Double.isFinite(dz) || count <= 0 || dx * dx + dz * dz < 0.001D) {
             clearEnemyDirection();
@@ -275,6 +309,7 @@ public final class ClientRunState {
         maxReachedFloor = maxFloor;
         if (!active) {
             clearBossBarState();
+            clearObjectiveState();
         }
     }
 
@@ -308,6 +343,24 @@ public final class ClientRunState {
     public record BossBarState(int floor, float health, float maxHealth, String name) {
         public float ratio() {
             return maxHealth > 0.0F ? Math.max(0.0F, Math.min(1.0F, health / maxHealth)) : 0.0F;
+        }
+    }
+
+    public record ObjectiveState(String type, String title, String statusKey, int progress, int target,
+                                 boolean complete, int targetX, int targetY, int targetZ,
+                                 double dx, double dz) {
+        public static final int NO_TARGET = Integer.MIN_VALUE;
+
+        public float ratio() {
+            return Math.max(0.0F, Math.min(1.0F, progress / (float)Math.max(1, target)));
+        }
+
+        public boolean hasDirection() {
+            return Double.isFinite(dx) && Double.isFinite(dz) && dx * dx + dz * dz > 0.001D;
+        }
+
+        public boolean hasTarget() {
+            return targetX != NO_TARGET && targetY != NO_TARGET && targetZ != NO_TARGET;
         }
     }
 

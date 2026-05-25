@@ -193,6 +193,23 @@ public class WeaponRarity {
             GameConstants.FIRE_RATE_HARD_CAP);
     }
 
+    /** MELEE_SPEED パークのソフトキャップ後ボーナスを取得 */
+    public static float getMeleeSpeedPerkBonusPercent(LivingEntity holder) {
+        float meleeSpeedBonus = 0.0f;
+        if (holder != null) {
+            for (String tag : holder.getTags()) {
+                if (tag.startsWith("perk:" + PerkDefinition.Category.MELEE_SPEED.name())) {
+                    meleeSpeedBonus += PerkDefinition.fromTag(tag).calculateEffect();
+                }
+            }
+        }
+        return softcapPercent(
+            meleeSpeedBonus,
+            GameConstants.FIRE_RATE_SOFTCAP_START,
+            GameConstants.FIRE_RATE_POST_SOFTCAP_SCALE,
+            GameConstants.FIRE_RATE_HARD_CAP);
+    }
+
     /** レアリティと FIRE_RATE パークを合算した実効連射速度倍率を取得 */
     public static float getEffectiveFireRateMult(ItemStack gun, LivingEntity holder) {
         float mult = getFireRateMult(gun);
@@ -201,6 +218,16 @@ public class WeaponRarity {
             mult *= 1.0f + perkBonus / 100.0f;
         }
         mult *= com.levanilla.rogue.core.service.DeepProgressService.fireRateMultiplier(gun);
+        return Math.max(1.0f, mult);
+    }
+
+    /** レアリティと MELEE_SPEED パークを合算した実効近接攻撃速度倍率を取得 */
+    public static float getEffectiveMeleeFireRateMult(ItemStack melee, LivingEntity holder) {
+        float mult = getFireRateMult(melee);
+        float perkBonus = getMeleeSpeedPerkBonusPercent(holder);
+        if (perkBonus > 0.0f) {
+            mult *= 1.0f + perkBonus / 100.0f;
+        }
         return Math.max(1.0f, mult);
     }
 
@@ -220,6 +247,18 @@ public class WeaponRarity {
         return getFireRateAdjustedIntervalMs(originalMs, gun, holder) / 1000.0D;
     }
 
+    public static int getMeleeFireRateAdjustedTicks(int originalTicks, ItemStack melee, LivingEntity holder) {
+        if (originalTicks <= 0) return originalTicks;
+        return scaleTicksByMultiplier(originalTicks, getEffectiveMeleeFireRateMult(melee, holder));
+    }
+
+    public static int getMeleeSpeedPerkAdjustedTicks(int originalTicks, LivingEntity holder) {
+        if (originalTicks <= 0) return originalTicks;
+        float perkBonus = getMeleeSpeedPerkBonusPercent(holder);
+        if (perkBonus <= 0.0f) return originalTicks;
+        return scaleTicksByMultiplier(originalTicks, 1.0f + perkBonus / 100.0f);
+    }
+
     public static int getEffectiveMagazineSize(ItemStack gun, int baseSize) {
         return Math.max(1, Math.round(baseSize * getMagSizeMult(gun)));
     }
@@ -230,5 +269,10 @@ public class WeaponRarity {
         }
         float compressed = softStart + (rawPercent - softStart) * postSoftScale;
         return Math.min(compressed, hardCap);
+    }
+
+    private static int scaleTicksByMultiplier(int originalTicks, float multiplier) {
+        if (multiplier <= 1.005f) return originalTicks;
+        return Math.max(1, Math.min(originalTicks, Math.round(originalTicks / multiplier)));
     }
 }

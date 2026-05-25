@@ -19,16 +19,21 @@ public class TacRogueNpcModel extends EntityModel<TacRogueNpcEntity> {
     private final ModelPart head;
     private final ModelPart rightArm;
     private final ModelPart leftArm;
+    private final ModelPart rightLeg;
+    private final ModelPart leftLeg;
     private final RoleParts commanderParts;
     private final RoleParts quartermasterParts;
     private final RoleParts intelParts;
     private final RoleParts medicParts;
+    private final ModelPart[] supportParts;
 
     public TacRogueNpcModel(ModelPart root) {
         this.root = root;
         this.head = root.getChild("head");
         this.rightArm = root.getChild("right_arm");
         this.leftArm = root.getChild("left_arm");
+        this.rightLeg = root.getChild("right_leg");
+        this.leftLeg = root.getChild("left_leg");
         this.commanderParts = new RoleParts(
             headParts(),
             headParts("commander_hair"),
@@ -49,10 +54,14 @@ public class TacRogueNpcModel extends EntityModel<TacRogueNpcEntity> {
             headParts("medic_hair", "medic_bangs", "medic_side_locks", "medic_ponytail"),
             headParts("medic_headband", "medic_hair_clip"),
             rootParts(root, "medic_coat", "medic_stethoscope", "medic_bag", "medic_cross", "medic_armband", "medic_badge", "medic_injectors"));
+        this.supportParts = concat(
+            headParts("support_helmet", "support_visor", "support_mask"),
+            rootParts(root, "support_vest", "support_plate", "support_shoulders", "support_pouches", "support_radio", "support_rifle"));
         this.commanderParts.setVisible(false);
         this.quartermasterParts.setVisible(false);
         this.intelParts.setVisible(false);
         this.medicParts.setVisible(false);
+        setVisible(this.supportParts, false);
     }
 
     private ModelPart[] headParts(String... names) {
@@ -68,6 +77,13 @@ public class TacRogueNpcModel extends EntityModel<TacRogueNpcEntity> {
         for (int i = 0; i < names.length; i++) {
             parts[i] = root.getChild(names[i]);
         }
+        return parts;
+    }
+
+    private static ModelPart[] concat(ModelPart[] first, ModelPart[] second) {
+        ModelPart[] parts = new ModelPart[first.length + second.length];
+        System.arraycopy(first, 0, parts, 0, first.length);
+        System.arraycopy(second, 0, parts, first.length, second.length);
         return parts;
     }
 
@@ -88,6 +104,7 @@ public class TacRogueNpcModel extends EntityModel<TacRogueNpcEntity> {
         addQuartermaster(root, none);
         addIntel(root, none);
         addMedic(root, none);
+        addSupportOperator(root, head, none, soft);
 
         return LayerDefinition.create(mesh, 512, 512);
     }
@@ -371,22 +388,92 @@ public class TacRogueNpcModel extends EntityModel<TacRogueNpcEntity> {
             PartPose.ZERO);
     }
 
+    private static void addSupportOperator(PartDefinition root, PartDefinition head, CubeDeformation none, CubeDeformation soft) {
+        head.addOrReplaceChild("support_helmet", CubeListBuilder.create()
+            .texOffs(0, 32).addBox(-4.65f, -8.85f, -4.65f, 9.3f, 2.4f, 9.3f, soft)
+            .texOffs(92, 32).addBox(-4.25f, -9.45f, -2.55f, 8.5f, 0.75f, 5.1f, none)
+            .texOffs(96, 56).addBox(-4.9f, -6.85f, -1.15f, 0.9f, 2.3f, 2.3f, none)
+            .texOffs(120, 56).addBox(4.0f, -6.85f, -1.15f, 0.9f, 2.3f, 2.3f, none),
+            PartPose.ZERO);
+        head.addOrReplaceChild("support_visor", CubeListBuilder.create()
+            .texOffs(40, 32).addBox(-3.55f, -5.72f, -4.78f, 7.1f, 1.35f, 0.42f, none)
+            .texOffs(52, 56).addBox(-3.75f, -6.1f, -4.86f, 7.5f, 0.42f, 0.34f, none),
+            PartPose.ZERO);
+        head.addOrReplaceChild("support_mask", CubeListBuilder.create()
+            .texOffs(96, 72).addBox(-3.45f, -4.35f, -4.74f, 6.9f, 3.65f, 0.48f, none),
+            PartPose.ZERO);
+
+        root.addOrReplaceChild("support_vest", CubeListBuilder.create()
+            .texOffs(40, 32).addBox(-5.1f, 0.75f, -3.65f, 10.2f, 10.7f, 0.88f, none)
+            .texOffs(0, 32).addBox(-5.0f, 0.85f, 2.55f, 10.0f, 10.4f, 0.85f, none),
+            PartPose.ZERO);
+        root.addOrReplaceChild("support_plate", CubeListBuilder.create()
+            .texOffs(92, 32).addBox(-3.25f, 1.75f, -4.15f, 6.5f, 6.0f, 0.72f, none)
+            .texOffs(92, 56).addBox(-2.65f, 8.25f, -4.1f, 5.3f, 2.4f, 0.65f, none),
+            PartPose.ZERO);
+        root.addOrReplaceChild("support_shoulders", CubeListBuilder.create()
+            .texOffs(24, 56).addBox(-6.45f, 0.75f, -2.75f, 3.1f, 1.0f, 5.5f, none)
+            .texOffs(24, 72).addBox(3.35f, 0.75f, -2.75f, 3.1f, 1.0f, 5.5f, none),
+            PartPose.ZERO);
+        root.addOrReplaceChild("support_pouches", CubeListBuilder.create()
+            .texOffs(0, 288).addBox(-4.95f, 7.2f, -4.25f, 2.1f, 2.6f, 1.05f, none)
+            .texOffs(20, 288).addBox(-2.3f, 7.45f, -4.35f, 1.9f, 2.35f, 1.05f, none)
+            .texOffs(44, 288).addBox(0.45f, 7.45f, -4.35f, 1.9f, 2.35f, 1.05f, none)
+            .texOffs(68, 288).addBox(2.85f, 7.2f, -4.25f, 2.1f, 2.6f, 1.05f, none),
+            PartPose.ZERO);
+        root.addOrReplaceChild("support_radio", CubeListBuilder.create()
+            .texOffs(252, 320).addBox(3.65f, 3.3f, 2.9f, 2.5f, 5.2f, 1.55f, none)
+            .texOffs(300, 320).addBox(5.65f, -1.8f, 3.35f, 0.45f, 5.8f, 0.45f, none),
+            PartPose.ZERO);
+        root.addOrReplaceChild("support_rifle", CubeListBuilder.create()
+            .texOffs(312, 224).addBox(-1.05f, 5.2f, -7.2f, 2.1f, 2.0f, 7.4f, none)
+            .texOffs(332, 224).addBox(-0.55f, 5.75f, -10.2f, 1.1f, 0.9f, 3.2f, none)
+            .texOffs(0, 224).addBox(-2.15f, 6.95f, -5.2f, 4.3f, 0.75f, 1.1f, none)
+            .texOffs(56, 224).addBox(-1.55f, 7.45f, -1.1f, 3.1f, 2.4f, 1.25f, none),
+            PartPose.ZERO);
+    }
+
     @Override
     public void setupAnim(TacRogueNpcEntity entity, float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch) {
         this.head.yRot = netHeadYaw * Mth.DEG_TO_RAD;
         this.head.xRot = headPitch * Mth.DEG_TO_RAD;
         this.rightArm.xRot = -0.08f;
+        this.rightArm.yRot = 0.0f;
         this.rightArm.zRot = 0.04f;
         this.leftArm.xRot = 0.08f;
+        this.leftArm.yRot = 0.0f;
         this.leftArm.zRot = -0.04f;
+        this.rightLeg.xRot = 0.0f;
+        this.rightLeg.yRot = 0.0f;
+        this.rightLeg.zRot = 0.0f;
+        this.leftLeg.xRot = 0.0f;
+        this.leftLeg.yRot = 0.0f;
+        this.leftLeg.zRot = 0.0f;
+
+        float walkAmount = Math.min(limbSwingAmount, 1.0F);
+        float legSwing = Mth.cos(limbSwing * 0.6662F) * 1.05F * walkAmount;
+        float armSwing = Mth.cos(limbSwing * 0.6662F + Mth.PI) * 0.34F * walkAmount;
 
         NpcManager.NpcRole role = entity.getRole();
-        this.commanderParts.setVisible(role == NpcManager.NpcRole.COMMANDER);
-        this.quartermasterParts.setVisible(role == NpcManager.NpcRole.QUARTERMASTER);
-        this.intelParts.setVisible(role == NpcManager.NpcRole.INTEL_OFFICER);
-        this.medicParts.setVisible(role == NpcManager.NpcRole.MEDIC);
+        boolean support = entity.isSupportOperator();
+        this.commanderParts.setVisible(role == NpcManager.NpcRole.COMMANDER && !support);
+        this.quartermasterParts.setVisible(role == NpcManager.NpcRole.QUARTERMASTER && !support);
+        this.intelParts.setVisible(role == NpcManager.NpcRole.INTEL_OFFICER && !support);
+        this.medicParts.setVisible(role == NpcManager.NpcRole.MEDIC && !support);
+        setVisible(this.supportParts, support);
 
-        if (role == NpcManager.NpcRole.QUARTERMASTER) {
+        if (support) {
+            this.rightArm.xRot = -1.24f;
+            this.rightArm.yRot = -0.20f;
+            this.rightArm.zRot = 0.02f;
+            this.leftArm.xRot = -1.16f;
+            this.leftArm.yRot = 0.24f;
+            this.leftArm.zRot = -0.02f;
+            this.rightLeg.xRot = legSwing * 0.72F;
+            this.leftLeg.xRot = -legSwing * 0.72F;
+            this.rightArm.xRot += Mth.sin(limbSwing * 0.6662F) * 0.045F * walkAmount;
+            this.leftArm.xRot -= Mth.sin(limbSwing * 0.6662F) * 0.045F * walkAmount;
+        } else if (role == NpcManager.NpcRole.QUARTERMASTER) {
             this.rightArm.xRot = -0.44f;
             this.leftArm.xRot = -0.44f;
         } else if (role == NpcManager.NpcRole.COMMANDER) {
@@ -398,6 +485,13 @@ public class TacRogueNpcModel extends EntityModel<TacRogueNpcEntity> {
         } else if (role == NpcManager.NpcRole.MEDIC) {
             this.rightArm.xRot = -0.24f;
             this.leftArm.xRot = -0.12f;
+        }
+
+        if (!support) {
+            this.rightLeg.xRot = legSwing;
+            this.leftLeg.xRot = -legSwing;
+            this.rightArm.xRot += armSwing;
+            this.leftArm.xRot -= armSwing;
         }
     }
 

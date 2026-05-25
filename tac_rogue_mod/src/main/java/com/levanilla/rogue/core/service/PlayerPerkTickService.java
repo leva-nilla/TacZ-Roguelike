@@ -19,6 +19,8 @@ public final class PlayerPerkTickService {
     private static final java.util.Map<java.util.UUID, Float> autoloaderCarry = new java.util.HashMap<>();
     private static final java.util.Map<java.util.UUID, CachedPerkSnapshot> perkSnapshots = new java.util.HashMap<>();
     private static final int PERK_SNAPSHOT_RESCAN_TICKS = 20;
+    private static final float PENALTY_SOFTCAP_START_PERCENT = 30.0f;
+    private static final float PENALTY_POST_SOFTCAP_LOG_SCALE = 0.55f;
 
     public static final class PerkSnapshot {
         private static final PerkSnapshot EMPTY = new PerkSnapshot(
@@ -136,24 +138,24 @@ public final class PlayerPerkTickService {
         int primalCount = perks.modifierCount(PerkDefinition.Modifier.PRIMAL);
 
         // === 修飾子トレードオフの適用 ===
-        // CURSED: each cursed perk rolls and stores a deterministic penalty target from its full perk tag.
+        // CURSED: 取得ごとにランダムな基礎ステータスへ -10%。取得上限はないが、挙動は読みやすく線形に保つ。
         vitalityEffect -= perks.cursedPenaltyCount(PerkDefinition.CursedPenaltyTarget.VITALITY) * 10.0f;
         armorEffect -= perks.cursedPenaltyCount(PerkDefinition.CursedPenaltyTarget.ARMOR) * 10.0f;
         velocityEffect -= perks.cursedPenaltyCount(PerkDefinition.CursedPenaltyTarget.VELOCITY) * 10.0f;
         staminaEffect -= perks.cursedPenaltyCount(PerkDefinition.CursedPenaltyTarget.STAMINA) * 10.0f;
-        // FRACTURED: 移動速度 -10% per perk
-        velocityEffect -= fracturedCount * 10.0f;
+        // FRACTURED: 移動速度ペナルティ。取得上限はなく、積みすぎた分は対数ソフトキャップで丸める。
+        velocityEffect -= softcapPenaltyPercent(fracturedCount * 10.0f);
         
         // TITANIC
         int titanicCount = perks.modifierCount(PerkDefinition.Modifier.TITANIC);
         if (titanicCount > 0) {
-            velocityEffect -= titanicCount * 30.0f;
+            velocityEffect -= softcapPenaltyPercent(titanicCount * 30.0f);
             if (player.isSprinting()) player.setSprinting(false);
         }
 
-        // PRIMAL: 最大スタミナ -30% per perk
-        staminaEffect -= primalCount * 30.0f;
-        // OVERCLOCKED: スタミナ最大値 -50% は下のSTAMINAセクションで処理
+        // PRIMAL: 最大スタミナペナルティ。取得上限はなく、積みすぎた分は対数ソフトキャップで丸める。
+        staminaEffect -= softcapPenaltyPercent(primalCount * 30.0f);
+        // OVERCLOCKED: スタミナ最大値ペナルティは下のSTAMINAセクションで処理
         // VOLATILE: 被ダメ +20% はCombatEventHandlerで処理
 
         // VITALITY → MAX_HEALTH (base 20 + effect%)
@@ -176,14 +178,25 @@ public final class PlayerPerkTickService {
             float baseMax = StaminaManager.getBaseMaxStamina(player);
             float bonus = baseMax * (staminaEffect / 100.0f);
             float newMax = baseMax + bonus;
-            // OVERCLOCKED: スタミナ最大値を線形に減少（25%/個、最大50%）
-            float overclockedPenalty = Math.min(0.5f, overclockedCount * 0.25f);
+            // OVERCLOCKED: 取得上限なし。2個目以降も効くが、ペナルティは対数ソフトキャップで鈍化する。
+            float overclockedPenalty = softcapPenaltyPercent(overclockedCount * 25.0f) / 100.0f;
             newMax *= (1.0f - overclockedPenalty);
             StaminaManager.setMaxStamina(player, Math.max(20.0f, newMax)); // 最低20
         }
 
         detectReloadAndApplyQuickFix(player, perks);
         applyAutoloader(player, perks);
+    }
+
+    private static float softcapPenaltyPercent(float rawPercent) {
+        if (rawPercent <= PENALTY_SOFTCAP_START_PERCENT) {
+            return Math.max(0.0f, rawPercent);
+        }
+        float excess = rawPercent - PENALTY_SOFTCAP_START_PERCENT;
+        return PENALTY_SOFTCAP_START_PERCENT
+            + (float)Math.log1p(excess / PENALTY_SOFTCAP_START_PERCENT)
+            * PENALTY_SOFTCAP_START_PERCENT
+            * PENALTY_POST_SOFTCAP_LOG_SCALE;
     }
 
     /**

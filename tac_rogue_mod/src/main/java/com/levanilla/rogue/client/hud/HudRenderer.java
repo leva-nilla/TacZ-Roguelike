@@ -4,6 +4,7 @@ import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.core.StaminaManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
 
@@ -20,6 +21,9 @@ public final class HudRenderer {
     private static int victoryTicks = 0;
     private static float displayedHealthRatio = 1.0f;
     private static boolean displayedHealthInitialized = false;
+    private static String displayedObjectiveKey = "";
+    private static float displayedObjectiveRatio = 0.0f;
+    private static boolean displayedObjectiveInitialized = false;
 
     public static void tickVictory() {
         if (victoryTicks > 0) victoryTicks--;
@@ -40,6 +44,7 @@ public final class HudRenderer {
             lastFloor = 0;
             lastFloorCleared = false;
             displayedHealthInitialized = false;
+            resetObjectiveDisplay();
             return;
         }
 
@@ -90,6 +95,7 @@ public final class HudRenderer {
         HudSettings.Bounds bounds = HudSettings.getBounds(screenWidth, screenHeight);
         drawStatusPanel(graphics, mc, bounds.x, bounds.y, HudSettings.getScale(),
             HudSettings.getStyle(), HudSettings.getOpacity(), data);
+        renderObjective(graphics, mc, player, bounds, screenWidth, screenHeight);
         renderGoldGainToasts(graphics, mc, bounds, HudSettings.getScale(), HudSettings.getStyle(), data);
         renderStaminaWarning(graphics, mc, screenWidth, screenHeight, data);
         renderEnemyDirection(graphics, mc, player, screenWidth, screenHeight);
@@ -317,6 +323,76 @@ public final class HudRenderer {
         if (state.count() > 1) {
             graphics.drawString(mc.font, String.valueOf(Math.min(99, state.count())), x + panelW - 14, y + 17, color, true);
         }
+    }
+
+    private static void renderObjective(GuiGraphics graphics, Minecraft mc, Player player, HudSettings.Bounds bounds,
+                                        int screenWidth, int screenHeight) {
+        if (!RunManager.isRunActive() || RunManager.isFloorCleared()) return;
+        com.levanilla.rogue.core.ClientRunState.ObjectiveState objective =
+            com.levanilla.rogue.core.ClientRunState.getObjectiveState();
+        if (objective == null) {
+            resetObjectiveDisplay();
+            return;
+        }
+
+        int panelW = 166;
+        int panelH = 43;
+        int x = Math.max(4, Math.min(screenWidth - panelW - 4, bounds.x));
+        int y = Math.max(4, bounds.y + Math.round(HudSettings.baseHeight(HudSettings.getStyle()) * HudSettings.getScale()) + 6);
+        int accent = objective.complete() ? 0xFF55DDAA : 0xFFFFD166;
+        graphics.fill(x, y, x + panelW, y + panelH, 0xAA07111F);
+        graphics.renderOutline(x, y, panelW, panelH, 0x66333333);
+        graphics.fill(x, y, x + 2, y + panelH, accent);
+        String title = trim(mc, objectiveTitle(objective).getString(), panelW - 26);
+        graphics.drawString(mc.font, title, x + 6, y + 5, 0xFFE9F0F4, false);
+        String status = trim(mc, objectiveStatus(objective).getString(), panelW - 12);
+        graphics.drawString(mc.font, status, x + 6, y + 17, 0xFFB8C7D0, false);
+        int barW = panelW - 12;
+        float ratio = objectiveDisplayedRatio(objective);
+        graphics.fill(x + 6, y + 32, x + 6 + barW, y + 36, 0x44FFFFFF);
+        graphics.fill(x + 6, y + 32, x + 6 + Math.round(barW * ratio), y + 36, accent);
+        if (!"ELIMINATE".equals(objective.type()) && objective.hasDirection()) {
+            DirectionIndicator indicator = directionIndicator(player, objective.dx(), objective.dz());
+            graphics.drawString(mc.font, indicator.arrow(), x + panelW - 17, y + 5, accent, true);
+        }
+    }
+
+    private static float objectiveDisplayedRatio(com.levanilla.rogue.core.ClientRunState.ObjectiveState objective) {
+        String key = (objective.type() == null ? "" : objective.type()) + ":" + objective.target();
+        float target = objective.ratio();
+        if (!displayedObjectiveInitialized || !key.equals(displayedObjectiveKey)) {
+            displayedObjectiveKey = key;
+            displayedObjectiveRatio = target;
+            displayedObjectiveInitialized = true;
+            return displayedObjectiveRatio;
+        }
+
+        float alpha = objective.complete() ? 0.28f : 0.16f;
+        displayedObjectiveRatio = smooth(displayedObjectiveRatio, target, alpha);
+        if (Math.abs(displayedObjectiveRatio - target) < 0.004f) {
+            displayedObjectiveRatio = target;
+        }
+        return Math.max(0.0f, Math.min(1.0f, displayedObjectiveRatio));
+    }
+
+    private static void resetObjectiveDisplay() {
+        displayedObjectiveKey = "";
+        displayedObjectiveRatio = 0.0f;
+        displayedObjectiveInitialized = false;
+    }
+
+    private static Component objectiveTitle(com.levanilla.rogue.core.ClientRunState.ObjectiveState objective) {
+        String type = objective.type() == null || objective.type().isBlank() ? "ELIMINATE" : objective.type();
+        return Component.translatable("objective.tac_rogue." + type.toLowerCase(java.util.Locale.ROOT) + ".title");
+    }
+
+    private static Component objectiveStatus(com.levanilla.rogue.core.ClientRunState.ObjectiveState objective) {
+        String key = objective.statusKey();
+        if (key != null && !key.isBlank()) {
+            return Component.translatable(key);
+        }
+        String type = objective.type() == null || objective.type().isBlank() ? "ELIMINATE" : objective.type();
+        return Component.translatable("objective.tac_rogue." + type.toLowerCase(java.util.Locale.ROOT) + ".description");
     }
 
     private static DirectionIndicator directionIndicator(Player player, double dx, double dz) {

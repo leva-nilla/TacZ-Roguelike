@@ -147,9 +147,11 @@ public final class GameConstants {
     /** 近接武器拡張の基礎費用 */
     public static final int MELEE_UPGRADE_COST_BASE = 1500;
 
-    /** OVERCLOCKED パークの最大取得数 */
+    /** @deprecated ペナルティ修飾子は取得上限ではなく実効ペナルティのソフトキャップで制御する */
+    @Deprecated
     public static final int MAX_OVERCLOCKED_PERKS = 2;
-    /** CURSED パークの最大取得数 */
+    /** @deprecated ペナルティ修飾子は取得上限ではなく実効ペナルティのソフトキャップで制御する */
+    @Deprecated
     public static final int MAX_CURSED_PERKS = 8;
     /** パークリロールのコスト */
     public static final int PERK_REROLL_COST = 500;

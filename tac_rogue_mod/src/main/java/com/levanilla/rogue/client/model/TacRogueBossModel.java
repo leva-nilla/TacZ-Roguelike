@@ -113,12 +113,27 @@ public class TacRogueBossModel extends EntityModel<TacRogueBossEntity> {
         this.head.yRot = netHeadYaw * Mth.DEG_TO_RAD;
         this.head.xRot = headPitch * Mth.DEG_TO_RAD;
 
-        float swing = Mth.sin(limbSwing * 0.6662F) * 1.1F * limbSwingAmount;
-        this.rightArm.xRot = -0.22f - swing;
-        this.leftArm.xRot = -0.22f + swing;
-        this.rightLeg.xRot = swing * 0.55f;
-        this.leftLeg.xRot = -swing * 0.55f;
-        this.body.yRot = Mth.sin(ageInTicks * 0.035f) * 0.018f;
+        this.rightArm.yRot = 0.0f;
+        this.leftArm.yRot = 0.0f;
+        this.rightArm.zRot = 0.0f;
+        this.leftArm.zRot = 0.0f;
+        this.rightLeg.yRot = 0.0f;
+        this.leftLeg.yRot = 0.0f;
+        this.rightLeg.zRot = 0.0f;
+        this.leftLeg.zRot = 0.0f;
+
+        float walkAmount = Math.min(limbSwingAmount, 1.0F);
+        float legSwing = Mth.cos(limbSwing * 0.62F) * 0.95F * walkAmount;
+        float armSwing = Mth.cos(limbSwing * 0.62F + Mth.PI) * 0.65F * walkAmount;
+        float sway = Mth.sin(limbSwing * 0.62F) * walkAmount;
+        this.rightArm.xRot = -0.22f + armSwing;
+        this.leftArm.xRot = -0.22f - armSwing;
+        this.rightLeg.xRot = legSwing;
+        this.leftLeg.xRot = -legSwing;
+        this.rightArm.zRot = 0.06F + sway * 0.045F;
+        this.leftArm.zRot = -0.06F - sway * 0.045F;
+        this.body.yRot = Mth.sin(ageInTicks * 0.035f) * 0.018f
+            + Mth.sin(limbSwing * 0.3331F) * 0.055F * walkAmount;
 
         TacRogueBossEntity.BossRole role = entity.getRole();
         this.commandAntenna.visible = role == TacRogueBossEntity.BossRole.COMMANDER;

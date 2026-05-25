@@ -31,7 +31,9 @@ public abstract class MixinLrTacticalMeleeItem {
                 && player.level().dimension() != CommonEventHandler.LOBBY_DIM) {
             return originalTicks;
         }
-        float mult = WeaponRarity.getFireRateMult(stack);
+        float mult = player == null
+            ? WeaponRarity.getFireRateMult(stack)
+            : WeaponRarity.getEffectiveMeleeFireRateMult(stack, player);
         if (mult <= 1.005f) return originalTicks;
         return Math.max(1, Math.min(originalTicks, Math.round(originalTicks / mult)));
     }

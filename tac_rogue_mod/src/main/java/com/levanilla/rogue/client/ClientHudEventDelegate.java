@@ -63,6 +63,7 @@ final class ClientHudEventDelegate {
             renderBackgroundLoadIndicator(graphics, mc, width);
             renderThirdPersonCrosshair(graphics, mc, player, width, height);
             renderStealthTakedownHint(graphics, mc, player, width, height);
+            renderObjectiveInteractHint(graphics, mc, width, height);
             DebugAiOverlayManager.render(graphics, mc, width, height);
         }
     }
@@ -238,6 +239,20 @@ final class ClientHudEventDelegate {
         graphics.fill(x - gap, y + gap - len + 1, x - gap + 1, y + gap, inner);
         graphics.fill(x + gap, y + gap, x + gap + len - 1, y + gap + 1, inner);
         graphics.fill(x + gap, y + gap - len + 1, x + gap + 1, y + gap, inner);
+    }
+
+    private static void renderObjectiveInteractHint(GuiGraphics graphics, Minecraft mc, int width, int height) {
+        if (mc.player == null || mc.player.isSpectator()) return;
+        if (!ClientInputEventDelegate.hasObjectiveInteractTarget(mc)) return;
+
+        String key = ClientInputEventDelegate.getTacZInteractKeyName(mc);
+        Component text = Component.translatable("hud.tac_rogue.objective_interact", key);
+        int textWidth = mc.font.width(text);
+        int x = width / 2 - textWidth / 2;
+        int y = height / 2 + 24;
+        graphics.fill(x - 6, y - 4, x + textWidth + 6, y + 11, 0xB0061018);
+        graphics.fill(x - 6, y - 4, x - 4, y + 11, 0xDD55DDAA);
+        graphics.drawString(mc.font, text, x, y, 0xFFE7E1D5, true);
     }
 
     private record ScreenPoint(int x, int y) {}

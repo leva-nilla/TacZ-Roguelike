@@ -1,5 +1,6 @@
 package com.levanilla.rogue.world.generation;
 
+import com.levanilla.rogue.core.service.FloorObjectiveService;
 import com.levanilla.rogue.world.generation.plan.CorridorVariant;
 import com.levanilla.rogue.world.generation.plan.DungeonCorridor;
 import com.levanilla.rogue.world.generation.plan.DungeonPlan;
@@ -49,7 +50,7 @@ public final class DungeonPlanGenerator {
         for (int reroll = 0; reroll < MAX_REROLLS; reroll++) {
             Random rand = new Random(context.rerollSeed(reroll));
             MacroArchetype archetype = bossFloor ? MacroArchetype.BOSS_RING : pickArchetype(rand, context.floor(), style);
-            DungeonPlan plan = buildPlan(context, archetype, rand, bossFloor);
+            DungeonPlan plan = buildPlan(context, archetype, rand, bossFloor, style);
             DungeonPlanValidator.ValidationResult result = DungeonPlanValidator.validate(plan, bossFloor);
             if (result.valid() && rememberIfFresh(context, plan)) {
                 return plan;
@@ -113,8 +114,8 @@ public final class DungeonPlanGenerator {
     }
 
     private static DungeonPlan buildPlan(FloorGenerationContext context, MacroArchetype archetype,
-                                         Random rand, boolean bossFloor) {
-        PlanBuilder builder = new PlanBuilder(context, archetype, rand);
+                                         Random rand, boolean bossFloor, ThemeManager.ThemeGenerationStyle style) {
+        PlanBuilder builder = new PlanBuilder(context, archetype, rand, style);
         switch (archetype) {
             case BOSS_RING -> buildBossRing(builder);
             case HUB_AND_SPOKES -> buildHubAndSpokes(builder);
@@ -277,7 +278,8 @@ public final class DungeonPlanGenerator {
 
     private static DungeonPlan fallbackPlan(FloorGenerationContext context, boolean bossFloor) {
         Random rand = new Random(context.layoutSeed() ^ 0x51ED5EEDL);
-        PlanBuilder builder = new PlanBuilder(context, bossFloor ? MacroArchetype.BOSS_RING : MacroArchetype.LINEAR_BRANCHING, rand);
+        PlanBuilder builder = new PlanBuilder(context, bossFloor ? MacroArchetype.BOSS_RING : MacroArchetype.LINEAR_BRANCHING,
+            rand, ThemeManager.ThemeGenerationStyle.DEFAULT);
         if (bossFloor) {
             buildBossRing(builder);
             return builder.toPlan(1);
@@ -306,13 +308,18 @@ public final class DungeonPlanGenerator {
         private final FloorGenerationContext context;
         private final MacroArchetype archetype;
         private final Random rand;
+        private final FloorObjectiveService.ObjectiveType objectiveType;
+        private final ThemeManager.ThemeGenerationStyle style;
         private final List<DungeonRoom> rooms = new ArrayList<>();
         private final List<DungeonCorridor> corridors = new ArrayList<>();
 
-        private PlanBuilder(FloorGenerationContext context, MacroArchetype archetype, Random rand) {
+        private PlanBuilder(FloorGenerationContext context, MacroArchetype archetype, Random rand,
+                            ThemeManager.ThemeGenerationStyle style) {
             this.context = context;
             this.archetype = archetype;
             this.rand = rand;
+            this.objectiveType = FloorObjectiveService.ObjectiveType.parse(context.objectiveType());
+            this.style = style == null ? ThemeManager.ThemeGenerationStyle.DEFAULT : style;
         }
 
         private int addFixed(int x, int z, int width, int depth, RoomRole role) {
@@ -353,15 +360,52 @@ public final class DungeonPlanGenerator {
         }
 
         private RoomRole roleFor(int index) {
-            return switch (Math.floorMod(index + rand.nextInt(3), 7)) {
-                case 0 -> RoomRole.COMBAT_SMALL;
-                case 1 -> RoomRole.COMBAT_LONG;
-                case 2 -> RoomRole.COVER_DENSE;
-                case 3 -> RoomRole.SUPPLY_RISK;
-                case 4 -> RoomRole.SIDE_REWARD;
-                case 5 -> RoomRole.AMBUSH;
-                default -> RoomRole.ELITE;
-            };
+            List<RoomRole> bag = new ArrayList<>();
+            add(bag, RoomRole.COMBAT_SMALL, 3);
+            add(bag, RoomRole.COMBAT_LONG, style == ThemeManager.ThemeGenerationStyle.ROOFTOP_OPEN
+                || style == ThemeManager.ThemeGenerationStyle.RADAR_OPEN
+                || style == ThemeManager.ThemeGenerationStyle.PIPELINE
+                || style == ThemeManager.ThemeGenerationStyle.SUBWAY ? 4 : 2);
+            add(bag, RoomRole.COVER_DENSE, 3);
+            add(bag, RoomRole.SUPPLY_RISK, 2);
+            add(bag, RoomRole.SIDE_REWARD, 2);
+            add(bag, RoomRole.AMBUSH, style == ThemeManager.ThemeGenerationStyle.ORGANIC_CAVE
+                || style == ThemeManager.ThemeGenerationStyle.VOID_ALIEN ? 3 : 2);
+            add(bag, RoomRole.ELITE, index > 3 ? 1 : 0);
+
+            switch (style) {
+                case ORGANIC_CAVE, VOID_ALIEN -> {
+                    add(bag, RoomRole.DARK_ROOM, 4);
+                    add(bag, RoomRole.STEALTH_ROUTE, 3);
+                }
+                case LAB_COMPLEX -> {
+                    add(bag, RoomRole.OBJECTIVE_TERMINAL, 3);
+                    add(bag, RoomRole.DEFENSE_POINT, 2);
+                    add(bag, RoomRole.DARK_ROOM, 1);
+                }
+                case ROOFTOP_OPEN, RADAR_OPEN, MILITARY_COMPOUND -> {
+                    add(bag, RoomRole.ELITE_ARENA, 2);
+                    add(bag, RoomRole.DEFENSE_POINT, 2);
+                }
+                case SUBWAY, PIPELINE, SEWER -> {
+                    add(bag, RoomRole.STEALTH_ROUTE, 2);
+                    add(bag, RoomRole.LOCKED_REWARD, 2);
+                }
+                case TEMPLE_AXIS -> {
+                    add(bag, RoomRole.OBJECTIVE_TERMINAL, 2);
+                    add(bag, RoomRole.LOCKED_REWARD, 2);
+                    add(bag, RoomRole.ELITE_ARENA, 1);
+                }
+                default -> {
+                    add(bag, RoomRole.DARK_ROOM, 1);
+                    add(bag, RoomRole.STEALTH_ROUTE, 1);
+                }
+            }
+            return bag.get(Math.floorMod(index + rand.nextInt(Math.max(1, bag.size())), bag.size()));
+        }
+
+        private static void add(List<RoomRole> bag, RoomRole role, int count) {
+            for (int i = 0; i < count; i++) bag.add(role);
         }
 
         private CorridorVariant variant(int index) {
@@ -438,8 +482,49 @@ public final class DungeonPlanGenerator {
         }
 
         private DungeonPlan toPlan(int spawnRoomId) {
+            ensureObjectiveRoom(spawnRoomId);
             long hash = computeHash();
             return new DungeonPlan(context, archetype, hash, spawnRoomId, rooms, corridors);
+        }
+
+        private void ensureObjectiveRoom(int spawnRoomId) {
+            RoomRole required = requiredObjectiveRole();
+            if (required == null || rooms.size() <= 1) return;
+            for (DungeonRoom room : rooms) {
+                if (room.role() == required) return;
+            }
+            int bestIndex = -1;
+            int bestDist = Integer.MIN_VALUE;
+            DungeonRoom spawn = room(spawnRoomId);
+            for (int i = 0; i < rooms.size(); i++) {
+                DungeonRoom candidate = rooms.get(i);
+                if (candidate.id() == spawnRoomId || candidate.role() == RoomRole.START
+                    || candidate.role() == RoomRole.BOSS_ENTRY || candidate.role() == RoomRole.BOSS_ARENA) {
+                    continue;
+                }
+                int dx = candidate.centerX() - spawn.centerX();
+                int dz = candidate.centerZ() - spawn.centerZ();
+                int dist = dx * dx + dz * dz;
+                if (dist > bestDist) {
+                    bestDist = dist;
+                    bestIndex = i;
+                }
+            }
+            if (bestIndex >= 0) {
+                DungeonRoom old = rooms.get(bestIndex);
+                rooms.set(bestIndex, new DungeonRoom(old.id(), old.x(), old.z(), old.width(), old.depth(), required));
+            }
+        }
+
+        private RoomRole requiredObjectiveRole() {
+            return switch (objectiveType) {
+                case ELIMINATE -> null;
+                case SECURE_TERMINAL -> RoomRole.OBJECTIVE_TERMINAL;
+                case HOLD_POSITION -> RoomRole.DEFENSE_POINT;
+                case RECOVER_CACHE -> RoomRole.LOCKED_REWARD;
+                case HUNT_ELITE -> RoomRole.ELITE_ARENA;
+                case ESCAPE_ROUTE -> RoomRole.STEALTH_ROUTE;
+            };
         }
 
         private long computeHash() {
