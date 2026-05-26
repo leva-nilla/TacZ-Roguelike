@@ -24,6 +24,8 @@ public final class HudRenderer {
     private static String displayedObjectiveKey = "";
     private static float displayedObjectiveRatio = 0.0f;
     private static boolean displayedObjectiveInitialized = false;
+    private static final StatusTextCache statusTextCache = new StatusTextCache();
+    private static final ObjectiveTextCache objectiveTextCache = new ObjectiveTextCache();
 
     public static void tickVictory() {
         if (victoryTicks > 0) victoryTicks--;
@@ -142,46 +144,42 @@ public final class HudRenderer {
 
     private static void renderTactical(GuiGraphics graphics, Minecraft mc, int panelW, int panelH,
                                        int bg, int bgSoft, int accent, StatusData data) {
+        StatusText text = statusTextCache.get(mc, HudSettings.HudStyle.TACTICAL, panelW, data);
         graphics.fill(0, 0, panelW, panelH, bg);
         graphics.fill(0, 0, 2, panelH, accent);
         graphics.fill(2, 0, panelW, 1, argb(0.65f, accent & 0xFFFFFF));
         graphics.renderOutline(0, 0, panelW, panelH, argb(0.40f, accent & 0xFFFFFF));
 
-        String floorText = "FLOOR " + String.format("%02d", data.floor);
-        if (data.isBoss) floorText += " [EXTREME]";
-        graphics.drawString(mc.font, trim(mc, floorText, panelW - 16), 8, 6, data.isBoss ? 0xFFFF7777 : 0xFFFFFFFF, false);
-        graphics.drawString(mc.font, trim(mc, data.theme, panelW - 16), 8, 17, 0xFF8C99A6, false);
+        graphics.drawString(mc.font, text.primary, 8, 6, data.isBoss ? 0xFFFF7777 : 0xFFFFFFFF, false);
+        graphics.drawString(mc.font, text.theme, 8, 17, 0xFF8C99A6, false);
 
         renderBar(graphics, 8, 32, panelW - 16, 9, data.healthRatio, healthColor(data.healthTextRatio), "HP " + percent(data.healthTextRatio));
         renderBar(graphics, 8, 46, panelW - 16, 4, data.staminaRatio, staminaColor(data), "");
-        String economy = "$" + data.gold + "  AR " + data.armor + (data.deepCore > 0 ? "  DC " + data.deepCore : "");
-        graphics.drawString(mc.font, trim(mc, economy, panelW - 16), 8, 55, 0xFFFFD166, false);
+        graphics.drawString(mc.font, text.economy, 8, 55, 0xFFFFD166, false);
     }
 
     private static void renderCompact(GuiGraphics graphics, Minecraft mc, int panelW, int panelH,
                                       int bg, int bgSoft, int accent, StatusData data) {
+        StatusText text = statusTextCache.get(mc, HudSettings.HudStyle.COMPACT, panelW, data);
         graphics.fill(0, 0, panelW, panelH, bg);
         graphics.fill(0, 0, panelW, 2, accent);
         graphics.renderOutline(0, 0, panelW, panelH, argb(0.35f, accent & 0xFFFFFF));
 
-        String top = "F" + String.format("%02d", data.floor) + "  $" + data.gold + "  A" + data.armor
-            + (data.deepCore > 0 ? " D" + data.deepCore : "");
-        graphics.drawString(mc.font, trim(mc, top, panelW - 10), 5, 6, data.isBoss ? 0xFFFF7777 : 0xFFFFF2C6, false);
-        graphics.drawString(mc.font, trim(mc, data.theme, panelW - 10), 5, 16, 0xFF8896A2, false);
+        graphics.drawString(mc.font, text.primary, 5, 6, data.isBoss ? 0xFFFF7777 : 0xFFFFF2C6, false);
+        graphics.drawString(mc.font, text.theme, 5, 16, 0xFF8896A2, false);
         renderBar(graphics, 5, 29, panelW - 10, 7, data.healthRatio, healthColor(data.healthTextRatio), percent(data.healthTextRatio));
         renderBar(graphics, 5, 40, panelW - 10, 3, data.staminaRatio, staminaColor(data), "");
     }
 
     private static void renderMinimal(GuiGraphics graphics, Minecraft mc, int panelW, int panelH,
                                       int bg, int accent, StatusData data) {
+        StatusText text = statusTextCache.get(mc, HudSettings.HudStyle.MINIMAL, panelW, data);
         graphics.fill(0, 0, panelW, panelH, bg);
         graphics.fill(0, 0, 2, panelH, accent);
-        String top = "F" + String.format("%02d", data.floor) + "  " + data.theme;
-        graphics.drawString(mc.font, trim(mc, top, panelW - 10), 6, 5, 0xFFE9F0F4, false);
+        graphics.drawString(mc.font, text.primary, 6, 5, 0xFFE9F0F4, false);
         renderBar(graphics, 6, 18, panelW - 12, 6, data.healthRatio, healthColor(data.healthTextRatio), percent(data.healthTextRatio));
         renderBar(graphics, 6, 29, panelW - 12, 3, data.staminaRatio, staminaColor(data), "");
-        String economy = "$" + data.gold + "  AR " + data.armor + (data.deepCore > 0 ? "  DC " + data.deepCore : "");
-        graphics.drawString(mc.font, trim(mc, economy, panelW - 12), 6, 34, 0xFFFFD166, false);
+        graphics.drawString(mc.font, text.economy, 6, 34, 0xFFFFD166, false);
     }
 
     private static void renderBar(GuiGraphics graphics, int x, int y, int width, int height,
@@ -343,10 +341,9 @@ public final class HudRenderer {
         graphics.fill(x, y, x + panelW, y + panelH, 0xAA07111F);
         graphics.renderOutline(x, y, panelW, panelH, 0x66333333);
         graphics.fill(x, y, x + 2, y + panelH, accent);
-        String title = trim(mc, objectiveTitle(objective).getString(), panelW - 26);
-        graphics.drawString(mc.font, title, x + 6, y + 5, 0xFFE9F0F4, false);
-        String status = trim(mc, objectiveStatus(objective).getString(), panelW - 12);
-        graphics.drawString(mc.font, status, x + 6, y + 17, 0xFFB8C7D0, false);
+        ObjectiveText text = objectiveTextCache.get(mc, objective, panelW);
+        graphics.drawString(mc.font, text.title, x + 6, y + 5, 0xFFE9F0F4, false);
+        graphics.drawString(mc.font, text.status, x + 6, y + 17, 0xFFB8C7D0, false);
         int barW = panelW - 12;
         float ratio = objectiveDisplayedRatio(objective);
         graphics.fill(x + 6, y + 32, x + 6 + barW, y + 36, 0x44FFFFFF);
@@ -449,6 +446,82 @@ public final class HudRenderer {
     private record GoldAnchor(int x, int y) {}
 
     private record DirectionIndicator(String arrow, String label) {}
+
+    private record StatusText(String primary, String theme, String economy) {}
+
+    private static final class StatusTextCache {
+        private HudSettings.HudStyle style;
+        private int panelW = -1;
+        private int floor = Integer.MIN_VALUE;
+        private String theme = "";
+        private boolean boss;
+        private int gold = Integer.MIN_VALUE;
+        private int armor = Integer.MIN_VALUE;
+        private int deepCore = Integer.MIN_VALUE;
+        private StatusText value = new StatusText("", "", "");
+
+        StatusText get(Minecraft mc, HudSettings.HudStyle style, int panelW, StatusData data) {
+            if (this.style == style && this.panelW == panelW && this.floor == data.floor
+                && this.boss == data.isBoss && this.gold == data.gold && this.armor == data.armor
+                && this.deepCore == data.deepCore && java.util.Objects.equals(this.theme, data.theme)) {
+                return value;
+            }
+            this.style = style;
+            this.panelW = panelW;
+            this.floor = data.floor;
+            this.theme = data.theme;
+            this.boss = data.isBoss;
+            this.gold = data.gold;
+            this.armor = data.armor;
+            this.deepCore = data.deepCore;
+
+            String floor2 = twoDigit(data.floor);
+            String economy = "$" + data.gold + "  AR " + data.armor + (data.deepCore > 0 ? "  DC " + data.deepCore : "");
+            value = switch (style) {
+                case TACTICAL -> new StatusText(
+                    trim(mc, "FLOOR " + floor2 + (data.isBoss ? " [EXTREME]" : ""), panelW - 16),
+                    trim(mc, data.theme, panelW - 16),
+                    trim(mc, economy, panelW - 16));
+                case COMPACT -> new StatusText(
+                    trim(mc, "F" + floor2 + "  $" + data.gold + "  A" + data.armor
+                        + (data.deepCore > 0 ? " D" + data.deepCore : ""), panelW - 10),
+                    trim(mc, data.theme, panelW - 10),
+                    "");
+                case MINIMAL -> new StatusText(
+                    trim(mc, "F" + floor2 + "  " + data.theme, panelW - 10),
+                    "",
+                    trim(mc, economy, panelW - 12));
+            };
+            return value;
+        }
+    }
+
+    private record ObjectiveText(String title, String status) {}
+
+    private static final class ObjectiveTextCache {
+        private String key = "";
+        private int panelW = -1;
+        private ObjectiveText value = new ObjectiveText("", "");
+
+        ObjectiveText get(Minecraft mc, com.levanilla.rogue.core.ClientRunState.ObjectiveState objective, int panelW) {
+            String nextKey = (objective.type() == null ? "" : objective.type()) + "|"
+                + (objective.statusKey() == null ? "" : objective.statusKey());
+            if (this.panelW == panelW && this.key.equals(nextKey)) {
+                return value;
+            }
+            this.panelW = panelW;
+            this.key = nextKey;
+            value = new ObjectiveText(
+                trim(mc, objectiveTitle(objective).getString(), panelW - 26),
+                trim(mc, objectiveStatus(objective).getString(), panelW - 12));
+            return value;
+        }
+    }
+
+    private static String twoDigit(int value) {
+        if (value >= 0 && value < 10) return "0" + value;
+        return Integer.toString(value);
+    }
 
     private static final class GoldGainToast {
         private static final long LIFETIME_MS = 1500L;

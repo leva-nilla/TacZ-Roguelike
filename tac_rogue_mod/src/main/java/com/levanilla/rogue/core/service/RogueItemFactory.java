@@ -5,6 +5,7 @@ import com.levanilla.rogue.core.TacZRegistryHelper;
 import com.levanilla.rogue.core.WeaponRarity;
 import com.levanilla.rogue.core.registry.LrTacticalRegistry;
 import com.levanilla.rogue.core.registry.ShopCatalog;
+import com.levanilla.rogue.core.registry.TacZGunRegistry;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.StringTag;
@@ -110,6 +111,9 @@ public final class RogueItemFactory {
     }
 
     public static ItemStack createAttachmentStack(String fullId) {
+        if (!TacZGunRegistry.isStandaloneAttachmentId(fullId)) {
+            return ItemStack.EMPTY;
+        }
         net.minecraft.world.item.Item item = ForgeRegistries.ITEMS.getValue(
             new ResourceLocation("tacz", "attachment"));
         if (item != null) {

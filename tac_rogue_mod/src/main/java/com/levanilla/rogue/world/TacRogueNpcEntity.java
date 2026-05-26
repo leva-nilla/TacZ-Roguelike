@@ -1,16 +1,18 @@
 package com.levanilla.rogue.world;
 
-import com.tacz.guns.init.ModSounds;
+import com.tacz.guns.api.entity.IGunOperator;
+import com.tacz.guns.api.entity.ShootResult;
+import com.tacz.guns.api.item.IGun;
 import com.levanilla.rogue.core.service.FloorInstanceManager;
+import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
-import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.sounds.SoundEvents;
-import net.minecraft.sounds.SoundSource;
+import net.minecraft.util.Mth;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Mob;
@@ -19,8 +21,12 @@ import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.pathfinder.Path;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 public class TacRogueNpcEntity extends PathfinderMob {
@@ -34,16 +40,27 @@ public class TacRogueNpcEntity extends PathfinderMob {
     private static final double EXTRACTION_FOLLOW_START_DISTANCE_SQR = 4.5D * 4.5D;
     private static final double EXTRACTION_FOLLOW_STOP_DISTANCE_SQR = 2.5D * 2.5D;
     private static final double EXTRACTION_FOLLOW_SPEED = 1.05D;
-    private static final double SUPPORT_SEARCH_RADIUS = 46.0D;
+    private static final double SUPPORT_SEARCH_RADIUS = 34.0D;
     private static final double SUPPORT_SHOOT_RADIUS_SQR = 34.0D * 34.0D;
+    private static final double SUPPORT_AIM_RADIUS_SQR = 26.0D * 26.0D;
     private static final double SUPPORT_APPROACH_DISTANCE_SQR = 13.0D * 13.0D;
     private static final double SUPPORT_STOP_DISTANCE_SQR = 7.0D * 7.0D;
     private static final double SUPPORT_MOVE_SPEED = 1.16D;
-    private static final float SUPPORT_SHOT_DAMAGE = 8.5F;
-    private static final int SUPPORT_MIN_SHOOT_COOLDOWN = 7;
-    private static final int SUPPORT_RANDOM_SHOOT_COOLDOWN = 6;
+    private static final int SUPPORT_MIN_SHOOT_COOLDOWN = 4;
+    private static final int SUPPORT_RANDOM_SHOOT_COOLDOWN = 4;
+    private static final int SUPPORT_AIM_SETTLE_TICKS = 4;
+    private static final int SUPPORT_TACTICAL_STEP_MIN_TICKS = 26;
+    private static final int SUPPORT_TACTICAL_STEP_RANDOM_TICKS = 18;
+    private static final double SUPPORT_TACTICAL_STEP_DISTANCE = 2.35D;
+    private static final double SUPPORT_TOO_CLOSE_DISTANCE_SQR = 4.6D * 4.6D;
 
     private int supportShootCooldown = 8;
+    private int supportTargetRefreshTicks = 0;
+    private int supportGunOperatorRefreshTicks = 0;
+    private int supportAimReadyTicks = 0;
+    private int supportTacticalStepTicks = 10;
+    private String supportPreparedGunKey = "";
+    private Mob supportTarget;
 
     public TacRogueNpcEntity(EntityType<? extends PathfinderMob> type, Level level) {
         super(type, level);
@@ -105,6 +122,23 @@ public class TacRogueNpcEntity extends PathfinderMob {
         if (movement != null && movement.getBaseValue() < 0.24D) {
             movement.setBaseValue(0.24D);
         }
+    }
+
+    public void prepareSupportGunOperator() {
+        if (this.level().isClientSide || !isSupportOperator()) return;
+        ItemStack held = this.getMainHandItem();
+        IGun gun = IGun.getIGunOrNull(held);
+        if (gun == null) {
+            supportPreparedGunKey = "";
+            return;
+        }
+        IGunOperator operator = IGunOperator.fromLivingEntity(this);
+        String key = supportGunKey(held, gun);
+        if (operator.getDataHolder().currentGunItem == null || operator.getCacheProperty() == null || !key.equals(supportPreparedGunKey)) {
+            operator.draw(this::getMainHandItem);
+            supportPreparedGunKey = key;
+        }
+        operator.aim(true);
     }
 
     public boolean isSupportOperator() {
@@ -212,6 +246,10 @@ public class TacRogueNpcEntity extends PathfinderMob {
     public void tick() {
         super.tick();
         if (!level().isClientSide && getPersistentData().getBoolean(SUPPORT_OPERATOR_KEY)) {
+            if (supportGunOperatorRefreshTicks-- <= 0) {
+                prepareSupportGunOperator();
+                supportGunOperatorRefreshTicks = 20;
+            }
             long expiresAt = getPersistentData().getLong(SUPPORT_EXPIRES_AT_KEY);
             long now = level().getServer() != null ? level().getServer().getTickCount() : tickCount;
             if (expiresAt > 0L && now >= expiresAt) {
@@ -305,7 +343,7 @@ public class TacRogueNpcEntity extends PathfinderMob {
             movement.setBaseValue(0.24D);
         }
 
-        Mob target = findSupportTarget(serverLevel);
+        Mob target = getSupportCombatTarget(serverLevel);
         if (target == null) {
             if (tickCount % 20 == 0) {
                 this.getNavigation().stop();
@@ -313,22 +351,58 @@ public class TacRogueNpcEntity extends PathfinderMob {
             return;
         }
 
-        this.getLookControl().setLookAt(target, 55.0F, 45.0F);
         double distanceSqr = this.distanceToSqr(target);
-        boolean hasLos = this.hasLineOfSight(target);
-        if (distanceSqr > SUPPORT_APPROACH_DISTANCE_SQR || (!hasLos && distanceSqr > SUPPORT_STOP_DISTANCE_SQR)) {
+        boolean hasLos = hasSupportLineOfFire(target);
+        if (!hasLos) {
+            supportAimReadyTicks = 0;
+            if (!hasSupportPathTo(target)) {
+                supportTarget = null;
+                supportTargetRefreshTicks = 0;
+                this.getNavigation().stop();
+                return;
+            }
+            if (tickCount % 6 == 0 || this.getNavigation().isDone()) {
+                this.getNavigation().moveTo(target, SUPPORT_MOVE_SPEED);
+            }
+            return;
+        }
+        this.getLookControl().setLookAt(target, 55.0F, 45.0F);
+        if (distanceSqr > SUPPORT_APPROACH_DISTANCE_SQR) {
             this.getNavigation().moveTo(target, SUPPORT_MOVE_SPEED);
         } else if (distanceSqr <= SUPPORT_STOP_DISTANCE_SQR) {
             this.getNavigation().stop();
         }
+        tickSupportTacticalMovement(target, distanceSqr);
 
         if (supportShootCooldown > 0) {
             supportShootCooldown--;
         }
-        if (supportShootCooldown <= 0 && hasLos && distanceSqr <= SUPPORT_SHOOT_RADIUS_SQR) {
-            fireSupportBurst(serverLevel, target);
-            supportShootCooldown = SUPPORT_MIN_SHOOT_COOLDOWN + this.getRandom().nextInt(SUPPORT_RANDOM_SHOOT_COOLDOWN);
+        if (hasLos && distanceSqr <= SUPPORT_AIM_RADIUS_SQR) {
+            supportAimReadyTicks++;
+        } else {
+            supportAimReadyTicks = 0;
         }
+
+        if (supportShootCooldown <= 0
+            && hasLos
+            && distanceSqr <= SUPPORT_AIM_RADIUS_SQR
+            && supportAimReadyTicks >= SUPPORT_AIM_SETTLE_TICKS
+            && IGunOperator.fromLivingEntity(this).getSynAimingProgress() >= 1.0F) {
+            ShootResult result = fireSupportTacZShot(target);
+            supportShootCooldown = result == ShootResult.SUCCESS
+                ? SUPPORT_MIN_SHOOT_COOLDOWN + this.getRandom().nextInt(SUPPORT_RANDOM_SHOOT_COOLDOWN)
+                : 2 + this.getRandom().nextInt(3);
+        }
+    }
+
+    private Mob getSupportCombatTarget(ServerLevel level) {
+        if (supportTargetRefreshTicks > 0 && isTrackableSupportTarget(supportTarget)) {
+            supportTargetRefreshTicks--;
+            return supportTarget;
+        }
+        supportTargetRefreshTicks = 8 + this.getRandom().nextInt(5);
+        supportTarget = findSupportTarget(level);
+        return supportTarget;
     }
 
     private Mob findSupportTarget(ServerLevel level) {
@@ -339,9 +413,15 @@ public class TacRogueNpcEntity extends PathfinderMob {
         Mob bestMob = null;
         double bestScore = Double.MAX_VALUE;
         for (Mob mob : mobs) {
+            boolean hasLos = hasSupportLineOfFire(mob);
+            if (!hasLos && !hasSupportPathTo(mob)) continue;
             double distance = this.distanceToSqr(mob);
             double score = distance;
-            if (this.hasLineOfSight(mob)) score *= 0.55D;
+            if (hasLos) {
+                score *= 0.42D;
+            } else {
+                score *= 1.25D;
+            }
             if (mob.getTarget() instanceof ServerPlayer) score *= 0.7D;
             if (score < bestScore) {
                 bestScore = score;
@@ -349,6 +429,85 @@ public class TacRogueNpcEntity extends PathfinderMob {
             }
         }
         return bestMob;
+    }
+
+    private boolean isTrackableSupportTarget(Mob mob) {
+        return mob != null
+            && isSupportTarget(mob)
+            && this.distanceToSqr(mob) <= SUPPORT_SEARCH_RADIUS * SUPPORT_SEARCH_RADIUS
+            && (hasSupportLineOfFire(mob) || hasSupportPathTo(mob));
+    }
+
+    private boolean hasSupportLineOfFire(Mob target) {
+        if (target == null || !target.isAlive() || target.isRemoved()) return false;
+        if (!this.hasLineOfSight(target)) return false;
+        Vec3 start = this.position().add(0.0D, this.getBbHeight() * 0.78D, 0.0D);
+        Vec3 end = target.position().add(0.0D, target.getBbHeight() * 0.62D, 0.0D);
+        HitResult hit = level().clip(new ClipContext(start, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, this));
+        return hit.getType() == HitResult.Type.MISS || hit.getLocation().distanceToSqr(end) <= 0.85D;
+    }
+
+    private boolean hasSupportPathTo(Mob target) {
+        if (target == null || !target.isAlive() || target.isRemoved()) return false;
+        Path path = this.getNavigation().createPath(target.blockPosition(), 1);
+        return path != null && path.canReach();
+    }
+
+    private void tickSupportTacticalMovement(Mob target, double distanceSqr) {
+        if (target == null || !target.isAlive()) return;
+        if (distanceSqr > SUPPORT_AIM_RADIUS_SQR) return;
+        if (supportTacticalStepTicks > 0) {
+            supportTacticalStepTicks--;
+            return;
+        }
+        supportTacticalStepTicks = SUPPORT_TACTICAL_STEP_MIN_TICKS + this.getRandom().nextInt(SUPPORT_TACTICAL_STEP_RANDOM_TICKS);
+        Vec3 step = findSupportTacticalStep(target, distanceSqr);
+        if (step != null) {
+            this.getNavigation().moveTo(step.x, step.y, step.z, SUPPORT_MOVE_SPEED * 0.84D);
+        }
+    }
+
+    private Vec3 findSupportTacticalStep(Mob target, double distanceSqr) {
+        Vec3 toTarget = target.position().subtract(this.position());
+        Vec3 flat = new Vec3(toTarget.x, 0.0D, toTarget.z);
+        if (flat.lengthSqr() < 0.001D) return null;
+        Vec3 forward = flat.normalize();
+        Vec3 side = new Vec3(-forward.z, 0.0D, forward.x);
+        if (((this.getId() + this.tickCount / 40) & 1) == 0) {
+            side = side.scale(-1.0D);
+        }
+        Vec3 away = forward.scale(-1.0D);
+        Vec3[] offsets = distanceSqr <= SUPPORT_TOO_CLOSE_DISTANCE_SQR
+            ? new Vec3[] {
+                away.scale(2.0D).add(side.scale(1.35D)),
+                away.scale(2.0D).add(side.scale(-1.35D)),
+                away.scale(2.8D)
+            }
+            : new Vec3[] {
+                side.scale(SUPPORT_TACTICAL_STEP_DISTANCE),
+                side.scale(-SUPPORT_TACTICAL_STEP_DISTANCE),
+                side.scale(SUPPORT_TACTICAL_STEP_DISTANCE * 0.65D).add(forward.scale(1.15D)),
+                side.scale(-SUPPORT_TACTICAL_STEP_DISTANCE * 0.65D).add(forward.scale(1.15D))
+            };
+        for (Vec3 offset : offsets) {
+            Vec3 candidate = this.position().add(offset);
+            BlockPos pos = BlockPos.containing(candidate);
+            if (!isSupportStandable(pos)) continue;
+            Path path = this.getNavigation().createPath(pos, 0);
+            if (path != null && path.canReach()) {
+                return Vec3.atBottomCenterOf(pos);
+            }
+        }
+        return null;
+    }
+
+    private boolean isSupportStandable(BlockPos pos) {
+        if (pos == null) return false;
+        if (!this.level().getBlockState(pos).getCollisionShape(this.level(), pos).isEmpty()) return false;
+        BlockPos head = pos.above();
+        if (!this.level().getBlockState(head).getCollisionShape(this.level(), head).isEmpty()) return false;
+        BlockPos floor = pos.below();
+        return !this.level().getBlockState(floor).getCollisionShape(this.level(), floor).isEmpty();
     }
 
     private boolean isSupportTarget(Mob mob) {
@@ -360,38 +519,57 @@ public class TacRogueNpcEntity extends PathfinderMob {
         return ownInstance.equals(mob.getPersistentData().getString(FloorInstanceManager.INSTANCE_ID_KEY));
     }
 
-    private void fireSupportBurst(ServerLevel level, Mob target) {
-        Vec3 start = this.position().add(0.0D, this.getBbHeight() * 0.78D, 0.0D)
-            .add(this.getLookAngle().scale(0.38D));
-        Vec3 end = target.position().add(0.0D, target.getBbHeight() * 0.62D, 0.0D);
+    private ShootResult fireSupportTacZShot(Mob target) {
+        if (target == null || !target.isAlive()) return ShootResult.UNKNOWN_FAIL;
+        ItemStack held = this.getMainHandItem();
+        IGun gun = IGun.getIGunOrNull(held);
+        if (gun == null) return ShootResult.NOT_GUN;
 
-        level.playSound(null, this.blockPosition(), ModSounds.GUN.get(), SoundSource.HOSTILE,
-            1.2F, 0.9F + this.getRandom().nextFloat() * 0.18F);
-        level.playSound(null, this.blockPosition(), SoundEvents.FIREWORK_ROCKET_BLAST, SoundSource.HOSTILE,
-            0.18F, 1.6F + this.getRandom().nextFloat() * 0.15F);
-
-        int shots = 2 + this.getRandom().nextInt(2);
-        for (int i = 0; i < shots && target.isAlive(); i++) {
-            spawnSupportTracer(level, start, end);
-            level.sendParticles(ParticleTypes.CRIT,
-                end.x, end.y, end.z,
-                6, 0.16D, 0.18D, 0.16D, 0.045D);
-            target.hurt(this.damageSources().mobAttack(this), SUPPORT_SHOT_DAMAGE);
+        prepareSupportGunOperator();
+        SupportAim aim = aimAt(target);
+        IGunOperator operator = IGunOperator.fromLivingEntity(this);
+        ShootResult result = operator.shoot(() -> aim.pitch, () -> aim.yaw);
+        if (result == ShootResult.SUCCESS) {
+            return result;
         }
+        if (result == ShootResult.NO_AMMO || result == ShootResult.NEED_BOLT) {
+            primeSupportGunAmmo(held, gun);
+            result = operator.shoot(() -> aim.pitch, () -> aim.yaw);
+        }
+        return result;
     }
 
-    private void spawnSupportTracer(ServerLevel level, Vec3 start, Vec3 end) {
+    private SupportAim aimAt(Mob target) {
+        Vec3 start = this.getEyePosition();
+        Vec3 end = target.position().add(0.0D, target.getBbHeight() * 0.62D, 0.0D);
         Vec3 delta = end.subtract(start);
-        double length = delta.length();
-        if (length <= 0.05D) return;
-        int steps = Math.max(4, Math.min(28, (int) Math.round(length * 1.35D)));
-        Vec3 step = delta.scale(1.0D / steps);
-        for (int i = 0; i <= steps; i++) {
-            Vec3 p = start.add(step.scale(i));
-            level.sendParticles(ParticleTypes.END_ROD, p.x, p.y, p.z, 1, 0.0D, 0.0D, 0.0D, 0.0D);
-        }
-        level.sendParticles(ParticleTypes.SMOKE,
-            start.x, start.y, start.z,
-            3, 0.05D, 0.05D, 0.05D, 0.012D);
+        double horizontal = Math.sqrt(delta.x * delta.x + delta.z * delta.z);
+        float yaw = (float)(Mth.atan2(delta.z, delta.x) * Mth.RAD_TO_DEG) - 90.0F;
+        float pitch = (float)(-(Mth.atan2(delta.y, horizontal) * Mth.RAD_TO_DEG));
+        this.setYRot(yaw);
+        this.setXRot(pitch);
+        this.yHeadRot = yaw;
+        this.yBodyRot = yaw;
+        this.getLookControl().setLookAt(end.x, end.y, end.z, 60.0F, 50.0F);
+        return new SupportAim(pitch, yaw);
+    }
+
+    private void primeSupportGunAmmo(ItemStack held, IGun gun) {
+        if (held.isEmpty() || gun == null) return;
+        ResourceLocation gunId = gun.getGunId(held);
+        if (gunId == null) return;
+        int base = com.levanilla.rogue.core.TacZRegistryHelper.getMagazineSize(gunId.toString());
+        int magazineSize = com.levanilla.rogue.core.TacZMagazineHelper.getEffectiveMagazineSize(held, null, base);
+        gun.setCurrentAmmoCount(held, Math.max(1, magazineSize));
+        gun.setBulletInBarrel(held, true);
+        IGunOperator.fromLivingEntity(this).draw(this::getMainHandItem);
+    }
+
+    private static String supportGunKey(ItemStack held, IGun gun) {
+        ResourceLocation gunId = gun.getGunId(held);
+        return held.getItem().builtInRegistryHolder().key().location() + "|" + (gunId == null ? "" : gunId);
+    }
+
+    private record SupportAim(float pitch, float yaw) {
     }
 }

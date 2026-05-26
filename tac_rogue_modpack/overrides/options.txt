@@ -72,7 +72,7 @@ attackIndicator:1
 tutorialStep:find_tree
 mouseWheelSensitivity:1.0
 rawMouseInput:true
-glDebugVerbosity:1
+glDebugVerbosity:0
 skipRealms32bitWarning:false
 hideMatchedNames:true
 joinedFirstServer:false

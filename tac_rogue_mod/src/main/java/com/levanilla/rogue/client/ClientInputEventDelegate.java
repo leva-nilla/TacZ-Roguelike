@@ -22,23 +22,40 @@ final class ClientInputEventDelegate {
 
     static void onClientTick(net.minecraftforge.event.TickEvent.ClientTickEvent event) {
         if (event.phase == net.minecraftforge.event.TickEvent.Phase.END) {
-            HudRenderer.tickVictory();
-            DamageIndicatorRenderer.tick();
-            NotificationManager.tick();
-            DynamicLightManager.tick();
-
             Minecraft mc = Minecraft.getInstance();
-            DebugAiOverlayManager.tick(mc);
+            boolean rogueContext = isRogueContext(mc);
+            boolean rogueDungeon = isRogueDungeonContext(mc);
+
+            HudRenderer.tickVictory();
+            if (!DamageIndicatorRenderer.isEmpty()) {
+                DamageIndicatorRenderer.tick();
+            }
+            NotificationManager.tick();
+            long perfStart;
+            if (rogueDungeon || RunManager.isRunActive()) {
+                perfStart = ClientPerformanceProfiler.onProfileSectionStart();
+                DynamicLightManager.tick();
+                ClientPerformanceProfiler.onProfileSectionEnd(ClientPerformanceProfiler.ProfileSection.DYNAMIC_LIGHT_TICK, perfStart);
+            }
+
+            if (rogueContext) {
+                DebugAiOverlayManager.tick(mc);
+            }
             ClientWelcomeScreenDelegate.handlePendingWelcomeScreen(mc);
             ensureTacRogueGuiScale(mc);
-            TutorialGuideManager.tick(mc);
+            if (rogueContext) {
+                TutorialGuideManager.tick(mc);
+            }
             syncAdsInput(mc);
             handleRogueSneakToggle(mc);
             KeyComboManager.tick(mc);
             SmokeClientAutomation.tick(mc);
             ClientBenchmarkAutomation.tick(mc);
-            if (LeaWindsCompat.isLeawindAvailable()) {
+            ClientPerformanceProfiler.onClientTick(mc);
+            if (rogueContext && LeaWindsCompat.isLeawindAvailable()) {
+                perfStart = ClientPerformanceProfiler.onProfileSectionStart();
                 LeaWindsCompat.syncThirdPersonGunAim();
+                ClientPerformanceProfiler.onProfileSectionEnd(ClientPerformanceProfiler.ProfileSection.LEAWINDS_AIM_SYNC, perfStart);
             }
 
             while (ClientKeyBinds.FLASHLIGHT.consumeClick()) {
@@ -66,6 +83,12 @@ final class ClientInputEventDelegate {
                 TutorialGuideManager.advanceManually(mc);
             }
         }
+    }
+
+    private static boolean isRogueDungeonContext(Minecraft mc) {
+        if (mc == null || mc.level == null) return false;
+        net.minecraft.resources.ResourceLocation dimension = mc.level.dimension().location();
+        return "tac_rogue".equals(dimension.getNamespace()) && "rogue_dimension".equals(dimension.getPath());
     }
 
     private static void ensureTacRogueGuiScale(Minecraft mc) {

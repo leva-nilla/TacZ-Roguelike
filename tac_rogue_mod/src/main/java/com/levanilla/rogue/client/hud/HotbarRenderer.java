@@ -5,6 +5,7 @@ import com.levanilla.rogue.client.TacZGuiIconRenderer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 
@@ -28,12 +29,17 @@ public final class HotbarRenderer {
     private static final Component AMMO_LABEL = Component.translatable("hud.tac_rogue.hotbar.ammo");
     private static final Component AMMO_DIM_LABEL = Component.translatable("hud.tac_rogue.hotbar.ammo_dim");
     private static final String[] ITEM_SLOT_LABELS = {"4", "5", "6", "7", "8", "9", "E1", "E2", "E3"};
+    private static final SlotRenderCache[] SLOT_CACHE = new SlotRenderCache[16];
+    private static int cachedScreenWidth = -1;
+    private static int cachedScreenHeight = -1;
+    private static int cachedBaseX;
+    private static int cachedY;
 
     public static void render(GuiGraphics graphics, Minecraft mc, Player player, int screenWidth, int screenHeight) {
         int slotSize = SLOT_SIZE;
         int separatorWidth = SEPARATOR_WIDTH;
         int extendedItemGap = EXTENDED_ITEM_GAP;
-        Bounds bounds = bounds(screenWidth, screenHeight);
+        Bounds bounds = cachedBounds(screenWidth, screenHeight);
         int totalWidth = bounds.width();
         int baseX = bounds.x();
         int y = screenHeight - HOTBAR_Y_OFFSET;
@@ -65,8 +71,10 @@ public final class HotbarRenderer {
 
             ItemStack stack = items.get(i);
             if (!stack.isEmpty()) {
-                graphics.renderItem(stack, x + 1, y + 2);
-                graphics.renderItemDecorations(mc.font, stack, x + 1, y + 2);
+                SlotRenderCache cache = slotCache(i);
+                cache.update(stack, mc);
+                renderCachedIcon(graphics, mc, stack, cache, x + 1, y + 2);
+                renderItemDecorationsIfNeeded(graphics, mc, player, stack, cache, x + 1, y + 2);
             }
             x += slotSize;
         }
@@ -88,8 +96,10 @@ public final class HotbarRenderer {
 
             ItemStack stack = items.get(2);
             if (!stack.isEmpty()) {
-                graphics.renderItem(stack, x + 1, y + 2);
-                renderItemDecorationsIfNeeded(graphics, mc, player, stack, x + 1, y + 2);
+                SlotRenderCache cache = slotCache(2);
+                cache.update(stack, mc);
+                renderCachedIcon(graphics, mc, stack, cache, x + 1, y + 2);
+                renderItemDecorationsIfNeeded(graphics, mc, player, stack, cache, x + 1, y + 2);
             }
             x += slotSize;
         }
@@ -125,8 +135,10 @@ public final class HotbarRenderer {
             ItemStack stack = items.get(i);
             if (!stack.isEmpty()) {
                 long itemIconStart = ClientPerformanceProfiler.onHudSectionStart();
-                graphics.renderItem(stack, x + 1, y + 2);
-                renderItemDecorationsIfNeeded(graphics, mc, player, stack, x + 1, y + 2);
+                SlotRenderCache cache = slotCache(i);
+                cache.update(stack, mc);
+                renderCachedIcon(graphics, mc, stack, cache, x + 1, y + 2);
+                renderItemDecorationsIfNeeded(graphics, mc, player, stack, cache, x + 1, y + 2);
                 ClientPerformanceProfiler.onHudSectionEnd(ClientPerformanceProfiler.HudSection.HOTBAR_ITEM_ICONS, itemIconStart);
             }
             x += slotSize;
@@ -151,16 +163,20 @@ public final class HotbarRenderer {
             ItemStack ammoStack = items.get(slotIndex);
             if (!ammoStack.isEmpty()) {
                 long ammoIconStart = ClientPerformanceProfiler.onHudSectionStart();
-                renderAmmoSlotIcon(graphics, ammoStack, x + 1, y + 2);
+                SlotRenderCache cache = slotCache(slotIndex);
+                cache.update(ammoStack, mc);
+                renderCachedIcon(graphics, mc, ammoStack, cache, x + 1, y + 2);
                 ClientPerformanceProfiler.onHudSectionEnd(ClientPerformanceProfiler.HudSection.HOTBAR_AMMO_ICONS, ammoIconStart);
                 long ammoDecorStart = ClientPerformanceProfiler.onHudSectionStart();
-                renderAmmoCount(graphics, mc, ammoStack, x + 1, y + 2);
+                renderAmmoCount(graphics, ammoStack, cache, x + 1, y + 2);
                 ClientPerformanceProfiler.onHudSectionEnd(ClientPerformanceProfiler.HudSection.HOTBAR_AMMO_DECORATIONS, ammoDecorStart);
             } else {
                 // 空スロット: 対応銃の弾薬タイプ名を小さく表示
                 int gunSlot = isGun2 ? 1 : 0;
                 ItemStack gunStack = items.get(gunSlot);
-                if (isGunStack(gunStack)) {
+                SlotRenderCache gunCache = slotCache(gunSlot);
+                gunCache.update(gunStack, mc);
+                if (gunCache.isGun) {
                     graphics.pose().pushPose();
                     graphics.pose().translate(x + 2, y + 7, 0);
                     graphics.pose().scale(0.5f, 0.5f, 1.0f);
@@ -173,18 +189,19 @@ public final class HotbarRenderer {
         ClientPerformanceProfiler.onHudSectionEnd(ClientPerformanceProfiler.HudSection.HOTBAR_AMMO, sectionStart);
     }
 
-    private static void renderAmmoSlotIcon(GuiGraphics graphics, ItemStack stack, int x, int y) {
-        if (!TacZGuiIconRenderer.renderLightweightIcon(graphics, Minecraft.getInstance().font, stack, x, y, false)) {
+    private static void renderCachedIcon(GuiGraphics graphics, Minecraft mc, ItemStack stack, SlotRenderCache cache, int x, int y) {
+        if (cache.slotTexture != null) {
+            graphics.blit(cache.slotTexture, x, y, 0.0F, 0.0F, 16, 16, 16, 16);
+        } else {
             graphics.renderItem(stack, x, y);
         }
     }
 
-    private static void renderAmmoCount(GuiGraphics graphics, Minecraft mc, ItemStack stack, int x, int y) {
-        if (stack.getCount() <= 1) return;
-        String count = String.valueOf(stack.getCount());
+    private static void renderAmmoCount(GuiGraphics graphics, ItemStack stack, SlotRenderCache cache, int x, int y) {
+        if (stack.getCount() <= 1 || cache.countText == null) return;
         graphics.pose().pushPose();
         graphics.pose().translate(0.0F, 0.0F, 200.0F);
-        graphics.drawString(mc.font, count, x + 19 - 2 - mc.font.width(count), y + 6 + 3, 0xFFFFFFFF, true);
+        graphics.drawString(Minecraft.getInstance().font, cache.countText, x + 17 - cache.countWidth, y + 9, 0xFFFFFFFF, true);
         graphics.pose().popPose();
     }
 
@@ -193,16 +210,35 @@ public final class HotbarRenderer {
         return !stack.isEmpty() && tag != null && tag.contains("GunId");
     }
 
-    private static void renderItemDecorationsIfNeeded(GuiGraphics graphics, Minecraft mc, Player player, ItemStack stack, int x, int y) {
-        if (stack.getCount() > 1 || stack.isBarVisible() || player.getCooldowns().isOnCooldown(stack.getItem())) {
+    private static void renderItemDecorationsIfNeeded(GuiGraphics graphics, Minecraft mc, Player player, ItemStack stack, SlotRenderCache cache, int x, int y) {
+        if (cache.hasStaticDecoration || player.getCooldowns().isOnCooldown(stack.getItem())) {
             graphics.renderItemDecorations(mc.font, stack, x, y);
         }
     }
 
+    private static SlotRenderCache slotCache(int index) {
+        if (index < 0 || index >= SLOT_CACHE.length) return new SlotRenderCache();
+        SlotRenderCache cache = SLOT_CACHE[index];
+        if (cache == null) {
+            cache = new SlotRenderCache();
+            SLOT_CACHE[index] = cache;
+        }
+        return cache;
+    }
+
+    private static Bounds cachedBounds(int screenWidth, int screenHeight) {
+        if (screenWidth != cachedScreenWidth || screenHeight != cachedScreenHeight) {
+            cachedScreenWidth = screenWidth;
+            cachedScreenHeight = screenHeight;
+            cachedBaseX = (screenWidth - TOTAL_WIDTH) / 2;
+            cachedY = screenHeight - HOTBAR_Y_OFFSET;
+        }
+        return new Bounds(cachedBaseX, cachedY - HOTBAR_TOP_PADDING,
+            TOTAL_WIDTH, SLOT_SIZE + HOTBAR_TOP_PADDING + HOTBAR_BOTTOM_PADDING);
+    }
+
     public static Bounds bounds(int screenWidth, int screenHeight) {
-        int baseX = (screenWidth - TOTAL_WIDTH) / 2;
-        int y = screenHeight - HOTBAR_Y_OFFSET;
-        return new Bounds(baseX, y - HOTBAR_TOP_PADDING, TOTAL_WIDTH, SLOT_SIZE + HOTBAR_TOP_PADDING + HOTBAR_BOTTOM_PADDING);
+        return cachedBounds(screenWidth, screenHeight);
     }
 
     public record Bounds(int x, int y, int width, int height) {
@@ -212,6 +248,57 @@ public final class HotbarRenderer {
 
         public int bottom() {
             return y + height;
+        }
+    }
+
+    private static final class SlotRenderCache {
+        private net.minecraft.world.item.Item item;
+        private int count = -1;
+        private int damage = -1;
+        private int tagHash;
+        private boolean empty = true;
+        private boolean isGun;
+        private boolean hasStaticDecoration;
+        private ResourceLocation slotTexture;
+        private String countText;
+        private int countWidth;
+
+        void update(ItemStack stack, Minecraft mc) {
+            boolean nowEmpty = stack == null || stack.isEmpty();
+            net.minecraft.world.item.Item nowItem = nowEmpty ? null : stack.getItem();
+            int nowCount = nowEmpty ? 0 : stack.getCount();
+            int nowDamage = nowEmpty ? 0 : stack.getDamageValue();
+            var tag = nowEmpty ? null : stack.getTag();
+            int nowTagHash = tag == null ? 0 : tag.hashCode();
+            if (empty == nowEmpty && item == nowItem && count == nowCount
+                && damage == nowDamage && tagHash == nowTagHash) {
+                return;
+            }
+
+            empty = nowEmpty;
+            item = nowItem;
+            count = nowCount;
+            damage = nowDamage;
+            tagHash = nowTagHash;
+            isGun = false;
+            hasStaticDecoration = false;
+            slotTexture = null;
+            countText = null;
+            countWidth = 0;
+
+            if (nowEmpty) return;
+
+            isGun = isGunStack(stack);
+            hasStaticDecoration = stack.getCount() > 1 || stack.isBarVisible();
+            if (isGun) {
+                slotTexture = TacZGuiIconRenderer.getGunSlotTexture(stack);
+            } else {
+                slotTexture = TacZGuiIconRenderer.getLightweightSlotTexture(stack);
+            }
+            if (stack.getCount() > 1) {
+                countText = String.valueOf(stack.getCount());
+                countWidth = mc.font.width(countText);
+            }
         }
     }
 }

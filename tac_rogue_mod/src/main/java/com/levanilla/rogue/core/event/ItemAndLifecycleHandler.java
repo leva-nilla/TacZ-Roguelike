@@ -320,12 +320,14 @@ public class ItemAndLifecycleHandler {
             RunManager.loadFromPlayerNbt(player);
             RunManager.getData(player).setRunActive(false);
 
-            ServerLevel lobbyLevel = player.server.getLevel(LOBBY_DIM);
-            if (lobbyLevel != null) {
-                boolean rebuilt = LobbyGenerator.ensureLobbyBuilt(lobbyLevel, LobbyGenerator.DEFAULT_CENTER);
-                if (player.level().dimension() != LOBBY_DIM || rebuilt) {
-                    player.teleportTo(lobbyLevel,
-                        GameConstants.LOBBY_X, GameConstants.LOBBY_Y, GameConstants.LOBBY_Z, 0, 0);
+            if (!RogueConfig.perfNeutralWorld()) {
+                ServerLevel lobbyLevel = player.server.getLevel(LOBBY_DIM);
+                if (lobbyLevel != null) {
+                    boolean rebuilt = LobbyGenerator.ensureLobbyBuilt(lobbyLevel, LobbyGenerator.DEFAULT_CENTER);
+                    if (player.level().dimension() != LOBBY_DIM || rebuilt) {
+                        player.teleportTo(lobbyLevel,
+                            GameConstants.LOBBY_X, GameConstants.LOBBY_Y, GameConstants.LOBBY_Z, 0, 0);
+                    }
                 }
             }
             applySlotRestrictions(player);

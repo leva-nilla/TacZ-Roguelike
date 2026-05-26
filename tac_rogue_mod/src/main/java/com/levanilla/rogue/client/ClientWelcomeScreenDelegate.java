@@ -9,6 +9,11 @@ final class ClientWelcomeScreenDelegate {
     private ClientWelcomeScreenDelegate() {}
 
     static void onClientPlayerJoin(net.minecraftforge.client.event.ClientPlayerNetworkEvent.LoggingIn event) {
+        if (com.levanilla.rogue.core.RogueConfig.perfNeutralWorld()) {
+            pendingWelcomeScreen = false;
+            pendingWelcomeTicks = 0;
+            return;
+        }
         Minecraft mc = Minecraft.getInstance();
         com.levanilla.rogue.client.hud.TutorialGuideManager.resetForWorldJoin();
         pendingWelcomeScreen = true;
@@ -21,6 +26,11 @@ final class ClientWelcomeScreenDelegate {
     }
 
     static void handlePendingWelcomeScreen(Minecraft mc) {
+        if (com.levanilla.rogue.core.RogueConfig.perfNeutralWorld()) {
+            pendingWelcomeScreen = false;
+            pendingWelcomeTicks = 0;
+            return;
+        }
         if (!pendingWelcomeScreen) return;
         if (mc.player == null || mc.level == null) {
             pendingWelcomeTicks = 0;

@@ -24,6 +24,8 @@ import com.levanilla.rogue.core.smoke.SmokeTestService;
 import com.levanilla.rogue.networking.TacRogueNetworking;
 import com.levanilla.rogue.world.LobbyGenerator;
 import com.levanilla.rogue.world.MapGenerator;
+import com.levanilla.rogue.world.NpcManager;
+import com.levanilla.rogue.world.TacRogueNpcEntity;
 import com.levanilla.rogue.world.ThemeManager;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
@@ -109,6 +111,29 @@ public class RogueAdminCommand {
                     )
                     .then(Commands.literal("quests")
                         .executes(context -> debugQuests(context.getSource()))
+                    )
+                    .then(Commands.literal("support_team")
+                        .executes(context -> debugSupportTeam(context.getSource(), 3))
+                        .then(Commands.argument("count", IntegerArgumentType.integer(1, 6))
+                            .executes(context -> debugSupportTeam(
+                                context.getSource(),
+                                IntegerArgumentType.getInteger(context, "count"))))
+                    )
+                    .then(Commands.literal("perf_start")
+                        .executes(context -> debugPerfStart(context.getSource(), 30, "manual"))
+                        .then(Commands.argument("seconds", IntegerArgumentType.integer(5, 600))
+                            .executes(context -> debugPerfStart(
+                                context.getSource(),
+                                IntegerArgumentType.getInteger(context, "seconds"),
+                                "manual"))
+                            .then(Commands.argument("label", StringArgumentType.word())
+                                .executes(context -> debugPerfStart(
+                                    context.getSource(),
+                                    IntegerArgumentType.getInteger(context, "seconds"),
+                                    StringArgumentType.getString(context, "label")))))
+                    )
+                    .then(Commands.literal("perf_stop")
+                        .executes(context -> debugPerfStop(context.getSource()))
                     )
                     .then(Commands.literal("theme_list")
                         .executes(context -> debugThemeList(context.getSource(), ""))
@@ -524,6 +549,101 @@ public class RogueAdminCommand {
                 + " gold=" + quest.goldReward
                 + " rareWeapon=" + quest.rareWeaponReward);
         }
+        return 1;
+    }
+
+    private static int debugSupportTeam(CommandSourceStack source, int count) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+        if (!(player.level() instanceof ServerLevel level)) {
+            source.sendFailure(Component.literal("[DEBUG] support_team requires a server level."));
+            return 0;
+        }
+
+        PlayerRunData data = RunManager.getData(player);
+        int floor = Math.max(1, data.getCurrentFloor());
+        String instanceId = player.getPersistentData().getString(FloorInstanceManager.INSTANCE_ID_KEY);
+        FloorInstanceManager.EntryMode mode =
+            FloorInstanceManager.EntryMode.parse(player.getPersistentData().getString(FloorInstanceManager.MODE_KEY));
+        Vec3 look = player.getLookAngle();
+        Vec3 forward = new Vec3(look.x, 0.0D, look.z);
+        if (forward.lengthSqr() < 0.001D) {
+            forward = Vec3.directionFromRotation(0.0F, player.getYRot()).multiply(1.0D, 0.0D, 1.0D);
+        }
+        forward = forward.normalize();
+        Vec3 right = new Vec3(-forward.z, 0.0D, forward.x);
+        BlockPos base = player.blockPosition();
+
+        int spawned = 0;
+        for (int i = 0; i < count; i++) {
+            double side = i - (count - 1) * 0.5D;
+            BlockPos wanted = BlockPos.containing(
+                base.getX() + 0.5D + forward.x * 3.0D + right.x * side * 1.5D,
+                base.getY(),
+                base.getZ() + 0.5D + forward.z * 3.0D + right.z * side * 1.5D);
+            BlockPos spawnPos = findSupportDebugSpawn(level, wanted, base.getY());
+            TacRogueNpcEntity npc = NpcManager.spawnSupportOperator(level, spawnPos, floor, i);
+            if (npc == null) continue;
+            if (!instanceId.isBlank()) {
+                FloorInstanceManager.stampEntity(npc, instanceId, floor, mode, player.getUUID());
+            } else {
+                npc.getPersistentData().putString(FloorInstanceManager.OWNER_KEY, player.getUUID().toString());
+            }
+            npc.setYRot(player.getYRot());
+            npc.setYHeadRot(player.getYHeadRot());
+            npc.prepareSupportGunOperator();
+            spawned++;
+
+            ItemStack gun = npc.getMainHandItem();
+            String gunId = gun.hasTag() && gun.getTag().contains("GunId")
+                ? gun.getTag().getString("GunId")
+                : gun.getHoverName().getString();
+            send(source, "support#" + npc.getId()
+                + " pos=" + npc.blockPosition()
+                + " gun=" + gunId
+                + " support=" + npc.isSupportOperator());
+        }
+        send(source, "Spawned support operators=" + spawned
+            + " floor=" + floor
+            + " instance=" + shortenDebug(instanceId));
+        return spawned > 0 ? 1 : 0;
+    }
+
+    private static BlockPos findSupportDebugSpawn(ServerLevel level, BlockPos pos, int playerY) {
+        for (int dy = 2; dy >= -5; dy--) {
+            BlockPos candidate = new BlockPos(pos.getX(), playerY + dy, pos.getZ());
+            if (isSupportDebugSpawnSafe(level, candidate)) return candidate;
+        }
+        return pos;
+    }
+
+    private static boolean isSupportDebugSpawnSafe(ServerLevel level, BlockPos pos) {
+        if (!level.getWorldBorder().isWithinBounds(pos)) return false;
+        if (!level.getBlockState(pos).getCollisionShape(level, pos).isEmpty()) return false;
+        if (!level.getBlockState(pos.above()).getCollisionShape(level, pos.above()).isEmpty()) return false;
+        return !level.getBlockState(pos.below()).getCollisionShape(level, pos.below()).isEmpty();
+    }
+
+    private static int debugPerfStart(CommandSourceStack source, int seconds, String label) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+        int duration = Math.max(5, Math.min(600, seconds));
+        String safeLabel = (label == null || label.isBlank()) ? "manual" : label.trim();
+        TacRogueNetworking.CHANNEL.send(
+            net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+            new com.levanilla.rogue.networking.SyncDataMessage("perf_start:" + duration + ":" + safeLabel));
+        send(source, "FPS trace start seconds=" + duration + " label=" + safeLabel
+            + " output=.minecraft/tac_rogue_perf/perf-*.csv");
+        return 1;
+    }
+
+    private static int debugPerfStop(CommandSourceStack source) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+        TacRogueNetworking.CHANNEL.send(
+            net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
+            new com.levanilla.rogue.networking.SyncDataMessage("perf_stop"));
+        send(source, "FPS trace stop requested.");
         return 1;
     }
 

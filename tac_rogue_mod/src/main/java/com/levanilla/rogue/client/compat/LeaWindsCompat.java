@@ -389,18 +389,20 @@ public final class LeaWindsCompat {
             reachable = isWithinReach(playerEye, target, blockReach);
         }
 
+        net.minecraft.world.phys.Vec3 entityTraceEnd = target != null ? target : traceEnd;
+        double entityTraceDistanceSqr = cameraStart.distanceToSqr(entityTraceEnd);
         net.minecraft.world.phys.AABB box = new net.minecraft.world.phys.AABB(
-            Math.min(cameraStart.x, traceEnd.x), Math.min(cameraStart.y, traceEnd.y), Math.min(cameraStart.z, traceEnd.z),
-            Math.max(cameraStart.x, traceEnd.x), Math.max(cameraStart.y, traceEnd.y), Math.max(cameraStart.z, traceEnd.z)
+            Math.min(cameraStart.x, entityTraceEnd.x), Math.min(cameraStart.y, entityTraceEnd.y), Math.min(cameraStart.z, entityTraceEnd.z),
+            Math.max(cameraStart.x, entityTraceEnd.x), Math.max(cameraStart.y, entityTraceEnd.y), Math.max(cameraStart.z, entityTraceEnd.z)
         ).inflate(1.0D);
         net.minecraft.world.phys.EntityHitResult entityHit =
             net.minecraft.world.entity.projectile.ProjectileUtil.getEntityHitResult(
                 mc.player,
                 cameraStart,
-                traceEnd,
+                entityTraceEnd,
                 box,
                 entity -> entity != mc.player && !entity.isSpectator() && entity.isPickable(),
-                traceRange * traceRange);
+                entityTraceDistanceSqr);
 
         if (entityHit != null
             && (target == null || cameraStart.distanceToSqr(entityHit.getLocation()) < cameraStart.distanceToSqr(target))) {
@@ -462,18 +464,19 @@ public final class LeaWindsCompat {
             : blockHit.getLocation();
         boolean hit = blockHit.getType() != net.minecraft.world.phys.HitResult.Type.MISS;
 
+        double entityTraceDistanceSqr = start.distanceToSqr(target);
         net.minecraft.world.phys.AABB box = new net.minecraft.world.phys.AABB(
-            Math.min(start.x, end.x), Math.min(start.y, end.y), Math.min(start.z, end.z),
-            Math.max(start.x, end.x), Math.max(start.y, end.y), Math.max(start.z, end.z)
+            Math.min(start.x, target.x), Math.min(start.y, target.y), Math.min(start.z, target.z),
+            Math.max(start.x, target.x), Math.max(start.y, target.y), Math.max(start.z, target.z)
         ).inflate(1.0D);
         net.minecraft.world.phys.EntityHitResult entityHit =
             net.minecraft.world.entity.projectile.ProjectileUtil.getEntityHitResult(
                 mc.player,
                 start,
-                end,
+                target,
                 box,
                 entity -> entity != mc.player && !entity.isSpectator() && entity.isPickable(),
-                range * range);
+                entityTraceDistanceSqr);
 
         if (entityHit != null && start.distanceToSqr(entityHit.getLocation()) < start.distanceToSqr(target)) {
             target = entityHit.getLocation();

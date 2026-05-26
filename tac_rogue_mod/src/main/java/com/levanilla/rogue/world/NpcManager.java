@@ -16,6 +16,7 @@ import com.levanilla.rogue.core.service.GoldGainService;
 import com.levanilla.rogue.core.service.RogueItemFactory;
 import com.levanilla.rogue.core.service.ShopPlacementService;
 import com.levanilla.rogue.networking.PopupNotificationMessage;
+import com.tacz.guns.api.item.IGun;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -243,24 +244,41 @@ public class NpcManager {
             if (!gun.isEmpty()) {
                 npc.setItemSlot(EquipmentSlot.MAINHAND, gun);
                 npc.setDropChance(EquipmentSlot.MAINHAND, 0.0F);
+                npc.prepareSupportGunOperator();
             }
         }
         return npc;
     }
 
     private static ItemStack createSupportGun(int index) {
-        List<ShopCatalog.ShopItem> candidates = new ArrayList<>();
-        candidates.addAll(TacZRegistryHelper.getItemsByCategory(ShopCatalog.Category.SMG));
-        candidates.addAll(TacZRegistryHelper.getItemsByCategory(ShopCatalog.Category.RIFLE));
-        if (!candidates.isEmpty()) {
-            String id = candidates.get(Math.floorMod(index, candidates.size())).id;
-            return RogueItemFactory.createGunStack(id, WeaponRarity.Rarity.RARE);
+        List<String> candidates = new ArrayList<>();
+        for (ShopCatalog.ShopItem item : TacZRegistryHelper.getItemsByCategory(ShopCatalog.Category.SMG)) {
+            candidates.add(item.id);
         }
-        List<String> allGuns = TacZRegistryHelper.getAllGunIds();
-        if (!allGuns.isEmpty()) {
-            return RogueItemFactory.createGunStack(allGuns.get(Math.floorMod(index, allGuns.size())), WeaponRarity.Rarity.RARE);
+        for (ShopCatalog.ShopItem item : TacZRegistryHelper.getItemsByCategory(ShopCatalog.Category.RIFLE)) {
+            candidates.add(item.id);
         }
+        ItemStack selected = chooseSupportGun(candidates, index);
+        if (!selected.isEmpty()) return selected;
+        selected = chooseSupportGun(TacZRegistryHelper.getAllGunIds(), index);
+        if (!selected.isEmpty()) return selected;
         return ItemStack.EMPTY;
+    }
+
+    private static ItemStack chooseSupportGun(List<String> ids, int index) {
+        if (ids == null || ids.isEmpty()) return ItemStack.EMPTY;
+        ItemStack fallback = ItemStack.EMPTY;
+        for (int i = 0; i < ids.size(); i++) {
+            String id = ids.get(Math.floorMod(index + i, ids.size()));
+            ItemStack stack = RogueItemFactory.createGunStack(id, WeaponRarity.Rarity.RARE);
+            if (stack.isEmpty()) continue;
+            if (fallback.isEmpty()) fallback = stack;
+            IGun gun = IGun.getIGunOrNull(stack);
+            if (gun != null && !gun.useInventoryAmmo(stack)) {
+                return stack;
+            }
+        }
+        return fallback;
     }
 
     public static BlockPos findExtractionSpawnNear(ServerLevel level, ServerPlayer player) {

@@ -111,6 +111,9 @@ public final class FloorInstanceManager {
         public volatile boolean objectiveActivated;
         public volatile boolean objectiveContested;
         public volatile String objectiveStatusKey = "";
+        public volatile long lastObjectiveLureTick;
+        public volatile int objectiveLurePulseCount;
+        public volatile int objectiveLureCursor;
 
         FloorInstance(String id, int floor, EntryMode mode, UUID ownerUuid, BlockPos origin,
                               long createdTick, long runSeed, long floorSeedSalt, int floorAttemptIndex,

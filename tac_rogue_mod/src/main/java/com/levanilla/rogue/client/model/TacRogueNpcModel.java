@@ -4,6 +4,9 @@ import com.levanilla.rogue.world.NpcManager;
 import com.levanilla.rogue.world.TacRogueNpcEntity;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import com.tacz.guns.api.item.IGun;
+import com.tacz.guns.client.animation.third.InnerThirdPersonManager;
+import net.minecraft.client.model.ArmedModel;
 import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.model.geom.PartPose;
@@ -13,14 +16,22 @@ import net.minecraft.client.model.geom.builders.LayerDefinition;
 import net.minecraft.client.model.geom.builders.MeshDefinition;
 import net.minecraft.client.model.geom.builders.PartDefinition;
 import net.minecraft.util.Mth;
+import net.minecraft.world.entity.HumanoidArm;
 
-public class TacRogueNpcModel extends EntityModel<TacRogueNpcEntity> {
+public class TacRogueNpcModel extends EntityModel<TacRogueNpcEntity> implements ArmedModel {
     private final ModelPart root;
     private final ModelPart head;
+    private final ModelPart body;
     private final ModelPart rightArm;
     private final ModelPart leftArm;
     private final ModelPart rightLeg;
     private final ModelPart leftLeg;
+    private final ModelPart supportRifle;
+    private final ModelPart supportFaceGuard;
+    private final ModelPart supportRightSleeve;
+    private final ModelPart supportLeftSleeve;
+    private final ModelPart supportRightGlove;
+    private final ModelPart supportLeftGlove;
     private final RoleParts commanderParts;
     private final RoleParts quartermasterParts;
     private final RoleParts intelParts;
@@ -30,10 +41,17 @@ public class TacRogueNpcModel extends EntityModel<TacRogueNpcEntity> {
     public TacRogueNpcModel(ModelPart root) {
         this.root = root;
         this.head = root.getChild("head");
+        this.body = root.getChild("body");
         this.rightArm = root.getChild("right_arm");
         this.leftArm = root.getChild("left_arm");
         this.rightLeg = root.getChild("right_leg");
         this.leftLeg = root.getChild("left_leg");
+        this.supportRifle = root.getChild("support_rifle");
+        this.supportFaceGuard = this.head.getChild("support_face_guard");
+        this.supportRightSleeve = this.rightArm.getChild("support_right_sleeve");
+        this.supportLeftSleeve = this.leftArm.getChild("support_left_sleeve");
+        this.supportRightGlove = this.rightArm.getChild("support_right_glove");
+        this.supportLeftGlove = this.leftArm.getChild("support_left_glove");
         this.commanderParts = new RoleParts(
             headParts(),
             headParts("commander_hair"),
@@ -55,8 +73,15 @@ public class TacRogueNpcModel extends EntityModel<TacRogueNpcEntity> {
             headParts("medic_headband", "medic_hair_clip"),
             rootParts(root, "medic_coat", "medic_stethoscope", "medic_bag", "medic_cross", "medic_armband", "medic_badge", "medic_injectors"));
         this.supportParts = concat(
-            headParts("support_helmet", "support_visor", "support_mask"),
-            rootParts(root, "support_vest", "support_plate", "support_shoulders", "support_pouches", "support_radio", "support_rifle"));
+            headParts("support_helmet", "support_visor", "support_mask", "support_face_guard"),
+            concat(
+                rootParts(root, "support_vest", "support_plate", "support_shoulders", "support_pouches", "support_radio", "support_rifle"),
+                new ModelPart[] {
+                    this.supportRightSleeve,
+                    this.supportLeftSleeve,
+                    this.supportRightGlove,
+                    this.supportLeftGlove
+                }));
         this.commanderParts.setVisible(false);
         this.quartermasterParts.setVisible(false);
         this.intelParts.setVisible(false);
@@ -402,6 +427,12 @@ public class TacRogueNpcModel extends EntityModel<TacRogueNpcEntity> {
         head.addOrReplaceChild("support_mask", CubeListBuilder.create()
             .texOffs(96, 72).addBox(-3.45f, -4.35f, -4.74f, 6.9f, 3.65f, 0.48f, none),
             PartPose.ZERO);
+        head.addOrReplaceChild("support_face_guard", CubeListBuilder.create()
+            .texOffs(136, 56).addBox(-3.98f, -5.0f, -4.9f, 0.72f, 4.4f, 1.08f, none)
+            .texOffs(148, 56).addBox(3.26f, -5.0f, -4.9f, 0.72f, 4.4f, 1.08f, none)
+            .texOffs(160, 56).addBox(-3.35f, -1.42f, -4.98f, 6.7f, 0.92f, 0.88f, none)
+            .texOffs(188, 56).addBox(-2.45f, -0.62f, -4.72f, 4.9f, 0.72f, 0.72f, none),
+            PartPose.ZERO);
 
         root.addOrReplaceChild("support_vest", CubeListBuilder.create()
             .texOffs(40, 32).addBox(-5.1f, 0.75f, -3.65f, 10.2f, 10.7f, 0.88f, none)
@@ -414,6 +445,24 @@ public class TacRogueNpcModel extends EntityModel<TacRogueNpcEntity> {
         root.addOrReplaceChild("support_shoulders", CubeListBuilder.create()
             .texOffs(24, 56).addBox(-6.45f, 0.75f, -2.75f, 3.1f, 1.0f, 5.5f, none)
             .texOffs(24, 72).addBox(3.35f, 0.75f, -2.75f, 3.1f, 1.0f, 5.5f, none),
+            PartPose.ZERO);
+        root.getChild("right_arm").addOrReplaceChild("support_right_sleeve", CubeListBuilder.create()
+            .texOffs(96, 288).addBox(-3.18f, -1.1f, -2.18f, 4.35f, 12.25f, 4.35f, none)
+            .texOffs(144, 288).addBox(-3.35f, -1.28f, -2.35f, 4.7f, 2.5f, 4.7f, soft)
+            .texOffs(188, 288).addBox(-3.28f, 7.9f, -2.28f, 4.55f, 1.65f, 4.55f, none),
+            PartPose.ZERO);
+        root.getChild("right_arm").addOrReplaceChild("support_right_glove", CubeListBuilder.create()
+            .texOffs(216, 288).addBox(-3.32f, 8.95f, -2.32f, 4.65f, 2.45f, 4.65f, soft)
+            .texOffs(244, 288).addBox(-3.02f, 10.95f, -2.02f, 4.05f, 0.62f, 4.05f, none),
+            PartPose.ZERO);
+        root.getChild("left_arm").addOrReplaceChild("support_left_sleeve", CubeListBuilder.create()
+            .texOffs(96, 304).addBox(-1.18f, -1.1f, -2.18f, 4.35f, 12.25f, 4.35f, none)
+            .texOffs(144, 304).addBox(-1.35f, -1.28f, -2.35f, 4.7f, 2.5f, 4.7f, soft)
+            .texOffs(188, 304).addBox(-1.28f, 7.9f, -2.28f, 4.55f, 1.65f, 4.55f, none),
+            PartPose.ZERO);
+        root.getChild("left_arm").addOrReplaceChild("support_left_glove", CubeListBuilder.create()
+            .texOffs(216, 304).addBox(-1.32f, 8.95f, -2.32f, 4.65f, 2.45f, 4.65f, soft)
+            .texOffs(244, 304).addBox(-1.02f, 10.95f, -2.02f, 4.05f, 0.62f, 4.05f, none),
             PartPose.ZERO);
         root.addOrReplaceChild("support_pouches", CubeListBuilder.create()
             .texOffs(0, 288).addBox(-4.95f, 7.2f, -4.25f, 2.1f, 2.6f, 1.05f, none)
@@ -437,9 +486,18 @@ public class TacRogueNpcModel extends EntityModel<TacRogueNpcEntity> {
     public void setupAnim(TacRogueNpcEntity entity, float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch) {
         this.head.yRot = netHeadYaw * Mth.DEG_TO_RAD;
         this.head.xRot = headPitch * Mth.DEG_TO_RAD;
+        this.body.xRot = 0.0f;
+        this.body.yRot = 0.0f;
+        this.body.zRot = 0.0f;
+        this.rightArm.x = -5.0f;
+        this.rightArm.y = 2.0f;
+        this.rightArm.z = 0.0f;
         this.rightArm.xRot = -0.08f;
         this.rightArm.yRot = 0.0f;
         this.rightArm.zRot = 0.04f;
+        this.leftArm.x = 5.0f;
+        this.leftArm.y = 2.0f;
+        this.leftArm.z = 0.0f;
         this.leftArm.xRot = 0.08f;
         this.leftArm.yRot = 0.0f;
         this.leftArm.zRot = -0.04f;
@@ -461,8 +519,14 @@ public class TacRogueNpcModel extends EntityModel<TacRogueNpcEntity> {
         this.intelParts.setVisible(role == NpcManager.NpcRole.INTEL_OFFICER && !support);
         this.medicParts.setVisible(role == NpcManager.NpcRole.MEDIC && !support);
         setVisible(this.supportParts, support);
+        boolean hasTacZGun = support && IGun.getIGunOrNull(entity.getMainHandItem()) != null;
+        this.supportRifle.visible = support && !hasTacZGun;
 
-        if (support) {
+        if (support && hasTacZGun) {
+            InnerThirdPersonManager.setRotationAnglesHead(entity, this.rightArm, this.leftArm, this.body, this.head, limbSwingAmount);
+            this.rightLeg.xRot = legSwing * 0.72F;
+            this.leftLeg.xRot = -legSwing * 0.72F;
+        } else if (support) {
             this.rightArm.xRot = -1.24f;
             this.rightArm.yRot = -0.20f;
             this.rightArm.zRot = 0.02f;
@@ -493,6 +557,11 @@ public class TacRogueNpcModel extends EntityModel<TacRogueNpcEntity> {
             this.rightArm.xRot += armSwing;
             this.leftArm.xRot -= armSwing;
         }
+    }
+
+    @Override
+    public void translateToHand(HumanoidArm side, PoseStack poseStack) {
+        (side == HumanoidArm.RIGHT ? this.rightArm : this.leftArm).translateAndRotate(poseStack);
     }
 
     private static void setVisible(ModelPart[] parts, boolean visible) {

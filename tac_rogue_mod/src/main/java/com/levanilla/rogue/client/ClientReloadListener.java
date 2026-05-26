@@ -23,6 +23,7 @@ public class ClientReloadListener implements ResourceManagerReloadListener {
         TacZRegistryHelper.clearRegistryCache();
         TacZRegistryHelper.clearShopItemCache();
         AttachmentDatabase.clearRuntimeCache();
+        TacZGuiIconRenderer.clearCache();
         
         LOGGER.debug("[TacZ Roguelike] Cache cleared successfully.");
     }

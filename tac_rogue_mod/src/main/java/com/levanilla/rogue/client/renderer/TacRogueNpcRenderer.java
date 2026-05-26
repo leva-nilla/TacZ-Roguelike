@@ -7,6 +7,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import net.minecraft.client.model.geom.ModelLayerLocation;
 import net.minecraft.client.renderer.entity.EntityRendererProvider;
 import net.minecraft.client.renderer.entity.MobRenderer;
+import net.minecraft.client.renderer.entity.layers.ItemInHandLayer;
 import net.minecraft.resources.ResourceLocation;
 
 public class TacRogueNpcRenderer extends MobRenderer<TacRogueNpcEntity, TacRogueNpcModel> {
@@ -24,6 +25,7 @@ public class TacRogueNpcRenderer extends MobRenderer<TacRogueNpcEntity, TacRogue
 
     public TacRogueNpcRenderer(EntityRendererProvider.Context context) {
         super(context, new TacRogueNpcModel(context.bakeLayer(LAYER)), 0.35f);
+        this.addLayer(new ItemInHandLayer<>(this, context.getItemInHandRenderer()));
     }
 
     @Override

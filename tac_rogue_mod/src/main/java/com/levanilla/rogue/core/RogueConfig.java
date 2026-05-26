@@ -43,6 +43,10 @@ public final class RogueConfig {
         }
     }
 
+    public static boolean perfNeutralWorld() {
+        return Boolean.getBoolean("tacrogue.perfNeutralWorld");
+    }
+
     private static boolean getBoolean(ForgeConfigSpec.BooleanValue value, String legacyProperty, boolean fallback) {
         try {
             return value.get();

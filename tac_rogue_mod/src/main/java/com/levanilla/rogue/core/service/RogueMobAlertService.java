@@ -291,6 +291,19 @@ public final class RogueMobAlertService {
         engage(mob, target, duration, "visual_contact");
     }
 
+    public static void drawToObjective(Mob mob, Vec3 pos, boolean urgent, String reason) {
+        if (mob == null || pos == null || !mob.isAlive() || !isRogueMob(mob)) return;
+        AlertLevel current = getAlertLevel(mob);
+        if (current == AlertLevel.ENGAGED) return;
+        long duration = urgent || current == AlertLevel.WARNED ? 120L : 85L;
+        double speed = urgent || current == AlertLevel.WARNED ? 1.05D : 0.94D;
+        if (urgent || current.ordinal() >= AlertLevel.INVESTIGATE.ordinal()) {
+            warn(mob, pos, duration, speed, reason, null);
+        } else {
+            investigate(mob, pos, duration, speed, reason, null);
+        }
+    }
+
     public static Vec3 getInvestigatePos(Mob mob) {
         if (mob == null) return Vec3.ZERO;
         var data = mob.getPersistentData();

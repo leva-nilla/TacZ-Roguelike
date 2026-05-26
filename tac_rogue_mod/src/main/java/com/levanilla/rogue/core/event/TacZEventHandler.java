@@ -6,6 +6,8 @@ import com.levanilla.rogue.core.service.RogueMobAlertService;
 import com.levanilla.rogue.networking.TacRogueNetworking;
 import com.tacz.guns.api.event.common.*;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.phys.AABB;
@@ -34,6 +36,7 @@ import static com.levanilla.rogue.core.CommonEventHandler.LOBBY_DIM;
  */
 @Mod.EventBusSubscriber(modid = "tac_rogue")
 public class TacZEventHandler {
+    private static final float SUPPORT_GUN_ONE_SHOT_DAMAGE = 4096.0F;
 
     /** Killed entity UUIDs already rewarded by TacZ gun events (prevents double reward) */
     private static final ConcurrentHashMap<UUID, Long> processedGunKills = new ConcurrentHashMap<>();
@@ -137,6 +140,20 @@ public class TacZEventHandler {
     @SubscribeEvent(priority = EventPriority.HIGH)
     public static void onEntityHurtByGun(EntityHurtByGunEvent.Pre event) {
         if (event.getLogicalSide() != LogicalSide.SERVER) return;
+        if (isSupportShooter(event.getAttacker())) {
+            if (event.getAttacker().level().dimension() != ROGUE_DIM || !isSupportTarget(event.getHurtEntity())) {
+                event.setCanceled(true);
+            } else {
+                Entity hurt = event.getHurtEntity();
+                if (hurt != null) hurt.invulnerableTime = 0;
+                float damage = SUPPORT_GUN_ONE_SHOT_DAMAGE;
+                if (hurt instanceof LivingEntity living) {
+                    damage = Math.max(damage, living.getMaxHealth() * 16.0F);
+                }
+                event.setBaseAmount(damage);
+            }
+            return;
+        }
         if (!(event.getAttacker() instanceof ServerPlayer attacker)) return;
         boolean lobbyDebugBoss = attacker.level().dimension() == LOBBY_DIM
             && event.getHurtEntity() != null
@@ -273,6 +290,15 @@ public class TacZEventHandler {
             CombatEventHandler.registerGunDamageContext(
                 hurtEntity.getId(), event.isHeadShot(), isShotgun, perkCrit, impactPos);
         }
+    }
+
+    private static boolean isSupportShooter(LivingEntity attacker) {
+        return attacker != null && attacker.getTags().contains("tac_rogue_support_npc");
+    }
+
+    private static boolean isSupportTarget(Entity hurt) {
+        if (hurt == null || hurt.getTags().contains("tac_rogue_npc")) return false;
+        return hurt.getTags().contains("tac_rogue_spawned") || hurt.getTags().contains("rogue:boss");
     }
 
     private static net.minecraft.world.phys.Vec3 resolveDamageIndicatorAnchor(

@@ -45,6 +45,11 @@ public final class TacZGunRegistry {
     private static List<String> cachedGunIds = null;
     private static List<String> cachedAmmoIds = null;
     private static List<String> cachedAttachmentIds = null;
+    private static Set<String> cachedBuiltInAttachmentIds = null;
+    private static final Set<String> INTERNAL_ATTACHMENT_DENYLIST = Set.of(
+        "tacz:scope_aug_default",
+        "tacz:sight_p90"
+    );
 
     /** キャッシュクリア（/tacz reload 後に呼ぶ） */
     public static void clearCache() {
@@ -53,6 +58,7 @@ public final class TacZGunRegistry {
         cachedGunIds = null;
         cachedAmmoIds = null;
         cachedAttachmentIds = null;
+        cachedBuiltInAttachmentIds = null;
     }
 
     // ========== GunProfile ==========
@@ -168,10 +174,51 @@ public final class TacZGunRegistry {
         cachedAttachmentIds = new ArrayList<>();
         try {
             for (var entry : TimelessAPI.getAllCommonAttachmentIndex()) {
-                cachedAttachmentIds.add(entry.getKey().toString());
+                if (isStandaloneAttachmentId(entry.getKey())) {
+                    cachedAttachmentIds.add(entry.getKey().toString());
+                }
             }
         } catch (Exception ignored) {}
         return cachedAttachmentIds;
+    }
+
+    /**
+     * ショップ/チェストに単体で出してよいアタッチメントだけを通す。
+     * TacZの一部銃は内蔵スコープを通常アタッチメントindexにも持つが、
+     * それを単体アイテム化すると表示用モデルだけが出て紫黒テクスチャになりやすい。
+     */
+    public static boolean isStandaloneAttachmentId(String attachmentId) {
+        if (attachmentId == null || attachmentId.isBlank()) return false;
+        ResourceLocation id = ResourceLocation.tryParse(attachmentId);
+        return id != null && isStandaloneAttachmentId(id);
+    }
+
+    private static boolean isStandaloneAttachmentId(ResourceLocation attachmentId) {
+        if (attachmentId == null) return false;
+        String fullId = attachmentId.toString().toLowerCase(Locale.ROOT);
+        if (getBuiltInAttachmentIds().contains(fullId)) return false;
+        return !INTERNAL_ATTACHMENT_DENYLIST.contains(fullId);
+    }
+
+    /**
+     * TacZ gunpack横断で銃内蔵アタッチメントを集める。
+     * 追加ガンパックのG36/Sassy系でも、GunDataのbuiltin_attachmentsに登録されていれば
+     * ショップ/チェストの単体抽選から自動除外される。
+     */
+    private static Set<String> getBuiltInAttachmentIds() {
+        if (cachedBuiltInAttachmentIds != null) return cachedBuiltInAttachmentIds;
+        Set<String> ids = new LinkedHashSet<>();
+        try {
+            for (var entry : TimelessAPI.getAllCommonGunIndex()) {
+                GunData data = entry.getValue().getGunData();
+                if (data == null || data.getBuiltInAttachments() == null) continue;
+                for (ResourceLocation id : data.getBuiltInAttachments().values()) {
+                    if (id != null) ids.add(id.toString().toLowerCase(Locale.ROOT));
+                }
+            }
+        } catch (Exception ignored) {}
+        cachedBuiltInAttachmentIds = ids;
+        return cachedBuiltInAttachmentIds;
     }
 
     // ========== 弾薬マッピング (AmmoDatabase 置き換え) ==========

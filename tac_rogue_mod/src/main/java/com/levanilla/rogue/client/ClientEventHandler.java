@@ -10,6 +10,7 @@ import com.levanilla.rogue.client.model.TacRogueNpcModel;
 import com.levanilla.rogue.client.renderer.TacRogueBossRenderer;
 import com.levanilla.rogue.client.renderer.TacRogueNpcRenderer;
 import com.levanilla.rogue.core.ModEntities;
+import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.core.WeaponRarity;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -143,17 +144,31 @@ public class ClientEventHandler {
     @SubscribeEvent
     public static void onRenderLivingPre(net.minecraftforge.client.event.RenderLivingEvent.Pre<?, ?> event) {
         net.minecraft.world.entity.Entity entity = event.getEntity();
-        if (entity == null) return;
-        String name = entity.getCustomName() == null ? "" : entity.getCustomName().getString();
-        float scale = 1.0F;
-        if (entity.getTags().contains("TacRogueObjectiveElite") || name.contains("[PRIME]")) {
-            scale = 1.18F;
-        } else if (entity.getTags().contains("TacRogueEliteRoom") || name.contains("[ELITE]")) {
-            scale = 1.10F;
+        if (!shouldProcessRogueLivingRender(entity)) return;
+
+        long perfStart = ClientPerformanceProfiler.onProfileSectionStart();
+        try {
+            ClientPerformanceProfiler.onTrackedLivingRenderStart(entity);
+            String name = entity.getCustomName() == null ? "" : entity.getCustomName().getString();
+            float scale = 1.0F;
+            if (entity.getTags().contains("TacRogueObjectiveElite") || name.contains("[PRIME]")) {
+                scale = 1.18F;
+            } else if (entity.getTags().contains("TacRogueEliteRoom") || name.contains("[ELITE]")) {
+                scale = 1.10F;
+            }
+            if (scale > 1.0F) {
+                event.getPoseStack().scale(scale, scale, scale);
+            }
+        } finally {
+            ClientPerformanceProfiler.onProfileSectionEnd(ClientPerformanceProfiler.ProfileSection.LIVING_RENDER_PRE, perfStart);
         }
-        if (scale > 1.0F) {
-            event.getPoseStack().scale(scale, scale, scale);
-        }
+    }
+
+    @SubscribeEvent
+    public static void onRenderLivingPost(net.minecraftforge.client.event.RenderLivingEvent.Post<?, ?> event) {
+        net.minecraft.world.entity.Entity entity = event.getEntity();
+        if (!shouldProcessRogueLivingRender(entity)) return;
+        ClientPerformanceProfiler.onTrackedLivingRenderEnd(entity);
     }
 
     @SubscribeEvent
@@ -181,8 +196,17 @@ public class ClientEventHandler {
 
     @SubscribeEvent
     public static void onRenderLevelStage(net.minecraftforge.client.event.RenderLevelStageEvent event) {
-        DamageIndicatorRenderer.renderWorld(event);
-        ObjectiveMarkerRenderer.renderWorld(event);
+        boolean afterParticles = event.getStage() == net.minecraftforge.client.event.RenderLevelStageEvent.Stage.AFTER_PARTICLES;
+        if (afterParticles && isRogueDungeonContext()) {
+            if (!DamageIndicatorRenderer.isEmpty()) {
+                DamageIndicatorRenderer.renderWorld(event);
+            }
+            if (RunManager.isRunActive() && !RunManager.isFloorCleared()) {
+                long objectiveStart = ClientPerformanceProfiler.onHudSectionStart();
+                ObjectiveMarkerRenderer.renderWorld(event);
+                ClientPerformanceProfiler.onHudSectionEnd(ClientPerformanceProfiler.HudSection.WORLD_OBJECTIVE, objectiveStart);
+            }
+        }
         if (event.getStage() == net.minecraftforge.client.event.RenderLevelStageEvent.Stage.AFTER_WEATHER) {
             lastViewMatrix.set(event.getPoseStack().last().pose());
             lastProjectionMatrix.set(event.getProjectionMatrix());
@@ -214,5 +238,28 @@ public class ClientEventHandler {
         if (event.phase == net.minecraftforge.event.TickEvent.Phase.START) {
             LeaWindsCompat.beginRenderFrame();
         }
+    }
+
+    private static boolean shouldProcessRogueLivingRender(net.minecraft.world.entity.Entity entity) {
+        if (entity == null || !isRogueDungeonContext()) return false;
+        java.util.Set<String> tags = entity.getTags();
+        if (tags.contains("TacRogueObjectiveElite")
+            || tags.contains("TacRogueEliteRoom")
+            || tags.contains("rogue:boss")
+            || tags.contains("tac_rogue_npc")
+            || tags.contains("tac_rogue_support_npc")) {
+            return true;
+        }
+        Component customName = entity.getCustomName();
+        if (customName == null) return false;
+        String name = customName.getString();
+        return name.contains("[PRIME]") || name.contains("[ELITE]");
+    }
+
+    private static boolean isRogueDungeonContext() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return false;
+        net.minecraft.resources.ResourceLocation dimension = mc.level.dimension().location();
+        return "tac_rogue".equals(dimension.getNamespace()) && "rogue_dimension".equals(dimension.getPath());
     }
 }

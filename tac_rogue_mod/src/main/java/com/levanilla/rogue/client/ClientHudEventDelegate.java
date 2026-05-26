@@ -17,6 +17,12 @@ import net.minecraftforge.client.gui.overlay.VanillaGuiOverlay;
 
 final class ClientHudEventDelegate {
     private ClientHudEventDelegate() {}
+    private static final double CROSSHAIR_SMOOTHING = 0.35D;
+    private static final double CROSSHAIR_SNAP_DISTANCE = 36.0D;
+    private static final SmoothCrosshair gunCrosshairSmoothing = new SmoothCrosshair();
+    private static final SmoothCrosshair interactionCrosshairSmoothing = new SmoothCrosshair();
+    private static CachedGunAim cachedGunAim;
+    private static CachedInteractionAim cachedInteractionAim;
 
     static void onRenderGuiOverlay(RenderGuiOverlayEvent.Pre event) {
         Minecraft mc = Minecraft.getInstance();
@@ -40,8 +46,8 @@ final class ClientHudEventDelegate {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return;
 
-        boolean isRogueDim = mc.level.dimension().location().getNamespace().equals("tac_rogue");
-        if (!isRogueDim && !RunManager.isRunActive()) return;
+        HudContext context = HudContext.of(mc);
+        if (!context.enabled()) return;
 
         if (event.getOverlay().id().equals(VanillaGuiOverlay.HOTBAR.id())) {
             event.setCanceled(true);
@@ -53,28 +59,54 @@ final class ClientHudEventDelegate {
             int width = event.getWindow().getGuiScaledWidth();
             int height = event.getWindow().getGuiScaledHeight();
 
-            HotbarRenderer.render(graphics, mc, player, width, height);
-            HudRenderer.render(graphics, mc, player, width, height);
-            PublicCoopWaitState.render(graphics, mc, width, height);
-            DamageIndicatorRenderer.renderGui(graphics, mc, width, height);
-            TutorialGuideManager.render(graphics, mc, width, height);
-            NotificationManager.render(graphics, mc, width, height);
-            NotificationManager.renderPopups(graphics, mc, width, height);
-            renderBackgroundLoadIndicator(graphics, mc, width);
-            renderThirdPersonCrosshair(graphics, mc, player, width, height);
-            renderStealthTakedownHint(graphics, mc, player, width, height);
-            renderObjectiveInteractHint(graphics, mc, width, height);
-            DebugAiOverlayManager.render(graphics, mc, width, height);
+            ClientPerformanceProfiler.onHudRenderStart();
+            try {
+                long sectionStart = ClientPerformanceProfiler.onHudSectionStart();
+                HotbarRenderer.render(graphics, mc, player, width, height);
+                ClientPerformanceProfiler.onHudSectionEnd(ClientPerformanceProfiler.HudSection.HOTBAR, sectionStart);
+                sectionStart = ClientPerformanceProfiler.onHudSectionStart();
+                HudRenderer.render(graphics, mc, player, width, height);
+                ClientPerformanceProfiler.onHudSectionEnd(ClientPerformanceProfiler.HudSection.STATUS, sectionStart);
+                PublicCoopWaitState.render(graphics, mc, width, height);
+                if (context.dungeon()) {
+                    DamageIndicatorRenderer.renderGui(graphics, mc, width, height);
+                }
+                if (context.lobby() || context.dungeon()) {
+                    TutorialGuideManager.render(graphics, mc, width, height);
+                }
+                sectionStart = ClientPerformanceProfiler.onHudSectionStart();
+                NotificationManager.render(graphics, mc, width, height);
+                ClientPerformanceProfiler.onHudSectionEnd(ClientPerformanceProfiler.HudSection.NOTIFICATION, sectionStart);
+                sectionStart = ClientPerformanceProfiler.onHudSectionStart();
+                NotificationManager.renderPopups(graphics, mc, width, height);
+                ClientPerformanceProfiler.onHudSectionEnd(ClientPerformanceProfiler.HudSection.POPUP, sectionStart);
+                sectionStart = ClientPerformanceProfiler.onHudSectionStart();
+                renderBackgroundLoadIndicator(graphics, mc, width);
+                ClientPerformanceProfiler.onHudSectionEnd(ClientPerformanceProfiler.HudSection.PREWARM, sectionStart);
+                renderThirdPersonCrosshair(graphics, mc, player, width, height);
+                if (context.dungeon() && RunManager.isRunActive()) {
+                    renderStealthTakedownHint(graphics, mc, player, width, height);
+                    renderObjectiveInteractHint(graphics, mc, width, height);
+                }
+                DebugAiOverlayManager.render(graphics, mc, width, height);
+            } finally {
+                ClientPerformanceProfiler.onHudRenderEnd();
+            }
         }
     }
 
     private static void renderThirdPersonCrosshair(GuiGraphics graphics, Minecraft mc, Player player, int width, int height) {
-        if (mc.options.getCameraType().isFirstPerson()) return;
-        net.minecraft.world.item.ItemStack mainHand = player.getMainHandItem();
-        if (isTacZGunStack(mainHand)) {
-            renderThirdPersonGunCrosshair(graphics, mc, width, height);
-        } else {
-            renderThirdPersonInteractionCrosshair(graphics, mc, width, height);
+        long perfStart = ClientPerformanceProfiler.onHudSectionStart();
+        try {
+            if (mc.options.getCameraType().isFirstPerson()) return;
+            net.minecraft.world.item.ItemStack mainHand = player.getMainHandItem();
+            if (isTacZGunStack(mainHand)) {
+                renderThirdPersonGunCrosshair(graphics, mc, width, height);
+            } else {
+                renderThirdPersonInteractionCrosshair(graphics, mc, width, height);
+            }
+        } finally {
+            ClientPerformanceProfiler.onHudSectionEnd(ClientPerformanceProfiler.HudSection.CROSSHAIR, perfStart);
         }
     }
 
@@ -99,14 +131,22 @@ final class ClientHudEventDelegate {
             int cx = width / 2;
             int cy = height / 2;
 
-            LeaWindsCompat.GunAimResult aim =
-                LeaWindsCompat.resolveThirdPersonGunAimForRender(mc, 96.0D);
+            long traceStart = ClientPerformanceProfiler.onProfileSectionStart();
+            LeaWindsCompat.GunAimResult aim;
+            try {
+                aim = resolveCachedGunAim(mc);
+            } finally {
+                ClientPerformanceProfiler.onProfileSectionEnd(
+                    ClientPerformanceProfiler.ProfileSection.THIRD_PERSON_CROSSHAIR_TRACE,
+                    traceStart);
+            }
             if (aim == null || aim.target() == null) return;
 
             ScreenPoint targetPoint = projectToScreen(mc, aim.target(), width, height);
             if (targetPoint != null) {
-                cx = targetPoint.x();
-                cy = targetPoint.y();
+                ScreenPoint smoothPoint = gunCrosshairSmoothing.update(targetPoint, aim.cameraObstructed(), width, height);
+                cx = smoothPoint.x();
+                cy = smoothPoint.y();
             }
 
             com.mojang.blaze3d.systems.RenderSystem.enableBlend();
@@ -131,10 +171,19 @@ final class ClientHudEventDelegate {
 
     private static void renderThirdPersonInteractionCrosshair(GuiGraphics graphics, Minecraft mc, int width, int height) {
         try {
-            LeaWindsCompat.InteractionAimResult aim = LeaWindsCompat.resolveThirdPersonInteractionTargetForRender(mc);
+            long traceStart = ClientPerformanceProfiler.onProfileSectionStart();
+            LeaWindsCompat.InteractionAimResult aim;
+            try {
+                aim = resolveCachedInteractionAim(mc);
+            } finally {
+                ClientPerformanceProfiler.onProfileSectionEnd(
+                    ClientPerformanceProfiler.ProfileSection.THIRD_PERSON_CROSSHAIR_TRACE,
+                    traceStart);
+            }
             if (aim == null || aim.target() == null) return;
             ScreenPoint point = projectToScreen(mc, aim.target(), width, height);
             if (point == null) return;
+            point = interactionCrosshairSmoothing.update(point, aim.reachable(), width, height);
 
             com.mojang.blaze3d.systems.RenderSystem.enableBlend();
             com.mojang.blaze3d.systems.RenderSystem.blendFunc(
@@ -145,6 +194,26 @@ final class ClientHudEventDelegate {
             com.mojang.blaze3d.systems.RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
         } catch (Exception ignored) {
         }
+    }
+
+    private static LeaWindsCompat.GunAimResult resolveCachedGunAim(Minecraft mc) {
+        AimFingerprint fingerprint = AimFingerprint.capture(mc, true);
+        if (cachedGunAim != null && cachedGunAim.matches(fingerprint)) {
+            return cachedGunAim.result;
+        }
+        LeaWindsCompat.GunAimResult result = LeaWindsCompat.resolveThirdPersonGunAimForRender(mc, 96.0D);
+        cachedGunAim = new CachedGunAim(fingerprint, result);
+        return result;
+    }
+
+    private static LeaWindsCompat.InteractionAimResult resolveCachedInteractionAim(Minecraft mc) {
+        AimFingerprint fingerprint = AimFingerprint.capture(mc, false);
+        if (cachedInteractionAim != null && cachedInteractionAim.matches(fingerprint)) {
+            return cachedInteractionAim.result;
+        }
+        LeaWindsCompat.InteractionAimResult result = LeaWindsCompat.resolveThirdPersonInteractionTargetForRender(mc);
+        cachedInteractionAim = new CachedInteractionAim(fingerprint, result);
+        return result;
     }
 
     private static ScreenPoint projectToScreen(Minecraft mc, net.minecraft.world.phys.Vec3 worldPos, int width, int height) {
@@ -256,6 +325,114 @@ final class ClientHudEventDelegate {
     }
 
     private record ScreenPoint(int x, int y) {}
+
+    private static final class SmoothCrosshair {
+        private boolean initialized;
+        private boolean stateKey;
+        private int screenWidth;
+        private int screenHeight;
+        private double x;
+        private double y;
+        private long lastNanos;
+
+        ScreenPoint update(ScreenPoint target, boolean stateKey, int width, int height) {
+            long now = System.nanoTime();
+            boolean reset = !initialized
+                || this.stateKey != stateKey
+                || this.screenWidth != width
+                || this.screenHeight != height
+                || lastNanos <= 0L;
+
+            if (reset) {
+                snap(target, stateKey, width, height, now);
+                return target;
+            }
+
+            double dx = target.x() - x;
+            double dy = target.y() - y;
+            double distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance > CROSSHAIR_SNAP_DISTANCE) {
+                snap(target, stateKey, width, height, now);
+                return target;
+            }
+
+            double frameScale = Math.max(0.25D, Math.min(3.0D, (now - lastNanos) / 16_666_666.0D));
+            double alpha = 1.0D - Math.pow(1.0D - CROSSHAIR_SMOOTHING, frameScale);
+            x += dx * alpha;
+            y += dy * alpha;
+            lastNanos = now;
+            return new ScreenPoint((int)Math.round(x), (int)Math.round(y));
+        }
+
+        private void snap(ScreenPoint target, boolean stateKey, int width, int height, long now) {
+            initialized = true;
+            this.stateKey = stateKey;
+            this.screenWidth = width;
+            this.screenHeight = height;
+            this.x = target.x();
+            this.y = target.y();
+            this.lastNanos = now;
+        }
+    }
+
+    private record CachedGunAim(AimFingerprint fingerprint, LeaWindsCompat.GunAimResult result) {
+        boolean matches(AimFingerprint other) {
+            return fingerprint.matches(other);
+        }
+    }
+
+    private record CachedInteractionAim(AimFingerprint fingerprint, LeaWindsCompat.InteractionAimResult result) {
+        boolean matches(AimFingerprint other) {
+            return fingerprint.matches(other);
+        }
+    }
+
+    private record AimFingerprint(long gameTime, int itemHash, int posX, int posY, int posZ, int yaw, int pitch, boolean gun) {
+        static AimFingerprint capture(Minecraft mc, boolean gun) {
+            long gameTime = mc.level == null ? -1L : mc.level.getGameTime();
+            net.minecraft.world.entity.player.Player player = mc.player;
+            net.minecraft.world.item.ItemStack stack = player == null ? net.minecraft.world.item.ItemStack.EMPTY : player.getMainHandItem();
+            net.minecraft.world.phys.Vec3 pos = player == null ? net.minecraft.world.phys.Vec3.ZERO : player.getEyePosition(1.0F);
+            int itemHash = stack.isEmpty() ? 0 : 31 * net.minecraft.world.item.Item.getId(stack.getItem()) + stack.getDamageValue()
+                + (stack.getTag() == null ? 0 : stack.getTag().hashCode());
+            return new AimFingerprint(
+                gameTime,
+                itemHash,
+                quantize(pos.x, 0.02D),
+                quantize(pos.y, 0.02D),
+                quantize(pos.z, 0.02D),
+                quantize(player == null ? 0.0D : player.getYRot(), 0.20D),
+                quantize(player == null ? 0.0D : player.getXRot(), 0.20D),
+                gun);
+        }
+
+        boolean matches(AimFingerprint other) {
+            return other != null
+                && this.gameTime == other.gameTime
+                && this.itemHash == other.itemHash
+                && this.posX == other.posX
+                && this.posY == other.posY
+                && this.posZ == other.posZ
+                && this.yaw == other.yaw
+                && this.pitch == other.pitch
+                && this.gun == other.gun;
+        }
+
+        private static int quantize(double value, double step) {
+            return (int)Math.round(value / step);
+        }
+    }
+
+    private record HudContext(boolean enabled, boolean lobby, boolean dungeon) {
+        static HudContext of(Minecraft mc) {
+            if (mc.level == null) return new HudContext(RunManager.isRunActive(), false, false);
+            net.minecraft.resources.ResourceLocation dimension = mc.level.dimension().location();
+            boolean tacRogue = "tac_rogue".equals(dimension.getNamespace());
+            boolean lobby = tacRogue && "lobby_dimension".equals(dimension.getPath());
+            boolean dungeon = tacRogue && "rogue_dimension".equals(dimension.getPath());
+            return new HudContext(tacRogue || RunManager.isRunActive(), lobby, dungeon);
+        }
+    }
 
     private static void renderBackgroundLoadIndicator(GuiGraphics graphics, Minecraft mc, int screenWidth) {
         if (mc.level == null || !"tac_rogue:lobby_dimension".equals(mc.level.dimension().location().toString())) return;

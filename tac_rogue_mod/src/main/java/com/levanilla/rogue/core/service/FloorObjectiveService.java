@@ -20,8 +20,11 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.phys.AABB;
+import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.PacketDistributor;
 
 import java.util.ArrayList;
@@ -43,6 +46,9 @@ public final class FloorObjectiveService {
     private static final int HOLD_POSITION_TICKS = 25 * 20;
     private static final double OBJECTIVE_RADIUS_SQR = 6.5D * 6.5D;
     private static final double HOLD_CONTEST_RADIUS = 7.0D;
+    private static final long OBJECTIVE_LURE_INTERVAL_TICKS = 80L;
+    private static final int OBJECTIVE_LURE_MOBS_PER_PULSE = 4;
+    private static final double OBJECTIVE_LURE_RADIUS_SQR = 54.0D * 54.0D;
     private static final java.util.Set<UUID> REWARDED_ELITES = ConcurrentHashMap.newKeySet();
     private static final ConcurrentHashMap<UUID, ObjectiveType> DEBUG_OBJECTIVE_OVERRIDES = new ConcurrentHashMap<>();
 
@@ -90,6 +96,9 @@ public final class FloorObjectiveService {
         instance.objectiveActivated = type != ObjectiveType.SECURE_TERMINAL;
         instance.objectiveContested = false;
         instance.objectiveStatusKey = initialStatusFor(type);
+        instance.lastObjectiveLureTick = 0L;
+        instance.objectiveLurePulseCount = 0;
+        instance.objectiveLureCursor = 0;
         instance.objectiveTargetPos = null;
         instance.objectiveEliteUuid = null;
         instance.objectiveEliteRegistered = false;
@@ -501,14 +510,16 @@ public final class FloorObjectiveService {
 
         boolean contested = type == ObjectiveType.HOLD_POSITION && isContested(level, target, aliveSpawnedMobs);
         instance.objectiveContested = contested;
+        if (shouldPulseObjectiveLure(type, instance, occupied)) {
+            pulseObjectiveLure(server, level, instance, type, target, aliveSpawnedMobs, contested);
+        }
         int step = Math.max(1, com.levanilla.rogue.core.GameConstants.FLOOR_CLEAR_CHECK_INTERVAL);
         if (occupied && !contested) {
             instance.objectiveHoldTicks = Math.min(instance.objectiveTarget, instance.objectiveHoldTicks + step);
             instance.objectiveStatusKey = type == ObjectiveType.HOLD_POSITION
-                ? "objective.tac_rogue.status.hold_securing"
-                : "objective.tac_rogue.status.secure_uploading";
+                ? (instance.objectiveLurePulseCount > 0 ? "objective.tac_rogue.status.hold_beacon" : "objective.tac_rogue.status.hold_securing")
+                : (instance.objectiveLurePulseCount > 0 ? "objective.tac_rogue.status.secure_signal" : "objective.tac_rogue.status.secure_uploading");
         } else if (contested) {
-            instance.objectiveHoldTicks = Math.max(0, instance.objectiveHoldTicks - step);
             instance.objectiveStatusKey = "objective.tac_rogue.status.contested";
         } else {
             instance.objectiveHoldTicks = Math.max(0, instance.objectiveHoldTicks - Math.max(1, step / 2));
@@ -520,14 +531,79 @@ public final class FloorObjectiveService {
         return instance.objectiveHoldTicks >= instance.objectiveTarget;
     }
 
+    private static boolean shouldPulseObjectiveLure(ObjectiveType type, FloorInstanceManager.FloorInstance instance, boolean occupied) {
+        if (instance == null || instance.objectiveCompleted) return false;
+        return switch (type) {
+            case SECURE_TERMINAL -> instance.objectiveActivated && (occupied || instance.objectiveHoldTicks > 0);
+            case HOLD_POSITION -> occupied || instance.objectiveHoldTicks > 0;
+            default -> false;
+        };
+    }
+
+    private static void pulseObjectiveLure(MinecraftServer server, ServerLevel level,
+                                           FloorInstanceManager.FloorInstance instance, ObjectiveType type,
+                                           BlockPos target, List<Mob> aliveSpawnedMobs, boolean contested) {
+        if (server == null || level == null || instance == null || target == null) return;
+        long now = server.getTickCount();
+        if (now - instance.lastObjectiveLureTick < OBJECTIVE_LURE_INTERVAL_TICKS) return;
+        instance.lastObjectiveLureTick = now;
+        instance.objectiveLurePulseCount++;
+
+        Vec3 lurePos = Vec3.atCenterOf(target);
+        int lured = 0;
+        if (aliveSpawnedMobs != null) {
+            List<Mob> candidates = new ArrayList<>(aliveSpawnedMobs);
+            candidates.sort(java.util.Comparator.comparingDouble(mob -> mob.distanceToSqr(lurePos)));
+            int size = candidates.size();
+            int start = size == 0 ? 0 : Math.floorMod(instance.objectiveLureCursor, size);
+            int inspected = 0;
+            while (inspected < size && lured < OBJECTIVE_LURE_MOBS_PER_PULSE) {
+                Mob mob = candidates.get((start + inspected) % size);
+                inspected++;
+                if (mob == null || !mob.isAlive() || mob.level() != level) continue;
+                if (mob.distanceToSqr(lurePos) > OBJECTIVE_LURE_RADIUS_SQR) continue;
+                if (mob.distanceToSqr(lurePos) <= HOLD_CONTEST_RADIUS * HOLD_CONTEST_RADIUS) continue;
+                RogueMobAlertService.drawToObjective(
+                    mob,
+                    lurePos,
+                    contested || instance.objectiveLurePulseCount > 1,
+                    type == ObjectiveType.SECURE_TERMINAL ? "terminal_signal" : "hold_beacon");
+                lured++;
+            }
+            instance.objectiveLureCursor = size == 0 ? 0 : Math.floorMod(start + Math.max(1, inspected), size);
+        }
+
+        if (type == ObjectiveType.SECURE_TERMINAL) {
+            level.playSound(null, target, SoundEvents.NOTE_BLOCK_BIT.value(), SoundSource.BLOCKS, 0.78F, 0.65F + level.random.nextFloat() * 0.12F);
+            level.playSound(null, target, SoundEvents.REDSTONE_TORCH_BURNOUT, SoundSource.BLOCKS, 0.45F, 1.45F);
+            level.sendParticles(ParticleTypes.END_ROD,
+                target.getX() + 0.5D, target.getY() + 1.15D, target.getZ() + 0.5D,
+                10, 0.32D, 0.22D, 0.32D, 0.015D);
+        } else {
+            level.playSound(null, target, SoundEvents.BELL_BLOCK, SoundSource.BLOCKS, 0.62F, 0.92F);
+            level.playSound(null, target, SoundEvents.CROSSBOW_LOADING_START, SoundSource.BLOCKS, 0.35F, 0.75F);
+            level.sendParticles(ParticleTypes.SMOKE,
+                target.getX() + 0.5D, target.getY() + 0.35D, target.getZ() + 0.5D,
+                12, 0.48D, 0.12D, 0.48D, 0.018D);
+        }
+    }
+
     private static boolean isContested(ServerLevel level, BlockPos target, List<Mob> aliveSpawnedMobs) {
         if (aliveSpawnedMobs == null || aliveSpawnedMobs.isEmpty()) return false;
         AABB area = new AABB(target).inflate(HOLD_CONTEST_RADIUS, 3.0D, HOLD_CONTEST_RADIUS);
         for (Mob mob : aliveSpawnedMobs) {
             if (mob == null || !mob.isAlive() || mob.level() != level) continue;
-            if (area.contains(mob.position())) return true;
+            if (area.contains(mob.position()) && hasObjectiveLineOfSight(level, mob, target)) return true;
         }
         return false;
+    }
+
+    private static boolean hasObjectiveLineOfSight(ServerLevel level, Mob mob, BlockPos target) {
+        if (level == null || mob == null || target == null) return false;
+        Vec3 start = mob.getEyePosition();
+        Vec3 end = Vec3.atCenterOf(target);
+        HitResult hit = level.clip(new ClipContext(start, end, ClipContext.Block.COLLIDER, ClipContext.Fluid.NONE, mob));
+        return hit.getType() == HitResult.Type.MISS || hit.getLocation().distanceToSqr(end) <= 1.15D;
     }
 
     private static boolean isInteractObjective(ObjectiveType type) {
@@ -633,7 +709,7 @@ public final class FloorObjectiveService {
         BlockPos base = instance.objectiveTargetPos != null ? instance.objectiveTargetPos : instance.origin;
         int spawned = 0;
         for (ServerPlayer player : participants) {
-            if (spawned >= 3) break;
+            if (spawned >= 4) break;
             BlockPos pos = com.levanilla.rogue.world.NpcManager.findExtractionSpawnNear(level, player);
             com.levanilla.rogue.world.TacRogueNpcEntity npc =
                 com.levanilla.rogue.world.NpcManager.spawnSupportOperator(level, pos, instance.floor, spawned);
@@ -642,7 +718,7 @@ public final class FloorObjectiveService {
                 spawned++;
             }
         }
-        for (; spawned < 2; spawned++) {
+        for (; spawned < 3; spawned++) {
             com.levanilla.rogue.world.TacRogueNpcEntity npc =
                 com.levanilla.rogue.world.NpcManager.spawnSupportOperator(
                     level,
