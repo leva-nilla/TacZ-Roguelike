@@ -959,12 +959,29 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
     /** クライアント側パーク効果合算 */
     private static float sumClientPerkEffect(net.minecraft.client.player.LocalPlayer player, String perkPrefix) {
         float total = 0;
+        PerkDefinition.Category category = categoryFromPerkPrefix(perkPrefix);
         for (String tag : getClientPerkTags(player)) {
             if (tag.startsWith(perkPrefix)) {
-                total += PerkDefinition.fromTag(tag).calculateEffect();
+                PerkDefinition perk = PerkDefinition.fromTag(tag);
+                total += perk.calculateEffect();
+                if (category == null) {
+                    category = perk.category;
+                }
             }
         }
-        return total;
+        return category == null ? total : PerkDefinition.softcapTotalEffect(category, total);
+    }
+
+    private static PerkDefinition.Category categoryFromPerkPrefix(String perkPrefix) {
+        if (perkPrefix == null || !perkPrefix.startsWith("perk:")) return null;
+        String rest = perkPrefix.substring("perk:".length());
+        int colon = rest.indexOf(':');
+        String categoryName = colon >= 0 ? rest.substring(0, colon) : rest;
+        try {
+            return PerkDefinition.Category.valueOf(categoryName);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 
     private static String formatEffectivePerkValue(net.minecraft.client.player.LocalPlayer player, PerkDefinition.Category category, float totalEffect) {
@@ -1008,14 +1025,8 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
     }
 
     private static float effectiveStackedChance(net.minecraft.client.player.LocalPlayer player, PerkDefinition.Category category, float scale) {
-        float failChance = 1.0f;
-        for (String tag : getClientPerkTags(player)) {
-            if (tag.startsWith("perk:" + category.name())) {
-                float chance = Math.max(0.0f, PerkDefinition.fromTag(tag).calculateEffect() / 100.0f * scale);
-                failChance *= Math.max(0.0f, 1.0f - chance);
-            }
-        }
-        return (1.0f - failChance) * 100.0f;
+        float total = sumClientPerkEffect(player, "perk:" + category.name());
+        return Math.max(0.0f, total * scale);
     }
 
     private com.levanilla.rogue.core.registry.ShopCatalog.Category shopCategoryFilter = null; // null = ALL

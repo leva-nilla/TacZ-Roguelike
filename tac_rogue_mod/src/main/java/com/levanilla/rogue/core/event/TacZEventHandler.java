@@ -99,14 +99,8 @@ public class TacZEventHandler {
         if (player.level().dimension() != ROGUE_DIM) return;
 
         // === パーク: AMMO_EFFICIENCY (弾薬節約) ===
-        float consumeChance = 1.0f;
-        for (String tag : player.getTags()) {
-            if (tag.startsWith("perk:AMMO_EFFICIENCY")) {
-                PerkDefinition perk = PerkDefinition.fromTag(tag);
-                consumeChance *= (1.0f - perk.calculateEffect() / 100.0f);
-            }
-        }
-        float saveChance = Math.min(GameConstants.AMMO_SAVE_MAX_CHANCE, Math.max(0.0f, 1.0f - consumeChance));
+        float ammoEfficiency = PerkDefinition.sumCategoryEffect(player, PerkDefinition.Category.AMMO_EFFICIENCY);
+        float saveChance = Math.min(GameConstants.AMMO_SAVE_MAX_CHANCE, Math.max(0.0f, ammoEfficiency / 100.0f));
         if (saveChance > 0 && player.getRandom().nextFloat() < saveChance) {
             net.minecraft.world.item.ItemStack gun = event.getGunItemStack();
             if (gun.hasTag()) {

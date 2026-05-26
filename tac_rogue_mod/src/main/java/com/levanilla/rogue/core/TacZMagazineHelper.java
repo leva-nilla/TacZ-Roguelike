@@ -51,12 +51,6 @@ public final class TacZMagazineHelper {
     }
 
     private static float sumMagSizePerk(LivingEntity holder) {
-        if (holder == null) return 0.0F;
-        float total = 0.0F;
-        for (String tag : holder.getTags()) {
-            if (!tag.startsWith("perk:" + PerkDefinition.Category.MAG_SIZE.name())) continue;
-            total += PerkDefinition.fromTag(tag).calculateEffect();
-        }
-        return total;
+        return PerkDefinition.sumCategoryEffect(holder, PerkDefinition.Category.MAG_SIZE);
     }
 }

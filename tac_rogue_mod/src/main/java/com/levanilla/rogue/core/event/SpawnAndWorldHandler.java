@@ -29,6 +29,7 @@ import static com.levanilla.rogue.core.CommonEventHandler.LOBBY_DIM;
 @Mod.EventBusSubscriber(modid = "tac_rogue")
 public class SpawnAndWorldHandler {
     private static final List<PendingSlimeSplit> PENDING_SLIME_SPLITS = new ArrayList<>();
+    private static final int MOB_MAINTENANCE_INTERVAL_TICKS = 5;
 
     // ===== バニラスポーン抑制 =====
 
@@ -257,7 +258,8 @@ public class SpawnAndWorldHandler {
         }
 
         // ダンジョン内Mob全般の壁抜け・場外脱出対策とフェイルセーフ亡霊処理
-        if (mob.getTags().contains("tac_rogue_spawned") || mob.getTags().contains("tac_rogue_npc")) {
+        if ((mob.getTags().contains("tac_rogue_spawned") || mob.getTags().contains("tac_rogue_npc"))
+                && Math.floorMod(mob.tickCount + mob.getId(), MOB_MAINTENANCE_INTERVAL_TICKS) == 0) {
             ServerPlayer runOwner = level instanceof ServerLevel sl
                 ? RunManager.findPlayerForDungeonPosition(sl, mob.getX(), mob.getZ())
                 : null;

@@ -117,6 +117,11 @@ public final class PlayerPerkTickService {
             perkCount++;
         }
 
+        for (PerkDefinition.Category category : PerkDefinition.Category.values()) {
+            int index = category.ordinal();
+            categoryEffects[index] = PerkDefinition.softcapTotalEffect(category, categoryEffects[index]);
+        }
+
         return perkCount == 0 ? PerkSnapshot.EMPTY : new PerkSnapshot(categoryEffects, modifierCounts, cursedPenaltyCounts, perkCount);
     }
 
@@ -359,8 +364,21 @@ public final class PlayerPerkTickService {
             AttributeModifier.Operation operation) {
         AttributeInstance inst = player.getAttribute(attribute);
         if (inst == null) return;
-        inst.removeModifier(uuid);
-        if (Math.abs(amount) > 0.001) {
+        AttributeModifier current = inst.getModifier(uuid);
+        boolean shouldApply = Math.abs(amount) > 0.001;
+        if (current == null && !shouldApply) {
+            return;
+        }
+        if (current != null
+                && shouldApply
+                && current.getOperation() == operation
+                && Math.abs(current.getAmount() - amount) <= 0.0001) {
+            return;
+        }
+        if (current != null) {
+            inst.removeModifier(uuid);
+        }
+        if (shouldApply) {
             inst.addTransientModifier(new AttributeModifier(uuid, name, amount, operation));
         }
     }

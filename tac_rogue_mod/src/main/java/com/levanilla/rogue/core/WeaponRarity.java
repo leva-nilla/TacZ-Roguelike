@@ -146,14 +146,7 @@ public class WeaponRarity {
     /** レアリティと RELOAD_SPEED パークを合算した実効リロード時間倍率を取得 */
     public static float getEffectiveReloadMult(ItemStack gun, LivingEntity holder) {
         float mult = getReloadMult(gun);
-        float reloadBonus = 0.0f;
-        if (holder != null) {
-            for (String tag : holder.getTags()) {
-                if (tag.startsWith("perk:" + PerkDefinition.Category.RELOAD_SPEED.name())) {
-                    reloadBonus += PerkDefinition.fromTag(tag).calculateEffect();
-                }
-            }
-        }
+        float reloadBonus = PerkDefinition.sumCategoryEffect(holder, PerkDefinition.Category.RELOAD_SPEED);
         if (reloadBonus > 0.0f) {
             mult /= (1.0f + reloadBonus / 100.0f);
         }
@@ -178,14 +171,7 @@ public class WeaponRarity {
 
     /** FIRE_RATE パークのソフトキャップ後ボーナスを取得 */
     public static float getFireRatePerkBonusPercent(LivingEntity holder) {
-        float fireRateBonus = 0.0f;
-        if (holder != null) {
-            for (String tag : holder.getTags()) {
-                if (tag.startsWith("perk:" + PerkDefinition.Category.FIRE_RATE.name())) {
-                    fireRateBonus += PerkDefinition.fromTag(tag).calculateEffect();
-                }
-            }
-        }
+        float fireRateBonus = PerkDefinition.sumCategoryEffect(holder, PerkDefinition.Category.FIRE_RATE);
         return softcapPercent(
             fireRateBonus,
             GameConstants.FIRE_RATE_SOFTCAP_START,
@@ -195,14 +181,7 @@ public class WeaponRarity {
 
     /** MELEE_SPEED パークのソフトキャップ後ボーナスを取得 */
     public static float getMeleeSpeedPerkBonusPercent(LivingEntity holder) {
-        float meleeSpeedBonus = 0.0f;
-        if (holder != null) {
-            for (String tag : holder.getTags()) {
-                if (tag.startsWith("perk:" + PerkDefinition.Category.MELEE_SPEED.name())) {
-                    meleeSpeedBonus += PerkDefinition.fromTag(tag).calculateEffect();
-                }
-            }
-        }
+        float meleeSpeedBonus = PerkDefinition.sumCategoryEffect(holder, PerkDefinition.Category.MELEE_SPEED);
         return softcapPercent(
             meleeSpeedBonus,
             GameConstants.FIRE_RATE_SOFTCAP_START,

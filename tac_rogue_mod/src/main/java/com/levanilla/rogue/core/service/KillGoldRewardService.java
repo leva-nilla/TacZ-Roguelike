@@ -39,12 +39,6 @@ public final class KillGoldRewardService {
     }
 
     private static float sumPerkEffect(ServerPlayer player, String perkPrefix) {
-        float sum = 0.0F;
-        for (String tag : player.getTags()) {
-            if (tag.startsWith(perkPrefix)) {
-                sum += PerkDefinition.fromTag(tag).calculateEffect();
-            }
-        }
-        return sum;
+        return PerkDefinition.sumEffect(player, perkPrefix);
     }
 }

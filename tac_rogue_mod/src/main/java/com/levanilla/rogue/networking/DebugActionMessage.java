@@ -348,12 +348,7 @@ public class DebugActionMessage {
             return;
         }
         WeaponRarity.Rarity rarity = WeaponRarity.getRarity(stack);
-        float autoloaderEffect = 0.0f;
-        for (String tag : player.getTags()) {
-            if (tag.startsWith("perk:AUTOLOADER")) {
-                autoloaderEffect += PerkDefinition.fromTag(tag).calculateEffect();
-            }
-        }
+        float autoloaderEffect = PerkDefinition.sumCategoryEffect(player, PerkDefinition.Category.AUTOLOADER);
         player.sendSystemMessage(Component.literal("\u00A7a[DEBUG] Reload rarity="
             + rarity.name()
             + " rarityMult=" + String.format(Locale.ROOT, "%.2f", WeaponRarity.getReloadMult(stack))

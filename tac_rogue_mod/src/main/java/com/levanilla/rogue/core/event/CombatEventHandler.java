@@ -54,18 +54,42 @@ public class CombatEventHandler {
         public final boolean isShotgun;
         public final boolean isPerkCrit;
         public final net.minecraft.world.phys.Vec3 impactPos;
+        public final long createdAtMs;
 
         public GunDamageContext(boolean isHeadShot, boolean isShotgun, boolean isPerkCrit, net.minecraft.world.phys.Vec3 impactPos) {
             this.isHeadShot = isHeadShot;
             this.isShotgun = isShotgun;
             this.isPerkCrit = isPerkCrit;
             this.impactPos = impactPos;
+            this.createdAtMs = System.currentTimeMillis();
         }
     }
     private static final java.util.Map<Integer, GunDamageContext> pendingGunContext = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<Integer, java.util.List<com.levanilla.rogue.core.registry.ShopCatalog.ShopItem>> weaponDropCandidatesByBand =
+        new java.util.concurrent.ConcurrentHashMap<>();
+    private static final java.util.Map<String, java.util.List<String>> attachmentIdsBySlot =
+        new java.util.concurrent.ConcurrentHashMap<>();
+    private static final long PENDING_GUN_CONTEXT_TTL_MS = 5000L;
 
     public static void registerGunDamageContext(int entityId, boolean isHeadShot, boolean isShotgun, boolean isPerkCrit, net.minecraft.world.phys.Vec3 impactPos) {
         pendingGunContext.put(entityId, new GunDamageContext(isHeadShot, isShotgun, isPerkCrit, impactPos));
+    }
+
+    @SubscribeEvent
+    public static void onServerTick(net.minecraftforge.event.TickEvent.ServerTickEvent event) {
+        if (event.phase != net.minecraftforge.event.TickEvent.Phase.END) return;
+        if (event.getServer().getTickCount() % 100 == 0) {
+            cleanupPendingGunContexts();
+        }
+    }
+
+    @SubscribeEvent
+    public static void onPlayerLogout(net.minecraftforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        java.util.UUID uuid = player.getUUID();
+        lastDamageTickMap.remove(uuid);
+        lastKillTick.remove(uuid);
+        lastStealthHintTarget.remove(uuid);
     }
 
     public static long getLastDamageTick(java.util.UUID playerId) {
@@ -179,15 +203,9 @@ public class CombatEventHandler {
         }
 
         if (event.getEntity() instanceof ServerPlayer damagedPlayer) {
-            // DODGE stacks multiplicatively through player perk tags and caps at the shared balance limit.
-            float hitChance = 1.0f;
-            for (String tag : damagedPlayer.getTags()) {
-                if (tag.startsWith("perk:DODGE")) {
-                    PerkDefinition perk = PerkDefinition.fromTag(tag);
-                    hitChance *= (1.0f - PerkDefinition.getDodgeChancePercent(perk.calculateEffect()) / 100.0f);
-                }
-            }
-            float dodgeChance = Math.min(GameConstants.DODGE_MAX_CHANCE, 1.0f - hitChance);
+            float dodgeEffect = PerkDefinition.sumCategoryEffect(damagedPlayer, PerkDefinition.Category.DODGE);
+            float dodgeChance = Math.min(GameConstants.DODGE_MAX_CHANCE,
+                PerkDefinition.getDodgeChancePercent(dodgeEffect) / 100.0f);
             if (dodgeChance > 0 && damagedPlayer.getRandom().nextFloat() < dodgeChance) {
                 event.setCanceled(true);
                 damagedPlayer.displayClientMessage(net.minecraft.network.chat.Component.literal("\u00A7a* DODGE! *"), true);
@@ -709,38 +727,7 @@ public class CombatEventHandler {
     }
 
     private static net.minecraft.world.item.ItemStack generateWeaponDrop(net.minecraft.util.RandomSource random, int floor) {
-        java.util.List<com.levanilla.rogue.core.registry.ShopCatalog.ShopItem> weapons = new java.util.ArrayList<>();
-        for (var item : TacZRegistryHelper.getAllShopItems()) {
-            if (item.category.isWeapon()) {
-                boolean allow = false;
-                if (floor <= 5) { // 1~5
-                    allow = (item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.PISTOL ||
-                             item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.SMG ||
-                             item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.MELEE);
-                } else if (floor <= 15) {
-                    allow = (item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.PISTOL ||
-                             item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.SMG ||
-                             item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.MELEE ||
-                             item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.SHOTGUN);
-                } else if (floor <= 30) {
-                    allow = (item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.PISTOL ||
-                             item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.SMG ||
-                             item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.MELEE ||
-                             item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.SHOTGUN ||
-                             item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.RIFLE);
-                } else if (floor <= 50) {
-                    allow = (item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.PISTOL ||
-                             item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.SMG ||
-                             item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.MELEE ||
-                             item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.SHOTGUN ||
-                             item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.RIFLE ||
-                             item.category == com.levanilla.rogue.core.registry.ShopCatalog.Category.LMG);
-                } else {
-                    allow = true;
-                }
-                if (allow) weapons.add(item);
-            }
-        }
+        java.util.List<com.levanilla.rogue.core.registry.ShopCatalog.ShopItem> weapons = getWeaponDropCandidates(floor);
         if (weapons.isEmpty()) return new net.minecraft.world.item.ItemStack(Items.AIR);
 
         var chosen = weapons.get(random.nextInt(weapons.size()));
@@ -757,25 +744,24 @@ public class CombatEventHandler {
         }
 
         if (stack.hasTag() && stack.getTag().contains("GunId")) {
-            java.util.List<String> allAtt = TacZRegistryHelper.getAllAttachmentIds();
             net.minecraft.nbt.CompoundTag attTag = new net.minecraft.nbt.CompoundTag();
             
             float attachmentChance = 0.2f + Math.min(0.5f, floor * 0.005f);
             
             if (random.nextFloat() < attachmentChance + 0.1f) {
-                String id = getRandomAttachmentOfType(allAtt, "sight", random);
+                String id = getRandomAttachmentOfType("sight", random);
                 if (id != null) attTag.putString("Sight", id);
             }
             if (random.nextFloat() < attachmentChance) {
-                String id = getRandomAttachmentOfType(allAtt, "muzzle", random);
+                String id = getRandomAttachmentOfType("muzzle", random);
                 if (id != null) attTag.putString("Muzzle", id);
             }
             if (random.nextFloat() < attachmentChance) {
-                String id = getRandomAttachmentOfType(allAtt, "stock", random);
+                String id = getRandomAttachmentOfType("stock", random);
                 if (id != null) attTag.putString("Stock", id);
             }
             if (random.nextFloat() < attachmentChance * 0.6f) {
-                String id = getRandomAttachmentOfType(allAtt, "extended_mag", random);
+                String id = getRandomAttachmentOfType("extended_mag", random);
                 if (id != null) attTag.putString("ExtendedMag", id);
             }
             if (!attTag.isEmpty()) {
@@ -785,17 +771,71 @@ public class CombatEventHandler {
         return stack;
     }
 
-    private static String getRandomAttachmentOfType(java.util.List<String> allAtt, String targetType, net.minecraft.util.RandomSource random) {
+    private static java.util.List<com.levanilla.rogue.core.registry.ShopCatalog.ShopItem> getWeaponDropCandidates(int floor) {
+        int band = floor <= 5 ? 5 : floor <= 15 ? 15 : floor <= 30 ? 30 : floor <= 50 ? 50 : 100;
+        return weaponDropCandidatesByBand.computeIfAbsent(band, ignored -> {
+            java.util.List<com.levanilla.rogue.core.registry.ShopCatalog.ShopItem> weapons = new java.util.ArrayList<>();
+            for (var item : TacZRegistryHelper.getAllShopItems()) {
+                if (item.category.isWeapon() && isWeaponAllowedForFloorBand(item.category, band)) {
+                    weapons.add(item);
+                }
+            }
+            return java.util.List.copyOf(weapons);
+        });
+    }
+
+    private static boolean isWeaponAllowedForFloorBand(
+            com.levanilla.rogue.core.registry.ShopCatalog.Category category, int band) {
+        if (band <= 5) {
+            return category == com.levanilla.rogue.core.registry.ShopCatalog.Category.PISTOL
+                || category == com.levanilla.rogue.core.registry.ShopCatalog.Category.SMG
+                || category == com.levanilla.rogue.core.registry.ShopCatalog.Category.MELEE;
+        }
+        if (band <= 15) {
+            return category == com.levanilla.rogue.core.registry.ShopCatalog.Category.PISTOL
+                || category == com.levanilla.rogue.core.registry.ShopCatalog.Category.SMG
+                || category == com.levanilla.rogue.core.registry.ShopCatalog.Category.MELEE
+                || category == com.levanilla.rogue.core.registry.ShopCatalog.Category.SHOTGUN;
+        }
+        if (band <= 30) {
+            return category == com.levanilla.rogue.core.registry.ShopCatalog.Category.PISTOL
+                || category == com.levanilla.rogue.core.registry.ShopCatalog.Category.SMG
+                || category == com.levanilla.rogue.core.registry.ShopCatalog.Category.MELEE
+                || category == com.levanilla.rogue.core.registry.ShopCatalog.Category.SHOTGUN
+                || category == com.levanilla.rogue.core.registry.ShopCatalog.Category.RIFLE;
+        }
+        if (band <= 50) {
+            return category == com.levanilla.rogue.core.registry.ShopCatalog.Category.PISTOL
+                || category == com.levanilla.rogue.core.registry.ShopCatalog.Category.SMG
+                || category == com.levanilla.rogue.core.registry.ShopCatalog.Category.MELEE
+                || category == com.levanilla.rogue.core.registry.ShopCatalog.Category.SHOTGUN
+                || category == com.levanilla.rogue.core.registry.ShopCatalog.Category.RIFLE
+                || category == com.levanilla.rogue.core.registry.ShopCatalog.Category.LMG;
+        }
+        return category.isWeapon();
+    }
+
+    private static String getRandomAttachmentOfType(String targetType, net.minecraft.util.RandomSource random) {
+        java.util.List<String> valid = attachmentIdsBySlot.computeIfAbsent(targetType, CombatEventHandler::buildAttachmentIdsForSlot);
+        if (valid.isEmpty()) return null;
+        return valid.get(random.nextInt(valid.size()));
+    }
+
+    private static java.util.List<String> buildAttachmentIdsForSlot(String targetType) {
         java.util.List<String> valid = new java.util.ArrayList<>();
-        for (String id : allAtt) {
+        for (String id : TacZRegistryHelper.getAllAttachmentIds()) {
             String type = com.levanilla.rogue.core.registry.AttachmentDatabase.getSlotType(id);
             if (type == null) type = com.levanilla.rogue.core.registry.AttachmentDatabase.guessSlotType(id);
             if (targetType.equals(type)) {
                 valid.add(id);
             }
         }
-        if (valid.isEmpty()) return null;
-        return valid.get(random.nextInt(valid.size()));
+        return java.util.List.copyOf(valid);
+    }
+
+    private static void cleanupPendingGunContexts() {
+        long now = System.currentTimeMillis();
+        pendingGunContext.entrySet().removeIf(entry -> now - entry.getValue().createdAtMs > PENDING_GUN_CONTEXT_TTL_MS);
     }
 
     private static net.minecraft.world.item.ItemStack selectBossWeaponDrop(net.minecraft.util.RandomSource random, int floor) {
@@ -815,5 +855,7 @@ public class CombatEventHandler {
         lastKillTick.clear();
         lastStealthHintTarget.clear();
         pendingGunContext.clear();
+        weaponDropCandidatesByBand.clear();
+        attachmentIdsBySlot.clear();
     }
 }

@@ -1066,12 +1066,7 @@ public class RogueAdminCommand {
 
     private static float getAutoloaderRoundsPerSecond(CommandSourceStack source) {
         if (!(source.getEntity() instanceof net.minecraft.world.entity.LivingEntity holder)) return 0.0f;
-        float effect = 0.0f;
-        for (String tag : holder.getTags()) {
-            if (tag.startsWith("perk:AUTOLOADER")) {
-                effect += PerkDefinition.fromTag(tag).calculateEffect();
-            }
-        }
+        float effect = PerkDefinition.sumCategoryEffect(holder, PerkDefinition.Category.AUTOLOADER);
         return effect > 0.0f ? PerkDefinition.getAutoloaderRoundsPerSecond(effect) : 0.0f;
     }
 

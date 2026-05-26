@@ -26,12 +26,7 @@ public final class PlayerRegenService {
         }
         if (currentHp >= maxHp) return;
 
-        float regenEffect = 0.0f;
-        for (String tag : player.getTags()) {
-            if (tag.startsWith("perk:REGENERATION")) {
-                regenEffect += PerkDefinition.fromTag(tag).calculateEffect();
-            }
-        }
+        float regenEffect = PerkDefinition.sumCategoryEffect(player, PerkDefinition.Category.REGENERATION);
 
         float regenCapRatio = Math.min(1.0f,
             GameConstants.REGEN_BASE_CAP_RATIO + PerkDefinition.getRegenerationCapUnlockRatio(regenEffect));

@@ -17,6 +17,8 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 
 
@@ -28,6 +30,8 @@ import static com.levanilla.rogue.core.CommonEventHandler.ROGUE_DIM;
  */
 @Mod.EventBusSubscriber(modid = "tac_rogue")
 public class PlayerTickHandler {
+    private static final Set<net.minecraft.resources.ResourceKey<net.minecraft.world.level.Level>> NATURAL_REGEN_DISABLED_DIMENSIONS =
+        ConcurrentHashMap.newKeySet();
 
     @SubscribeEvent
     public static void onPlayerTick(TickEvent.PlayerTickEvent event) {
@@ -64,11 +68,7 @@ public class PlayerTickHandler {
             }
         }
 
-        // バニラ自然回復を無効化（カスタム回復システムで置き換え）
-        if ((player.level().dimension() == ROGUE_DIM || player.level().dimension() == LOBBY_DIM)
-                && player.level().getGameRules().getBoolean(net.minecraft.world.level.GameRules.RULE_NATURAL_REGENERATION)) {
-            player.level().getGameRules().getRule(net.minecraft.world.level.GameRules.RULE_NATURAL_REGENERATION).set(false, player.server);
-        }
+        ensureNaturalRegenDisabled(player);
 
         // ===== カスタム体力回復（ダメージ後5秒間は停止）=====
         if (player.level().dimension() == ROGUE_DIM && player.tickCount % 20 == 0) {
@@ -143,18 +143,35 @@ public class PlayerTickHandler {
 
             AttributeInstance followRange = mob.getAttribute(Attributes.FOLLOW_RANGE);
             if (followRange != null) {
-                followRange.removeModifier(GameConstants.STEALTH_MODIFIER_UUID);
-                if (rangeMul < 1.0) {
+                AttributeModifier current = followRange.getModifier(GameConstants.STEALTH_MODIFIER_UUID);
+                boolean shouldApply = rangeMul < 1.0 && mob.getTarget() == null;
+                double amount = rangeMul - 1.0;
+                if (current != null && (!shouldApply || Math.abs(current.getAmount() - amount) > 0.0001)) {
+                    followRange.removeModifier(GameConstants.STEALTH_MODIFIER_UUID);
+                    current = null;
+                }
+                if (shouldApply && current == null) {
                     followRange.addTransientModifier(new AttributeModifier(
-                        GameConstants.STEALTH_MODIFIER_UUID, "rogue_stealth", rangeMul - 1.0,
+                        GameConstants.STEALTH_MODIFIER_UUID, "rogue_stealth", amount,
                         AttributeModifier.Operation.MULTIPLY_TOTAL));
                 }
             }
         }
     }
+
+    private static void ensureNaturalRegenDisabled(ServerPlayer player) {
+        if (player.level().dimension() != ROGUE_DIM && player.level().dimension() != LOBBY_DIM) return;
+        if (!NATURAL_REGEN_DISABLED_DIMENSIONS.add(player.level().dimension())) return;
+        var rules = player.level().getGameRules();
+        if (rules.getBoolean(net.minecraft.world.level.GameRules.RULE_NATURAL_REGENERATION)) {
+            rules.getRule(net.minecraft.world.level.GameRules.RULE_NATURAL_REGENERATION).set(false, player.server);
+        }
+    }
+
     public static void clearMemory() {
         com.levanilla.rogue.core.service.PlayerPerkTickService.clearMemory();
         com.levanilla.rogue.core.service.InventoryRuleService.clearMemory();
+        NATURAL_REGEN_DISABLED_DIMENSIONS.clear();
     }
     @SubscribeEvent
     public static void onServerStopped(net.minecraftforge.event.server.ServerStoppedEvent event) {

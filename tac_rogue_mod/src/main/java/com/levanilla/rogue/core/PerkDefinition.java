@@ -134,6 +134,39 @@ public class PerkDefinition {
         };
     }
 
+    public static float softcapTotalEffect(Category category, float rawTotal) {
+        if (rawTotal <= 0.0f) return rawTotal;
+        return switch (category) {
+            case DAMAGE, FIRE_RATE, MELEE_SPEED, RELOAD_SPEED, MAG_SIZE, GOLD_RUSH, DODGE, AUTOLOADER,
+                    REGENERATION, VAMPIRE, BLOODLUST, QUICK_FIX ->
+                segmentedSoftcap(rawTotal, 45.0f, 90.0f, 150.0f, 0.70f, 0.45f, 0.25f);
+            case VITALITY, ARMOR, VELOCITY, STAMINA ->
+                segmentedSoftcap(rawTotal, 60.0f, 120.0f, 200.0f, 0.80f, 0.55f, 0.35f);
+            case SCAVENGER, RESISTANCE, STEALTH_EXTEND, MEDIC, AMMO_EFFICIENCY, EXPLOSIVE, FORTUNE,
+                    HANDLING, SHARPSHOOTER, EXECUTIONER, ADRENALINE, GUN_PROFICIENCY, HEAD_HUNTER ->
+                segmentedSoftcap(rawTotal, 75.0f, 150.0f, 250.0f, 0.90f, 0.70f, 0.50f);
+        };
+    }
+
+    private static float segmentedSoftcap(float value, float first, float second, float third,
+                                          float secondScale, float thirdScale, float finalScale) {
+        if (value <= first) return value;
+        float result = first;
+        float secondAmount = Math.min(value, second) - first;
+        if (secondAmount > 0.0f) {
+            result += secondAmount * secondScale;
+        }
+        float thirdAmount = Math.min(value, third) - second;
+        if (thirdAmount > 0.0f) {
+            result += thirdAmount * thirdScale;
+        }
+        float finalAmount = value - third;
+        if (finalAmount > 0.0f) {
+            result += finalAmount * finalScale;
+        }
+        return result;
+    }
+
     /** 表示名を動的生成 */
     public String getDisplayName() {
         String prefix = modifier.prefix.isEmpty() ? "" : modifier.prefix + " ";
@@ -217,13 +250,41 @@ public class PerkDefinition {
      */
     public static float sumEffect(net.minecraft.server.level.ServerPlayer player, String perkPrefix) {
         float total = 0;
+        Category category = categoryFromPrefix(perkPrefix);
         for (String tag : player.getTags()) {
             if (tag.startsWith(perkPrefix)) {
                 PerkDefinition perk = PerkDefinition.fromTag(tag);
                 total += perk.calculateEffect();
+                if (category == null) {
+                    category = perk.category;
+                }
             }
         }
-        return total;
+        return category == null ? total : softcapTotalEffect(category, total);
+    }
+
+    public static float sumCategoryEffect(net.minecraft.world.entity.LivingEntity entity, Category category) {
+        if (entity == null || category == null) return 0.0f;
+        float total = 0.0f;
+        String prefix = "perk:" + category.name();
+        for (String tag : entity.getTags()) {
+            if (tag.startsWith(prefix)) {
+                total += fromTag(tag).calculateEffect();
+            }
+        }
+        return softcapTotalEffect(category, total);
+    }
+
+    private static Category categoryFromPrefix(String perkPrefix) {
+        if (perkPrefix == null || !perkPrefix.startsWith("perk:")) return null;
+        String rest = perkPrefix.substring("perk:".length());
+        int colon = rest.indexOf(':');
+        String categoryName = colon >= 0 ? rest.substring(0, colon) : rest;
+        try {
+            return Category.valueOf(categoryName);
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 
     /** シリアライズ用のタグ文字列 (プレイヤーの Tag として保存) */

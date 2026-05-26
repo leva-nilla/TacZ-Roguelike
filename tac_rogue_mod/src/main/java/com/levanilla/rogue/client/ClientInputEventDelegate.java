@@ -24,7 +24,6 @@ final class ClientInputEventDelegate {
         if (event.phase == net.minecraftforge.event.TickEvent.Phase.END) {
             Minecraft mc = Minecraft.getInstance();
             boolean rogueContext = isRogueContext(mc);
-            boolean rogueDungeon = isRogueDungeonContext(mc);
 
             HudRenderer.tickVictory();
             if (!DamageIndicatorRenderer.isEmpty()) {
@@ -32,12 +31,6 @@ final class ClientInputEventDelegate {
             }
             NotificationManager.tick();
             long perfStart;
-            if (rogueDungeon || RunManager.isRunActive()) {
-                perfStart = ClientPerformanceProfiler.onProfileSectionStart();
-                DynamicLightManager.tick();
-                ClientPerformanceProfiler.onProfileSectionEnd(ClientPerformanceProfiler.ProfileSection.DYNAMIC_LIGHT_TICK, perfStart);
-            }
-
             if (rogueContext) {
                 DebugAiOverlayManager.tick(mc);
             }
@@ -62,9 +55,6 @@ final class ClientInputEventDelegate {
                 com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.sendToServer(
                     new com.levanilla.rogue.networking.RogueActionMessage(
                         com.levanilla.rogue.networking.RogueActionMessage.ActionType.FLASHLIGHT_TOGGLE, ""));
-                boolean enabled = DynamicLightManager.toggle();
-                NotificationManager.add(enabled ? "\u00A7eFlashlight ON" : "\u00A77Flashlight OFF",
-                    enabled ? 0xFFFFD700 : 0xFF888888);
             }
 
             while (ClientKeyBinds.CAMERA_TOGGLE.consumeClick()) {
@@ -83,12 +73,6 @@ final class ClientInputEventDelegate {
                 TutorialGuideManager.advanceManually(mc);
             }
         }
-    }
-
-    private static boolean isRogueDungeonContext(Minecraft mc) {
-        if (mc == null || mc.level == null) return false;
-        net.minecraft.resources.ResourceLocation dimension = mc.level.dimension().location();
-        return "tac_rogue".equals(dimension.getNamespace()) && "rogue_dimension".equals(dimension.getPath());
     }
 
     private static void ensureTacRogueGuiScale(Minecraft mc) {

@@ -28,6 +28,8 @@ public class RogueMobVisionGoal extends TargetGoal {
     private static final double VISION_RANGE = 24.0;
     /** 視野角 (度) — 正面±60° */
     private static final double FOV_COS = Math.cos(Math.toRadians(60.0));
+    private static final double SNEAK_FOV_COS = Math.cos(Math.toRadians(40.0));
+    private static final double CRAWL_FOV_COS = Math.cos(Math.toRadians(30.0));
     /** 発見後の追跡維持距離 */
     private static final double CHASE_RANGE = 32.0;
     private static final double CLOSE_AWARENESS_RANGE = 3.0;
@@ -197,8 +199,7 @@ public class RogueMobVisionGoal extends TargetGoal {
         boolean isCrawling = com.levanilla.rogue.core.CombatPostureHelper.isProne(player);
         boolean isSneaking = player.isShiftKeyDown();
         double rangeMultiplier = isCrawling ? 0.2 : (isSneaking ? 0.4 : 1.0);
-        double fovDeg = isCrawling ? 30.0 : (isSneaking ? 40.0 : 60.0);
-        double fovCos = Math.cos(Math.toRadians(fovDeg));
+        double fovCos = isCrawling ? CRAWL_FOV_COS : (isSneaking ? SNEAK_FOV_COS : FOV_COS);
 
         // 距離チェック（姿勢による範囲縮小）
         double effectiveRange = VISION_RANGE * rangeMultiplier;
