@@ -21,8 +21,7 @@ public class LobbyGenerator {
         com.levanilla.rogue.core.LobbySavedData saved = com.levanilla.rogue.core.LobbySavedData.get(level);
         boolean currentBlocks = isCurrentLobby(level, center);
         if (saved.getVersion() == LOBBY_VERSION) {
-            NpcManager.ensureNpcsSpawned(level, center);
-            NpcManager.scheduleLobbyNormalization(level, 40);
+            NpcManager.scheduleLobbyNormalization(level, 80);
             return false;
         }
         if (!currentBlocks || saved.getVersion() != LOBBY_VERSION) {
@@ -32,8 +31,7 @@ public class LobbyGenerator {
         }
 
         saved.setVersion(LOBBY_VERSION);
-        NpcManager.ensureNpcsSpawned(level, center);
-        NpcManager.scheduleLobbyNormalization(level, 40);
+        NpcManager.scheduleLobbyNormalization(level, 80);
         return false;
     }
 

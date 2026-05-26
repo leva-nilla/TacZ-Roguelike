@@ -437,7 +437,7 @@ final class ClientHudEventDelegate {
     private static void renderBackgroundLoadIndicator(GuiGraphics graphics, Minecraft mc, int screenWidth) {
         if (mc.level == null || !"tac_rogue:lobby_dimension".equals(mc.level.dimension().location().toString())) return;
         PrewarmStatus status = readPrewarmStatus();
-        if (status == null || !status.pending || status.total <= 0) return;
+        if (status == null || !status.display || status.total <= 0) return;
 
         int w = 142;
         int h = 29;
@@ -452,7 +452,7 @@ final class ClientHudEventDelegate {
         graphics.renderOutline(x, y, w, h, 0xAA55DDAA);
         graphics.drawString(mc.font, Component.translatable("hud.tac_rogue.loading.title"), x + 7, y + 4, 0xFFBFFFF3, false);
         graphics.drawString(mc.font,
-            Component.translatable(status.started ? "hud.tac_rogue.loading.sound_cache" : "hud.tac_rogue.loading.waiting"),
+            Component.translatable(!status.pending ? "hud.tac_rogue.loading.sound_cache_done" : status.started ? "hud.tac_rogue.loading.sound_cache" : "hud.tac_rogue.loading.waiting"),
             x + 7, y + 14, 0xFF8C99A6, false);
         graphics.fill(x + 7, y + h - 6, x + w - 7, y + h - 3, 0xFF17242C);
         graphics.fill(x + 7, y + h - 6, x + 7 + fillW, y + h - 3, 0xFF55DDAA);
@@ -463,17 +463,18 @@ final class ClientHudEventDelegate {
     private static PrewarmStatus readPrewarmStatus() {
         try {
             Class<?> manager = Class.forName("com.levanilla.taczstartuphelper.ClientPrewarmManager");
+            boolean display = (boolean) manager.getMethod("shouldDisplayPrewarmStatus").invoke(null);
+            if (!display) return null;
             boolean pending = (boolean) manager.getMethod("hasPendingPrewarm").invoke(null);
-            if (!pending) return null;
             int total = (int) manager.getMethod("getTotalSoundCount").invoke(null);
             int loaded = (int) manager.getMethod("getLoadedSoundCount").invoke(null);
             boolean started = (boolean) manager.getMethod("hasStartedPrewarm").invoke(null);
             float progress = (float) manager.getMethod("getProgress").invoke(null);
-            return new PrewarmStatus(pending, started, total, loaded, progress);
+            return new PrewarmStatus(display, pending, started, total, loaded, progress);
         } catch (Throwable ignored) {
             return null;
         }
     }
 
-    private record PrewarmStatus(boolean pending, boolean started, int total, int loaded, float progress) {}
+    private record PrewarmStatus(boolean display, boolean pending, boolean started, int total, int loaded, float progress) {}
 }

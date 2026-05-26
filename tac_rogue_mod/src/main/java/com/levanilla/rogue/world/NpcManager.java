@@ -31,6 +31,7 @@ import net.minecraft.world.entity.npc.Villager;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.registries.ForgeRegistries;
@@ -112,14 +113,7 @@ public class NpcManager {
 
     /** ロビーにNPCを配置（既存NPCがなければ生成） */
     public static void ensureNpcsSpawned(ServerLevel level, BlockPos lobbyCenter) {
-        // アンロードによるNPC検索漏れと増殖を防ぐため、ロビー周辺のチャンクを強制ロード
-        int cx = lobbyCenter.getX() >> 4;
-        int cz = lobbyCenter.getZ() >> 4;
-        for (int i = -6; i <= 6; i++) {
-            for (int k = -6; k <= 6; k++) {
-                level.getChunk(cx + i, cz + k);
-            }
-        }
+        loadLobbyNpcChunks(level, lobbyCenter);
 
         // 既存NPCを広めに検索。タグ漏れ・旧位置・再入場後の残骸もここで正規化する。
         AABB area = new AABB(lobbyCenter).inflate(128.0D, 64.0D, 128.0D);
@@ -166,6 +160,28 @@ public class NpcManager {
         for (NpcRole role : NpcRole.values()) {
             if (!keepers.containsKey(role)) {
                 spawnLobbyNpc(level, lobbyNpcPos(lobbyCenter, role), role, lobbyNpcName(role));
+            }
+        }
+    }
+
+    private static void loadLobbyNpcChunks(ServerLevel level, BlockPos lobbyCenter) {
+        Set<Long> loaded = new HashSet<>();
+        loadChunkSquare(level, lobbyCenter, 1, loaded);
+        for (NpcRole role : NpcRole.values()) {
+            loadChunkSquare(level, lobbyNpcPos(lobbyCenter, role), 0, loaded);
+        }
+    }
+
+    private static void loadChunkSquare(ServerLevel level, BlockPos center, int radius, Set<Long> loaded) {
+        int cx = center.getX() >> 4;
+        int cz = center.getZ() >> 4;
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                int chunkX = cx + dx;
+                int chunkZ = cz + dz;
+                if (loaded.add(ChunkPos.asLong(chunkX, chunkZ))) {
+                    level.getChunk(chunkX, chunkZ);
+                }
             }
         }
     }

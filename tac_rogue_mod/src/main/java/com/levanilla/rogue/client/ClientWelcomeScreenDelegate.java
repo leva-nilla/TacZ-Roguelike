@@ -16,6 +16,7 @@ final class ClientWelcomeScreenDelegate {
         }
         Minecraft mc = Minecraft.getInstance();
         com.levanilla.rogue.client.hud.TutorialGuideManager.resetForWorldJoin();
+        resetTacZAssetPrewarm();
         pendingWelcomeScreen = true;
         pendingWelcomeTicks = 0;
         mc.tell(() -> {
@@ -48,6 +49,14 @@ final class ClientWelcomeScreenDelegate {
             mc.setScreen(new com.levanilla.rogue.client.hud.WelcomeScreen());
             pendingWelcomeScreen = false;
             pendingWelcomeTicks = 0;
+        }
+    }
+
+    private static void resetTacZAssetPrewarm() {
+        try {
+            Class<?> manager = Class.forName("com.levanilla.taczstartuphelper.ClientPrewarmManager");
+            manager.getMethod("resetAssetWarmup").invoke(null);
+        } catch (Throwable ignored) {
         }
     }
 }
