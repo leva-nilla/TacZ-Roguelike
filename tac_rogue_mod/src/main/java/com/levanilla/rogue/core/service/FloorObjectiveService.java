@@ -338,8 +338,11 @@ public final class FloorObjectiveService {
     }
 
     public static void callObjectiveSupport(ServerLevel level, FloorInstanceManager.FloorInstance instance) {
+        callObjectiveSupport(level, instance, List.of());
+    }
+
+    public static void callObjectiveSupport(ServerLevel level, FloorInstanceManager.FloorInstance instance, List<BlockPos> reservedSpawns) {
         if (level == null || instance == null) return;
-        if (ThemeManager.isBossFloor(instance.floor)) return;
 
         List<Mob> targets = level.getEntitiesOfClass(Mob.class, new AABB(instance.origin).inflate(110.0D, 48.0D, 110.0D), mob ->
             mob != null
@@ -349,7 +352,7 @@ public final class FloorObjectiveService {
                 && !mob.getTags().contains("rogue:boss")
                 && instance.id.equals(mob.getPersistentData().getString(FloorInstanceManager.INSTANCE_ID_KEY)));
 
-        spawnSupportOperators(level, instance);
+        spawnSupportOperators(level, instance, reservedSpawns);
 
         BlockPos soundPos = instance.objectiveTargetPos != null ? instance.objectiveTargetPos : instance.origin;
         level.playSound(null, soundPos, com.tacz.guns.init.ModSounds.GUN.get(), SoundSource.HOSTILE, 0.8F, 0.82F);
@@ -705,33 +708,107 @@ public final class FloorObjectiveService {
         return ids;
     }
 
-    private static void spawnSupportOperators(ServerLevel level, FloorInstanceManager.FloorInstance instance) {
+    private static void spawnSupportOperators(ServerLevel level, FloorInstanceManager.FloorInstance instance, List<BlockPos> reservedSpawns) {
         if (level == null || instance == null) return;
         List<ServerPlayer> participants = FloorInstanceManager.getParticipants(level, instance.id);
         BlockPos base = instance.objectiveTargetPos != null ? instance.objectiveTargetPos : instance.origin;
+        List<BlockPos> occupied = new ArrayList<>();
+        if (reservedSpawns != null) occupied.addAll(reservedSpawns);
         int spawned = 0;
         for (ServerPlayer player : participants) {
             if (spawned >= 4) break;
-            BlockPos pos = com.levanilla.rogue.world.NpcManager.findExtractionSpawnNear(level, player);
+            BlockPos pos = findSupportSpawnNear(level, player, occupied, spawned);
             com.levanilla.rogue.world.TacRogueNpcEntity npc =
                 com.levanilla.rogue.world.NpcManager.spawnSupportOperator(level, pos, instance.floor, spawned);
             if (npc != null) {
                 FloorInstanceManager.stampEntity(npc, instance.id, instance.floor, instance.mode, player.getUUID());
+                occupied.add(npc.blockPosition());
                 spawned++;
             }
         }
         for (; spawned < 3; spawned++) {
+            BlockPos pos = findSupportSpawnNear(level, base, occupied, spawned);
             com.levanilla.rogue.world.TacRogueNpcEntity npc =
                 com.levanilla.rogue.world.NpcManager.spawnSupportOperator(
                     level,
-                    base.offset(spawned + 1, 0, spawned == 0 ? 1 : -1),
+                    pos,
                     instance.floor,
                     spawned);
             if (npc != null) {
                 UUID owner = participants.isEmpty() ? null : participants.get(0).getUUID();
                 FloorInstanceManager.stampEntity(npc, instance.id, instance.floor, instance.mode, owner);
+                occupied.add(npc.blockPosition());
             }
         }
+    }
+
+    private static BlockPos findSupportSpawnNear(ServerLevel level, ServerPlayer player, List<BlockPos> occupied, int index) {
+        BlockPos base = player.blockPosition();
+        Vec3 look = player.getLookAngle();
+        Vec3 forward = new Vec3(look.x, 0.0D, look.z);
+        if (forward.lengthSqr() < 0.001D) {
+            forward = Vec3.directionFromRotation(0.0F, player.getYRot()).multiply(1.0D, 0.0D, 1.0D);
+        }
+        forward = forward.normalize();
+        Vec3 right = new Vec3(-forward.z, 0.0D, forward.x);
+        double side = (index & 1) == 0 ? 1.0D : -1.0D;
+        BlockPos[] candidates = new BlockPos[] {
+            offset(base, right.x * side * 4.0D - forward.x * 2.0D, right.z * side * 4.0D - forward.z * 2.0D),
+            offset(base, right.x * side * 5.0D + forward.x * 1.5D, right.z * side * 5.0D + forward.z * 1.5D),
+            offset(base, -right.x * side * 4.0D - forward.x * 3.0D, -right.z * side * 4.0D - forward.z * 3.0D),
+            offset(base, forward.x * 5.0D + right.x * side * 2.5D, forward.z * 5.0D + right.z * side * 2.5D)
+        };
+        for (BlockPos candidate : candidates) {
+            BlockPos safe = findSupportSafeY(level, candidate, base.getY(), occupied);
+            if (safe != null) return safe;
+        }
+        return findSupportSpawnNear(level, base, occupied, index);
+    }
+
+    private static BlockPos findSupportSpawnNear(ServerLevel level, BlockPos base, List<BlockPos> occupied, int index) {
+        int startRadius = 3 + Math.max(0, index);
+        for (int radius = startRadius; radius <= 8; radius++) {
+            for (int dx = -radius; dx <= radius; dx++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    if (Math.max(Math.abs(dx), Math.abs(dz)) != radius) continue;
+                    BlockPos safe = findSupportSafeY(level, base.offset(dx, 0, dz), base.getY(), occupied);
+                    if (safe != null) return safe;
+                }
+            }
+        }
+        return base;
+    }
+
+    private static BlockPos findSupportSafeY(ServerLevel level, BlockPos pos, int baseY, List<BlockPos> occupied) {
+        for (int dy = 1; dy >= -4; dy--) {
+            BlockPos candidate = new BlockPos(pos.getX(), baseY + dy, pos.getZ());
+            if (isSupportSpawnSafe(level, candidate, occupied)) return candidate;
+        }
+        return null;
+    }
+
+    private static boolean isSupportSpawnSafe(ServerLevel level, BlockPos pos, List<BlockPos> occupied) {
+        if (!level.getWorldBorder().isWithinBounds(pos)) return false;
+        if (isNearOccupiedSpawn(pos, occupied)) return false;
+        if (!level.getBlockState(pos).getCollisionShape(level, pos).isEmpty()) return false;
+        if (!level.getBlockState(pos.above()).getCollisionShape(level, pos.above()).isEmpty()) return false;
+        return !level.getBlockState(pos.below()).getCollisionShape(level, pos.below()).isEmpty();
+    }
+
+    private static boolean isNearOccupiedSpawn(BlockPos pos, List<BlockPos> occupied) {
+        if (occupied == null || occupied.isEmpty()) return false;
+        for (BlockPos other : occupied) {
+            if (other == null) continue;
+            int dx = other.getX() - pos.getX();
+            int dy = other.getY() - pos.getY();
+            int dz = other.getZ() - pos.getZ();
+            if (dx * dx + dy * dy + dz * dz <= 9) return true;
+        }
+        return false;
+    }
+
+    private static BlockPos offset(BlockPos base, double x, double z) {
+        return base.offset((int)Math.round(x), 0, (int)Math.round(z));
     }
 
     private static void addIfPresent(List<ItemStack> supplies, ItemStack stack) {

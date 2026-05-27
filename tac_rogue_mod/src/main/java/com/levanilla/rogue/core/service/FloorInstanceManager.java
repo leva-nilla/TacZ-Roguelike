@@ -622,15 +622,16 @@ public final class FloorInstanceManager {
 
     private static void completeInstance(MinecraftServer server, ServerLevel level, FloorInstance instance) {
         instance.state = State.CLEARED;
-        FloorObjectiveService.callObjectiveSupport(level, instance);
         syncBossBarClear(server, instance);
         FloorObjectiveService.sync(server, instance, true);
 
+        List<BlockPos> reservedNpcSpawns = new ArrayList<>();
         for (UUID uuid : List.copyOf(instance.participants)) {
             ServerPlayer player = server.getPlayerList().getPlayer(uuid);
             if (player == null) continue;
             Entity npc = NpcManager.spawnExtractionOfficer(level, NpcManager.findExtractionSpawnNear(level, player), instance.floor);
             stampEntity(npc, instance.id, instance.floor, instance.mode, player.getUUID());
+            if (npc != null) reservedNpcSpawns.add(npc.blockPosition());
 
             PlayerRunData data = RunManager.getData(player);
             boolean questEligible = instance.questEligible && isQuestEligibleFloor(instance.floor, data.getMaxReachedFloor());
@@ -672,6 +673,7 @@ public final class FloorInstanceManager {
                 }
             }
         }
+        FloorObjectiveService.callObjectiveSupport(level, instance, reservedNpcSpawns);
     }
 
     static void applyMidRunJoinScaling(MinecraftServer server, FloorInstance instance) {
