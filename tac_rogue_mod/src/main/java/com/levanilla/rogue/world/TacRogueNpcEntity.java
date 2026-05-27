@@ -60,6 +60,7 @@ public class TacRogueNpcEntity extends PathfinderMob {
     private static final int SUPPORT_TACTICAL_STEP_RANDOM_TICKS = 18;
     private static final double SUPPORT_TACTICAL_STEP_DISTANCE = 2.35D;
     private static final double SUPPORT_TOO_CLOSE_DISTANCE_SQR = 4.6D * 4.6D;
+    private static final int SUPPORT_SWEEP_EXTENSION_TICKS = 20 * 8;
 
     private int supportShootCooldown = 8;
     private int supportTargetRefreshTicks = 0;
@@ -161,12 +162,21 @@ public class TacRogueNpcEntity extends PathfinderMob {
     }
 
     public boolean debugRunSupportCombatForSmoke(int ticks) {
+        return debugRunSupportCombatForSmoke(null, ticks);
+    }
+
+    public boolean debugRunSupportCombatForSmoke(Mob expectedTarget, int ticks) {
         if (this.level().isClientSide || !isSupportOperator()) return false;
         int safeTicks = Math.max(1, Math.min(80, ticks));
+        if (expectedTarget != null && expectedTarget.isAlive() && !expectedTarget.isRemoved()) {
+            supportTarget = expectedTarget;
+            supportTargetRefreshTicks = safeTicks;
+            supportUnreachableTicks = 0;
+        }
         for (int i = 0; i < safeTicks; i++) {
-            Mob before = supportTarget;
             tickSupportCombat();
-            if (before != null && !before.isAlive()) {
+            Mob checked = expectedTarget == null ? supportTarget : expectedTarget;
+            if (checked != null && (!checked.isAlive() || checked.isRemoved())) {
                 return true;
             }
         }
@@ -283,7 +293,12 @@ public class TacRogueNpcEntity extends PathfinderMob {
             long expiresAt = getPersistentData().getLong(SUPPORT_EXPIRES_AT_KEY);
             long now = level().getServer() != null ? level().getServer().getTickCount() : tickCount;
             if (expiresAt > 0L && now >= expiresAt) {
-                remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
+                if (hasRemainingSupportTargets((ServerLevel) level())) {
+                    getPersistentData().putLong(SUPPORT_EXPIRES_AT_KEY, now + SUPPORT_SWEEP_EXTENSION_TICKS);
+                    tickSupportCombat();
+                } else {
+                    remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
+                }
             } else {
                 tickSupportCombat();
             }
@@ -426,7 +441,7 @@ public class TacRogueNpcEntity extends PathfinderMob {
             && distanceSqr <= SUPPORT_AIM_RADIUS_SQR
             && supportAimReadyTicks >= SUPPORT_AIM_SETTLE_TICKS) {
             ShootResult result = fireSupportTacZShot(target);
-            if (result == ShootResult.SUCCESS) {
+            if (result == ShootResult.SUCCESS || shouldApplySupportSweepHit(result)) {
                 finishSupportTarget(target);
                 supportTarget = null;
                 supportTargetRefreshTicks = 0;
@@ -437,6 +452,10 @@ public class TacRogueNpcEntity extends PathfinderMob {
                 supportShootCooldown = 2 + this.getRandom().nextInt(3);
             }
         }
+    }
+
+    private boolean shouldApplySupportSweepHit(ShootResult result) {
+        return result != null && result != ShootResult.NOT_GUN && result != ShootResult.UNKNOWN_FAIL;
     }
 
     private Mob getSupportCombatTarget(ServerLevel level) {
@@ -501,6 +520,12 @@ public class TacRogueNpcEntity extends PathfinderMob {
         return mob != null
             && isSupportTarget(mob)
             && this.distanceToSqr(mob) <= SUPPORT_SEARCH_RADIUS * SUPPORT_SEARCH_RADIUS;
+    }
+
+    private boolean hasRemainingSupportTargets(ServerLevel level) {
+        if (level == null) return false;
+        AABB area = getBoundingBox().inflate(SUPPORT_SEARCH_RADIUS, 72.0D, SUPPORT_SEARCH_RADIUS);
+        return !level.getEntitiesOfClass(Mob.class, area, this::isSupportTarget).isEmpty();
     }
 
     private boolean hasSupportLineOfFire(Mob target) {

@@ -14,8 +14,10 @@ import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.core.WeaponRarity;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.ClientChatReceivedEvent;
+import net.minecraftforge.client.event.ComputeFovModifierEvent;
 import net.minecraftforge.client.event.RenderGuiOverlayEvent;
 import net.minecraftforge.client.event.ScreenEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
@@ -120,6 +122,19 @@ public class ClientEventHandler {
                 ));
             }
         }
+    }
+
+    @SubscribeEvent
+    public static void onComputeFovModifier(ComputeFovModifierEvent event) {
+        if (event.getPlayer() == null || !isTacRogueDimension(event.getPlayer().level().dimension().location())) return;
+        float walkingSpeed = event.getPlayer().getAbilities().getWalkingSpeed();
+        if (walkingSpeed <= 0.0F) return;
+
+        float movementSpeed = (float) event.getPlayer().getAttributeValue(Attributes.MOVEMENT_SPEED);
+        float speedFactor = ((movementSpeed / walkingSpeed) + 1.0F) * 0.5F;
+        if (!Float.isFinite(speedFactor) || speedFactor <= 0.001F) return;
+
+        event.setNewFovModifier(event.getFovModifier() / speedFactor);
     }
 
     @SubscribeEvent
@@ -260,6 +275,13 @@ public class ClientEventHandler {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) return false;
         net.minecraft.resources.ResourceLocation dimension = mc.level.dimension().location();
-        return "tac_rogue".equals(dimension.getNamespace()) && "rogue_dimension".equals(dimension.getPath());
+        return isTacRogueDimension(dimension) && "rogue_dimension".equals(dimension.getPath());
+    }
+
+    private static boolean isTacRogueDimension(net.minecraft.resources.ResourceLocation dimension) {
+        if (dimension == null) return false;
+        if (!"tac_rogue".equals(dimension.getNamespace())) return false;
+        String path = dimension.getPath();
+        return "rogue_dimension".equals(path) || "lobby_dimension".equals(path);
     }
 }

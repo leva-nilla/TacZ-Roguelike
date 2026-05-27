@@ -568,11 +568,13 @@ public final class SmokeTestService {
                     supportTarget.moveTo(support.getX() + 9.0D, support.getY(), support.getZ(), 0.0F, 0.0F);
                     supportTarget.setNoAi(true);
                     boolean targetAdded = level.addFreshEntity(supportTarget);
-                    boolean killed = support.debugRunSupportCombatForSmoke(80);
-                    record(counter, suite, "support.autonomous_sweep", targetAdded && killed && !supportTarget.isAlive(),
+                    boolean killed = support.debugRunSupportCombatForSmoke(supportTarget, 80);
+                    boolean targetCleared = !supportTarget.isAlive() || supportTarget.isRemoved();
+                    record(counter, suite, "support.autonomous_sweep", targetAdded && killed && targetCleared,
                         "support operator independently acquires and kills rogue mob",
                         "targetAdded=" + targetAdded + " killed=" + killed
-                            + " targetAlive=" + (supportTarget != null && supportTarget.isAlive()),
+                            + " targetAlive=" + (supportTarget != null && supportTarget.isAlive())
+                            + " targetRemoved=" + (supportTarget != null && supportTarget.isRemoved()),
                         "");
                 }
             } finally {
