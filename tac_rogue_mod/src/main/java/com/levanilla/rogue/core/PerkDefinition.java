@@ -139,12 +139,12 @@ public class PerkDefinition {
         return switch (category) {
             case DAMAGE, FIRE_RATE, MELEE_SPEED, RELOAD_SPEED, MAG_SIZE, GOLD_RUSH, DODGE, AUTOLOADER,
                     REGENERATION, VAMPIRE, BLOODLUST, QUICK_FIX ->
-                segmentedSoftcap(rawTotal, 45.0f, 90.0f, 150.0f, 0.70f, 0.45f, 0.25f);
+                segmentedSoftcap(rawTotal, 45.0f, 90.0f, 150.0f, 0.70f, 0.55f, 0.38f);
             case VITALITY, ARMOR, VELOCITY, STAMINA ->
-                segmentedSoftcap(rawTotal, 60.0f, 120.0f, 200.0f, 0.80f, 0.55f, 0.35f);
+                segmentedSoftcap(rawTotal, 60.0f, 120.0f, 200.0f, 0.80f, 0.65f, 0.48f);
             case SCAVENGER, RESISTANCE, STEALTH_EXTEND, MEDIC, AMMO_EFFICIENCY, EXPLOSIVE, FORTUNE,
                     HANDLING, SHARPSHOOTER, EXECUTIONER, ADRENALINE, GUN_PROFICIENCY, HEAD_HUNTER ->
-                segmentedSoftcap(rawTotal, 75.0f, 150.0f, 250.0f, 0.90f, 0.70f, 0.50f);
+                segmentedSoftcap(rawTotal, 75.0f, 150.0f, 250.0f, 0.90f, 0.78f, 0.60f);
         };
     }
 
@@ -198,6 +198,22 @@ public class PerkDefinition {
 
     public static float getDodgeChancePercent(float effect) {
         return effect * GameConstants.DODGE_EFFECT_SCALE;
+    }
+
+    public static float getAmmoSaveChancePercent(float effect) {
+        return effect * GameConstants.AMMO_SAVE_EFFECT_SCALE;
+    }
+
+    public static float getCriticalChance(float effect) {
+        return Math.min(GameConstants.CRITICAL_CHANCE_MAX, Math.max(0.0f, effect / 100.0f));
+    }
+
+    public static float getCriticalDamageMultiplier(float effect) {
+        float rawChance = Math.max(0.0f, effect / 100.0f);
+        float overflow = Math.max(0.0f, rawChance - GameConstants.CRITICAL_CHANCE_MAX);
+        float bonus = Math.min(GameConstants.CRITICAL_OVERFLOW_DAMAGE_MAX,
+            overflow * GameConstants.CRITICAL_OVERFLOW_DAMAGE_SCALE);
+        return GameConstants.CRITICAL_DAMAGE_MULT + bonus;
     }
 
     public static float getRegenerationHealPerSecond(float effect) {

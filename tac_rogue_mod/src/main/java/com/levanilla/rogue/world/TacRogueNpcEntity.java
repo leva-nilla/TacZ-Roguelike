@@ -3,6 +3,7 @@ package com.levanilla.rogue.world;
 import com.tacz.guns.api.entity.IGunOperator;
 import com.tacz.guns.api.entity.ShootResult;
 import com.tacz.guns.api.item.IGun;
+import com.levanilla.rogue.core.GameConstants;
 import com.levanilla.rogue.core.service.FloorInstanceManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -25,6 +26,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ClipContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.pathfinder.Path;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -40,12 +44,15 @@ public class TacRogueNpcEntity extends PathfinderMob {
     private static final double EXTRACTION_FOLLOW_START_DISTANCE_SQR = 4.5D * 4.5D;
     private static final double EXTRACTION_FOLLOW_STOP_DISTANCE_SQR = 2.5D * 2.5D;
     private static final double EXTRACTION_FOLLOW_SPEED = 1.05D;
-    private static final double SUPPORT_SEARCH_RADIUS = 34.0D;
+    private static final double SUPPORT_SEARCH_RADIUS = GameConstants.FLOOR_CLEAR_RADIUS * 2.05D;
+    private static final double SUPPORT_DIRECT_SEARCH_RADIUS = 34.0D;
+    private static final int SUPPORT_PATH_CANDIDATE_LIMIT = 10;
     private static final double SUPPORT_SHOOT_RADIUS_SQR = 34.0D * 34.0D;
     private static final double SUPPORT_AIM_RADIUS_SQR = 26.0D * 26.0D;
     private static final double SUPPORT_APPROACH_DISTANCE_SQR = 13.0D * 13.0D;
     private static final double SUPPORT_STOP_DISTANCE_SQR = 7.0D * 7.0D;
-    private static final double SUPPORT_MOVE_SPEED = 1.16D;
+    private static final double SUPPORT_MOVE_SPEED = 1.38D;
+    private static final double SUPPORT_BASE_MOVEMENT_SPEED = 0.31D;
     private static final int SUPPORT_MIN_SHOOT_COOLDOWN = 4;
     private static final int SUPPORT_RANDOM_SHOOT_COOLDOWN = 4;
     private static final int SUPPORT_AIM_SETTLE_TICKS = 4;
@@ -59,6 +66,7 @@ public class TacRogueNpcEntity extends PathfinderMob {
     private int supportGunOperatorRefreshTicks = 0;
     private int supportAimReadyTicks = 0;
     private int supportTacticalStepTicks = 10;
+    private int supportUnreachableTicks = 0;
     private String supportPreparedGunKey = "";
     private Mob supportTarget;
 
@@ -74,6 +82,7 @@ public class TacRogueNpcEntity extends PathfinderMob {
         return PathfinderMob.createMobAttributes()
             .add(Attributes.MAX_HEALTH, 20.0)
             .add(Attributes.MOVEMENT_SPEED, 0.0)
+            .add(Attributes.FOLLOW_RANGE, GameConstants.FLOOR_CLEAR_RADIUS * 2.05D)
             .add(Attributes.KNOCKBACK_RESISTANCE, 1.0);
     }
 
@@ -119,8 +128,12 @@ public class TacRogueNpcEntity extends PathfinderMob {
         this.getPersistentData().putLong(SUPPORT_EXPIRES_AT_KEY, now + Math.max(20, lifetimeTicks));
         this.setNoAi(false);
         var movement = this.getAttribute(Attributes.MOVEMENT_SPEED);
-        if (movement != null && movement.getBaseValue() < 0.24D) {
-            movement.setBaseValue(0.24D);
+        if (movement != null && movement.getBaseValue() < SUPPORT_BASE_MOVEMENT_SPEED) {
+            movement.setBaseValue(SUPPORT_BASE_MOVEMENT_SPEED);
+        }
+        var followRange = this.getAttribute(Attributes.FOLLOW_RANGE);
+        if (followRange != null && followRange.getBaseValue() < SUPPORT_SEARCH_RADIUS) {
+            followRange.setBaseValue(SUPPORT_SEARCH_RADIUS);
         }
     }
 
@@ -145,6 +158,19 @@ public class TacRogueNpcEntity extends PathfinderMob {
         return this.entityData.get(SUPPORT)
             || this.getPersistentData().getBoolean(SUPPORT_OPERATOR_KEY)
             || this.getTags().contains("tac_rogue_support_npc");
+    }
+
+    public boolean debugRunSupportCombatForSmoke(int ticks) {
+        if (this.level().isClientSide || !isSupportOperator()) return false;
+        int safeTicks = Math.max(1, Math.min(80, ticks));
+        for (int i = 0; i < safeTicks; i++) {
+            Mob before = supportTarget;
+            tickSupportCombat();
+            if (before != null && !before.isAlive()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public boolean isLobbyNpc() {
@@ -232,8 +258,12 @@ public class TacRogueNpcEntity extends PathfinderMob {
             this.addTag("tac_rogue_support_npc");
             this.setNoAi(false);
             var movement = this.getAttribute(Attributes.MOVEMENT_SPEED);
-            if (movement != null && movement.getBaseValue() < 0.24D) {
-                movement.setBaseValue(0.24D);
+            if (movement != null && movement.getBaseValue() < SUPPORT_BASE_MOVEMENT_SPEED) {
+                movement.setBaseValue(SUPPORT_BASE_MOVEMENT_SPEED);
+            }
+            var followRange = this.getAttribute(Attributes.FOLLOW_RANGE);
+            if (followRange != null && followRange.getBaseValue() < SUPPORT_SEARCH_RADIUS) {
+                followRange.setBaseValue(SUPPORT_SEARCH_RADIUS);
             }
         } else {
             this.entityData.set(SUPPORT, false);
@@ -339,8 +369,8 @@ public class TacRogueNpcEntity extends PathfinderMob {
     private void tickSupportCombat() {
         if (!(level() instanceof ServerLevel serverLevel)) return;
         var movement = this.getAttribute(Attributes.MOVEMENT_SPEED);
-        if (movement != null && movement.getBaseValue() < 0.24D) {
-            movement.setBaseValue(0.24D);
+        if (movement != null && movement.getBaseValue() < SUPPORT_BASE_MOVEMENT_SPEED) {
+            movement.setBaseValue(SUPPORT_BASE_MOVEMENT_SPEED);
         }
 
         Mob target = getSupportCombatTarget(serverLevel);
@@ -355,17 +385,25 @@ public class TacRogueNpcEntity extends PathfinderMob {
         boolean hasLos = hasSupportLineOfFire(target);
         if (!hasLos) {
             supportAimReadyTicks = 0;
-            if (!hasSupportPathTo(target)) {
-                supportTarget = null;
-                supportTargetRefreshTicks = 0;
-                this.getNavigation().stop();
-                return;
-            }
             if (tickCount % 6 == 0 || this.getNavigation().isDone()) {
                 this.getNavigation().moveTo(target, SUPPORT_MOVE_SPEED);
             }
+            if (tickCount % 10 == 0) {
+                if (hasSupportPathTo(target)) {
+                    supportUnreachableTicks = 0;
+                } else {
+                    supportUnreachableTicks++;
+                    if (supportUnreachableTicks >= 8) {
+                        supportTarget = null;
+                        supportTargetRefreshTicks = 0;
+                        supportUnreachableTicks = 0;
+                        this.getNavigation().stop();
+                    }
+                }
+            }
             return;
         }
+        supportUnreachableTicks = 0;
         this.getLookControl().setLookAt(target, 55.0F, 45.0F);
         if (distanceSqr > SUPPORT_APPROACH_DISTANCE_SQR) {
             this.getNavigation().moveTo(target, SUPPORT_MOVE_SPEED);
@@ -386,12 +424,18 @@ public class TacRogueNpcEntity extends PathfinderMob {
         if (supportShootCooldown <= 0
             && hasLos
             && distanceSqr <= SUPPORT_AIM_RADIUS_SQR
-            && supportAimReadyTicks >= SUPPORT_AIM_SETTLE_TICKS
-            && IGunOperator.fromLivingEntity(this).getSynAimingProgress() >= 1.0F) {
+            && supportAimReadyTicks >= SUPPORT_AIM_SETTLE_TICKS) {
             ShootResult result = fireSupportTacZShot(target);
-            supportShootCooldown = result == ShootResult.SUCCESS
-                ? SUPPORT_MIN_SHOOT_COOLDOWN + this.getRandom().nextInt(SUPPORT_RANDOM_SHOOT_COOLDOWN)
-                : 2 + this.getRandom().nextInt(3);
+            if (result == ShootResult.SUCCESS) {
+                finishSupportTarget(target);
+                supportTarget = null;
+                supportTargetRefreshTicks = 0;
+                supportAimReadyTicks = 0;
+                supportUnreachableTicks = 0;
+                supportShootCooldown = SUPPORT_MIN_SHOOT_COOLDOWN + this.getRandom().nextInt(SUPPORT_RANDOM_SHOOT_COOLDOWN);
+            } else {
+                supportShootCooldown = 2 + this.getRandom().nextInt(3);
+            }
         }
     }
 
@@ -400,42 +444,63 @@ public class TacRogueNpcEntity extends PathfinderMob {
             supportTargetRefreshTicks--;
             return supportTarget;
         }
-        supportTargetRefreshTicks = 8 + this.getRandom().nextInt(5);
+        supportTargetRefreshTicks = 14 + this.getRandom().nextInt(9);
+        Mob previous = supportTarget;
         supportTarget = findSupportTarget(level);
+        if (supportTarget != previous) {
+            supportUnreachableTicks = 0;
+        }
         return supportTarget;
     }
 
     private Mob findSupportTarget(ServerLevel level) {
-        AABB area = getBoundingBox().inflate(SUPPORT_SEARCH_RADIUS, 18.0D, SUPPORT_SEARCH_RADIUS);
+        AABB area = getBoundingBox().inflate(SUPPORT_SEARCH_RADIUS, 72.0D, SUPPORT_SEARCH_RADIUS);
         java.util.List<Mob> mobs = level.getEntitiesOfClass(Mob.class, area, this::isSupportTarget);
         if (mobs.isEmpty()) return null;
 
-        Mob bestMob = null;
-        double bestScore = Double.MAX_VALUE;
+        Mob bestVisible = null;
+        double bestVisibleScore = Double.MAX_VALUE;
+        java.util.List<Mob> pathCandidates = new java.util.ArrayList<>();
         for (Mob mob : mobs) {
             boolean hasLos = hasSupportLineOfFire(mob);
-            if (!hasLos && !hasSupportPathTo(mob)) continue;
             double distance = this.distanceToSqr(mob);
-            double score = distance;
             if (hasLos) {
-                score *= 0.42D;
+                double score = supportTargetScore(mob, distance) * 0.42D;
+                if (score < bestVisibleScore) {
+                    bestVisibleScore = score;
+                    bestVisible = mob;
+                }
             } else {
-                score *= 1.25D;
-            }
-            if (mob.getTarget() instanceof ServerPlayer) score *= 0.7D;
-            if (score < bestScore) {
-                bestScore = score;
-                bestMob = mob;
+                pathCandidates.add(mob);
             }
         }
-        return bestMob;
+        if (bestVisible != null) return bestVisible;
+
+        pathCandidates.sort(java.util.Comparator.comparingDouble(mob ->
+            supportTargetScore(mob, this.distanceToSqr(mob))));
+        int checked = 0;
+        for (Mob mob : pathCandidates) {
+            if (checked++ >= SUPPORT_PATH_CANDIDATE_LIMIT) break;
+            if (hasSupportPathTo(mob)) return mob;
+        }
+        return pathCandidates.isEmpty() ? null : pathCandidates.get(0);
+    }
+
+    private double supportTargetScore(Mob mob, double distanceSqr) {
+        double score = distanceSqr;
+        if (distanceSqr <= SUPPORT_DIRECT_SEARCH_RADIUS * SUPPORT_DIRECT_SEARCH_RADIUS) {
+            score *= 0.82D;
+        }
+        if (mob != null && mob.getTarget() instanceof ServerPlayer) {
+            score *= 0.62D;
+        }
+        return score;
     }
 
     private boolean isTrackableSupportTarget(Mob mob) {
         return mob != null
             && isSupportTarget(mob)
-            && this.distanceToSqr(mob) <= SUPPORT_SEARCH_RADIUS * SUPPORT_SEARCH_RADIUS
-            && (hasSupportLineOfFire(mob) || hasSupportPathTo(mob));
+            && this.distanceToSqr(mob) <= SUPPORT_SEARCH_RADIUS * SUPPORT_SEARCH_RADIUS;
     }
 
     private boolean hasSupportLineOfFire(Mob target) {
@@ -537,6 +602,21 @@ public class TacRogueNpcEntity extends PathfinderMob {
             result = operator.shoot(() -> aim.pitch, () -> aim.yaw);
         }
         return result;
+    }
+
+    private void finishSupportTarget(Mob target) {
+        if (!(level() instanceof ServerLevel serverLevel) || target == null || !target.isAlive()) return;
+        double x = target.getX();
+        double y = target.getY() + target.getBbHeight() * 0.62D;
+        double z = target.getZ();
+        serverLevel.playSound(null, BlockPos.containing(x, y, z), SoundEvents.ARROW_HIT_PLAYER,
+            SoundSource.HOSTILE, 0.52F, 1.18F + serverLevel.random.nextFloat() * 0.18F);
+        serverLevel.sendParticles(ParticleTypes.CRIT, x, y, z, 12, 0.2D, 0.24D, 0.2D, 0.055D);
+        serverLevel.sendParticles(ParticleTypes.SMOKE, x, y + 0.05D, z, 6, 0.22D, 0.18D, 0.22D, 0.02D);
+        target.hurt(this.damageSources().mobAttack(this), Math.max(200.0F, target.getMaxHealth() * 8.0F));
+        if (target.isAlive() && !target.isRemoved()) {
+            target.remove(net.minecraft.world.entity.Entity.RemovalReason.DISCARDED);
+        }
     }
 
     private SupportAim aimAt(Mob target) {

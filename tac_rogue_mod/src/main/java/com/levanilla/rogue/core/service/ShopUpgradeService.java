@@ -127,6 +127,12 @@ public final class ShopUpgradeService {
     }
 
     public static void handleRandomPerkPurchase(ServerPlayer player) {
+        long perkCount = player.getTags().stream().filter(t -> t.startsWith("perk:")).count();
+        if (perkCount >= GameConstants.MAX_PERK_TAG_COUNT) {
+            player.sendSystemMessage(Component.literal("\u00A7c[SHOP] \u00A7fPerk storage limit reached."));
+            return;
+        }
+
         int buys = player.getPersistentData().getInt("RandomPerkBuys");
         int price = PriceManager.getUpgradePrice("rogue:random_perk", buys);
         if (!CurrencyManager.consumeGold(player, price)) {

@@ -494,6 +494,35 @@ public final class SmokeTestService {
                     && ally.getTarget() == null,
                 "stealth takedown path does not propagate an ally alert",
                 RogueMobAlertService.getAlertLevel(ally).name() + " target=" + (ally.getTarget() == player), "");
+
+            TacRogueNpcEntity support = null;
+            Mob supportTarget = null;
+            try {
+                BlockPos supportPos = player.blockPosition().offset(2, 0, 2);
+                support = NpcManager.spawnSupportOperator(level, supportPos, Math.max(1, RunManager.getData(player).getCurrentFloor()), 0);
+                supportTarget = EntityType.ZOMBIE.create(level);
+                if (support == null || supportTarget == null) {
+                    record(counter, suite, "support.autonomous_sweep", false,
+                        "support operator and target can be created", "support=" + (support != null) + " target=" + (supportTarget != null), "");
+                } else {
+                    String instanceId = player.getPersistentData().getString(FloorInstanceManager.INSTANCE_ID_KEY);
+                    support.getPersistentData().putString(FloorInstanceManager.INSTANCE_ID_KEY, instanceId);
+                    supportTarget.addTag("tac_rogue_spawned");
+                    supportTarget.getPersistentData().putString(FloorInstanceManager.INSTANCE_ID_KEY, instanceId);
+                    supportTarget.moveTo(support.getX() + 9.0D, support.getY(), support.getZ(), 0.0F, 0.0F);
+                    supportTarget.setNoAi(true);
+                    boolean targetAdded = level.addFreshEntity(supportTarget);
+                    boolean killed = support.debugRunSupportCombatForSmoke(80);
+                    record(counter, suite, "support.autonomous_sweep", targetAdded && killed && !supportTarget.isAlive(),
+                        "support operator independently acquires and kills rogue mob",
+                        "targetAdded=" + targetAdded + " killed=" + killed
+                            + " targetAlive=" + (supportTarget != null && supportTarget.isAlive()),
+                        "");
+                }
+            } finally {
+                if (supportTarget != null) supportTarget.discard();
+                if (support != null) support.discard();
+            }
         } finally {
             near.discard();
             ally.discard();

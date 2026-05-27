@@ -100,7 +100,8 @@ public class TacZEventHandler {
 
         // === パーク: AMMO_EFFICIENCY (弾薬節約) ===
         float ammoEfficiency = PerkDefinition.sumCategoryEffect(player, PerkDefinition.Category.AMMO_EFFICIENCY);
-        float saveChance = Math.min(GameConstants.AMMO_SAVE_MAX_CHANCE, Math.max(0.0f, ammoEfficiency / 100.0f));
+        float saveChance = Math.min(GameConstants.AMMO_SAVE_MAX_CHANCE,
+            Math.max(0.0f, PerkDefinition.getAmmoSaveChancePercent(ammoEfficiency) / 100.0f));
         if (saveChance > 0 && player.getRandom().nextFloat() < saveChance) {
             net.minecraft.world.item.ItemStack gun = event.getGunItemStack();
             if (gun.hasTag()) {
@@ -188,12 +189,11 @@ public class TacZEventHandler {
         boolean isShotgun = isShotgun(heldGun);
 
         // === パーク: FORTUNE (クリティカルヒット) ===
-        float rawCritChance = sumPerkEffect(attacker, "perk:FORTUNE") / 100.0f;
-        float critChance = Math.min(0.70f, rawCritChance);
-        float overCritBonus = Math.min(0.35f, Math.max(0, rawCritChance - 0.70f) * 0.25f);
+        float fortuneEffect = sumPerkEffect(attacker, "perk:FORTUNE");
+        float critChance = PerkDefinition.getCriticalChance(fortuneEffect);
         boolean perkCrit = critChance > 0 && attacker.getRandom().nextFloat() < critChance;
         if (perkCrit) {
-            damage *= (GameConstants.CRITICAL_DAMAGE_MULT + overCritBonus);
+            damage *= PerkDefinition.getCriticalDamageMultiplier(fortuneEffect);
         }
 
         // GUN_PROFICIENCY is firearm control, not another flat DAMAGE copy.

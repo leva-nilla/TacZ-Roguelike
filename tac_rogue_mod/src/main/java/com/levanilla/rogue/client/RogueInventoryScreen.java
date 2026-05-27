@@ -480,7 +480,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         double speed = player.getAttributeValue(Attributes.MOVEMENT_SPEED);
 
         float dmgBonus = sumClientPerkEffect(player, "perk:DAMAGE");
-        float hsBonus = sumClientPerkEffect(player, "perk:FORTUNE");
+        float fortuneEffect = sumClientPerkEffect(player, "perk:FORTUNE");
         float fireRateBonus = WeaponRarity.getFireRatePerkBonusPercent(player);
         float reloadBonus = sumClientPerkEffect(player, "perk:RELOAD_SPEED");
         float autoloaderEffect = sumClientPerkEffect(player, "perk:AUTOLOADER");
@@ -512,7 +512,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
 
         drawPanel(graphics, lx, top + 78, leftW, 78, tr("gui.tac_rogue.status.panel.operator"), 0xFF88CCFF);
         drawMetric(graphics, lx + 10, top + 98, tr("gui.tac_rogue.status.metric.armor"), String.valueOf(armor), 0xFFAABBFF);
-        drawMetric(graphics, lx + 92, top + 98, tr("gui.tac_rogue.status.metric.speed"), String.format(java.util.Locale.ROOT, "%.3f", speed), 0xFFFFFFFF);
+        drawMetric(graphics, lx + 92, top + 98, tr("gui.tac_rogue.status.metric.speed"), fmtSpeedPercent(speed), 0xFFFFFFFF);
         drawMetric(graphics, lx + 10, top + 122, tr("gui.tac_rogue.status.metric.gold"), "$" + RunManager.getClientGold(), 0xFFFFD45C);
         drawMetric(graphics, lx + 92, top + 122, tr("gui.tac_rogue.status.metric.perks"), String.valueOf(countClientPerks(player)), 0xFFAAFFCC);
 
@@ -530,7 +530,8 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
 
         drawPanel(graphics, rightX, top + 78, rightW, 102, tr("gui.tac_rogue.status.panel.combat_modifiers"), 0xFFFF6666);
         drawMetric(graphics, rightX + 10, top + 98, tr("gui.tac_rogue.status.metric.damage"), fmtMult(1.0f + dmgBonus / 100.0f), 0xFFFF7777);
-        drawMetric(graphics, rightX + 76, top + 98, tr("gui.tac_rogue.status.metric.crit"), fmtChance(hsBonus), 0xFFFFFF66);
+        drawMetric(graphics, rightX + 76, top + 98, tr("gui.tac_rogue.status.metric.crit"),
+            fmtChance(PerkDefinition.getCriticalChance(fortuneEffect) * 100.0f), 0xFFFFFF66);
         drawMetric(graphics, rightX + 142, top + 98, tr("gui.tac_rogue.status.metric.reload"), fmtPercent(reloadBonus), 0xFF66EEFF);
         drawMetric(graphics, rightX + 10, top + 122, tr("gui.tac_rogue.status.metric.special_resist"), fmtMult(specialResistanceTaken(resistBonus)), 0xFFCCAAFF);
         drawMetric(graphics, rightX + 76, top + 122, tr("gui.tac_rogue.status.metric.vamp"), String.format(java.util.Locale.ROOT, "+%.1f", vampBonus / 10f), 0xFFFF8888);
@@ -606,8 +607,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         lines.add(tr("gui.tac_rogue.status.resistance_damage_taken", fmtMult(specialResistanceTaken(resistBonus))));
         lines.add(tr("gui.tac_rogue.status.volatile_damage_taken", fmtMult(volatileTaken)));
         lines.add(tr("gui.tac_rogue.status.dodge_effective",
-            fmtOnePercent(Math.min(GameConstants.DODGE_MAX_CHANCE * 100.0f,
-                effectiveStackedChance(player, PerkDefinition.Category.DODGE, 1.0f)))));
+            fmtOnePercent(effectiveDodgeChance(player))));
         lines.add(tr("gui.tac_rogue.status.ammo_save_effective", fmtOnePercent(effectiveAmmoSaveChance(player))));
         lines.add(formatEffectivePerkValue(player, PerkDefinition.Category.SCAVENGER, sumClientPerkEffect(player, "perk:SCAVENGER")));
         lines.add(tr("gui.tac_rogue.status.fire_rate_effective", fmtMult(1.0f + fireRateBonus / 100.0f)));
@@ -677,6 +677,10 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
 
     private static String fmtChance(float chancePercent) {
         return String.format(java.util.Locale.ROOT, "%.1f%%", Math.max(0.0f, Math.min(100.0f, chancePercent)));
+    }
+
+    private static String fmtSpeedPercent(double speedAttribute) {
+        return String.format(java.util.Locale.ROOT, "%.0f%%", Math.max(0.0D, speedAttribute / 0.1D * 100.0D));
     }
 
     private static String fmtOnePercent(float chancePercent) {
@@ -760,6 +764,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
             List<PerkDefinition> perks = entry.getValue();
             float totalEffect = 0;
             for (PerkDefinition p : perks) totalEffect += p.calculateEffect();
+            totalEffect = PerkDefinition.softcapTotalEffect(perks.get(0).category, totalEffect);
             result.add(new PerkGroupEntry(entry.getKey(), perks.get(0), perks.size(), totalEffect, perks, groupedTags.get(entry.getKey())));
         }
         result.sort(java.util.Comparator.comparing(g -> g.samplePerk().category.displayName.toLowerCase(java.util.Locale.ROOT)));
@@ -988,8 +993,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         return switch (category) {
             case AMMO_EFFICIENCY -> tr("gui.tac_rogue.status.summary.ammo_save", fmtOnePercent(effectiveAmmoSaveChance(player)));
             case DODGE -> tr("gui.tac_rogue.status.summary.dodge",
-                fmtOnePercent(Math.min(GameConstants.DODGE_MAX_CHANCE * 100.0f,
-                    effectiveStackedChance(player, category, 1.0f))));
+                fmtOnePercent(effectiveDodgeChance(player)));
             case SCAVENGER -> {
                 float drop = com.levanilla.rogue.core.GameConstants.DROP_BASE_CHANCE
                     * com.levanilla.rogue.core.DifficultyManager.getDropMultiplier()
@@ -1006,7 +1010,10 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
                 fmtMult(1.0f + WeaponRarity.getFireRatePerkBonusPercent(player) / 100.0f));
             case MELEE_SPEED -> tr("gui.tac_rogue.status.summary.melee_speed",
                 fmtMult(1.0f + WeaponRarity.getMeleeSpeedPerkBonusPercent(player) / 100.0f));
-            case STAMINA, DAMAGE, GOLD_RUSH, HANDLING, FORTUNE -> fmtMult(1.0f + totalEffect / 100.0f);
+            case FORTUNE -> String.format(java.util.Locale.ROOT, "%.1f%% / x%.2f",
+                PerkDefinition.getCriticalChance(totalEffect) * 100.0f,
+                PerkDefinition.getCriticalDamageMultiplier(totalEffect));
+            case STAMINA, DAMAGE, GOLD_RUSH, HANDLING -> fmtMult(1.0f + totalEffect / 100.0f);
             case RESISTANCE -> fmtMult(specialResistanceTaken(totalEffect));
             case RELOAD_SPEED -> tr("gui.tac_rogue.status.summary.reload", fmtPercent(totalEffect));
             case AUTOLOADER -> tr("gui.tac_rogue.status.summary.autoloader", fmtAutoloaderRate(totalEffect));
@@ -1016,7 +1023,14 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
 
     private static float effectiveAmmoSaveChance(net.minecraft.client.player.LocalPlayer player) {
         return Math.min(GameConstants.AMMO_SAVE_MAX_CHANCE * 100.0f,
-            effectiveStackedChance(player, PerkDefinition.Category.AMMO_EFFICIENCY, 1.0f));
+            effectiveStackedChance(player, PerkDefinition.Category.AMMO_EFFICIENCY,
+                GameConstants.AMMO_SAVE_EFFECT_SCALE));
+    }
+
+    private static float effectiveDodgeChance(net.minecraft.client.player.LocalPlayer player) {
+        return Math.min(GameConstants.DODGE_MAX_CHANCE * 100.0f,
+            effectiveStackedChance(player, PerkDefinition.Category.DODGE,
+                GameConstants.DODGE_EFFECT_SCALE));
     }
 
     private static float specialResistanceTaken(float totalEffect) {

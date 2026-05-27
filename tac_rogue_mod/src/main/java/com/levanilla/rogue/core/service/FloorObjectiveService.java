@@ -46,9 +46,11 @@ public final class FloorObjectiveService {
     private static final int HOLD_POSITION_TICKS = 25 * 20;
     private static final double OBJECTIVE_RADIUS_SQR = 6.5D * 6.5D;
     private static final double HOLD_CONTEST_RADIUS = 7.0D;
-    private static final long OBJECTIVE_LURE_INTERVAL_TICKS = 80L;
-    private static final int OBJECTIVE_LURE_MOBS_PER_PULSE = 4;
-    private static final double OBJECTIVE_LURE_RADIUS_SQR = 54.0D * 54.0D;
+    private static final long OBJECTIVE_LURE_INTERVAL_TICKS = 50L;
+    private static final int OBJECTIVE_LURE_MOBS_PER_PULSE = 8;
+    private static final double OBJECTIVE_LURE_RADIUS_SQR = com.levanilla.rogue.core.GameConstants.FLOOR_CLEAR_RADIUS
+        * com.levanilla.rogue.core.GameConstants.FLOOR_CLEAR_RADIUS
+        * 4.4D;
     private static final java.util.Set<UUID> REWARDED_ELITES = ConcurrentHashMap.newKeySet();
     private static final ConcurrentHashMap<UUID, ObjectiveType> DEBUG_OBJECTIVE_OVERRIDES = new ConcurrentHashMap<>();
 

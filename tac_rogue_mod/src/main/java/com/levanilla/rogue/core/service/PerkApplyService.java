@@ -2,6 +2,7 @@ package com.levanilla.rogue.core.service;
 
 import com.levanilla.rogue.core.PerkDefinition;
 import com.levanilla.rogue.core.RunManager;
+import com.levanilla.rogue.core.GameConstants;
 import com.levanilla.rogue.networking.RogueActionMessage;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
@@ -16,7 +17,7 @@ public final class PerkApplyService {
         if (player == null || rawTag == null || rawTag.isEmpty()) return false;
 
         long perkCount = player.getTags().stream().filter(t -> t.startsWith("perk:")).count();
-        if (perkCount > 150) {
+        if (perkCount >= GameConstants.MAX_PERK_TAG_COUNT) {
             player.sendSystemMessage(Component.literal("\u00A7c[ANTI-CHEAT] Too many perks."));
             return false;
         }

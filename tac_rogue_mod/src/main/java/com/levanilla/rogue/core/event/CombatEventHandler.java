@@ -250,11 +250,10 @@ public class CombatEventHandler {
                 damage *= (1.0f + damageBonus);
                 damage = RogueCombatEffects.applyAdrenalineDamage(attacker, damage);
 
-                float rawCritChance = sumPerkEffect(attacker, "perk:FORTUNE") / 100.0f;
-                float critChance = Math.min(0.70f, rawCritChance);
-                float overCritBonus = Math.min(0.35f, Math.max(0, rawCritChance - 0.70f) * 0.25f);
+                float fortuneEffect = sumPerkEffect(attacker, "perk:FORTUNE");
+                float critChance = PerkDefinition.getCriticalChance(fortuneEffect);
                 boolean perkCrit = critChance > 0 && attacker.getRandom().nextFloat() < critChance;
-                if (perkCrit) damage *= (GameConstants.CRITICAL_DAMAGE_MULT + overCritBonus);
+                if (perkCrit) damage *= PerkDefinition.getCriticalDamageMultiplier(fortuneEffect);
 
                 float explosiveBonus = sumPerkEffect(attacker, "perk:EXPLOSIVE") / 100.0f;
                 if (explosiveBonus > 0) {

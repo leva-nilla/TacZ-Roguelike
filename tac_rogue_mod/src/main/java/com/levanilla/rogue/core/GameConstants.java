@@ -180,13 +180,23 @@ public final class GameConstants {
     /** 追加アーマー軽減の上限。バニラ軽減後に乗算される */
     public static final float ARMOR_OVERCAP_MAX_EXTRA_REDUCTION = 0.45f;
     /** 弾薬節約率の最大値。100%化は戦闘リスクが消えるため禁止 */
-    public static final float AMMO_SAVE_MAX_CHANCE = 0.85f;
+    public static final float AMMO_SAVE_MAX_CHANCE = 0.75f;
+    /** Ammo Saver の表示/判定に使う効果量係数。上限到達を遅らせる */
+    public static final float AMMO_SAVE_EFFECT_SCALE = 0.55f;
     /** 特殊耐性の最大軽減率。完全耐性化を避ける */
     public static final float SPECIAL_RESISTANCE_MAX = 0.65f;
     /** DODGE の最大回避率。無敵化を避けるため60%で止める */
     public static final float DODGE_MAX_CHANCE = 0.60f;
     /** DODGE の表示/判定に使う効果量係数。Lv上昇の価値を残しつつ序盤の過剰回避を抑える */
-    public static final float DODGE_EFFECT_SCALE = 0.65f;
+    public static final float DODGE_EFFECT_SCALE = 0.50f;
+    /** Fortune のクリティカル率上限。超過分はクリティカルダメージへ変換する */
+    public static final float CRITICAL_CHANCE_MAX = 1.00f;
+    /** クリティカル率超過分からクリティカルダメージ倍率へ変換する係数 */
+    public static final float CRITICAL_OVERFLOW_DAMAGE_SCALE = 0.35f;
+    /** クリティカル率超過による追加クリティカルダメージ倍率上限 */
+    public static final float CRITICAL_OVERFLOW_DAMAGE_MAX = 0.55f;
+    /** パーク保存に使うscoreboard tagの安全上限。バニラ上限1024に対して他タグ分を残す */
+    public static final int MAX_PERK_TAG_COUNT = 800;
     /** AUTOLOADER の効果値から発/秒へ変換する除数 */
     public static final float AUTOLOADER_EFFECT_DIVISOR = 20.0f;
     /** AUTOLOADER が有効な場合の最低装填速度 */
