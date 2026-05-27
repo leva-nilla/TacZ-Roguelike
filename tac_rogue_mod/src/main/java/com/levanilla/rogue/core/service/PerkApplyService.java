@@ -16,7 +16,7 @@ public final class PerkApplyService {
     public static boolean applySelectedPerk(ServerPlayer player, String rawTag) {
         if (player == null || rawTag == null || rawTag.isEmpty()) return false;
 
-        long perkCount = player.getTags().stream().filter(t -> t.startsWith("perk:")).count();
+        long perkCount = PerkStorageService.getPerkCount(player);
         if (perkCount >= GameConstants.MAX_PERK_TAG_COUNT) {
             player.sendSystemMessage(Component.literal("\u00A7c[ANTI-CHEAT] Too many perks."));
             return false;
@@ -34,8 +34,7 @@ public final class PerkApplyService {
         int serial = player.getPersistentData().getInt("TacRoguePerkSerial") + 1;
         player.getPersistentData().putInt("TacRoguePerkSerial", serial);
         String storedTag = perkTag + ":#" + serial;
-        player.addTag(storedTag);
-        RunManager.savePerkTags(player);
+        PerkStorageService.addPerk(player, storedTag);
         net.minecraft.network.chat.MutableComponent acquired =
             Component.literal(perk.getDisplayName() + " \u00A77- " + perk.getDescription());
         if (perk.modifier == PerkDefinition.Modifier.CURSED) {

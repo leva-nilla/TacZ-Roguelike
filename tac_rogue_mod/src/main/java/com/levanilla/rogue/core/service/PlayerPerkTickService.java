@@ -60,28 +60,28 @@ public final class PlayerPerkTickService {
 
     private record CachedPerkSnapshot(
         PerkSnapshot snapshot,
-        int perkSerial,
-        int tagCount,
+        int storageVersion,
+        int perkCount,
         int lastScanTick
     ) {}
 
     public static PerkSnapshot getSnapshot(ServerPlayer player) {
         java.util.UUID uuid = player.getUUID();
-        int perkSerial = getPerkSerial(player);
-        int tagCount = player.getTags().size();
+        int perkCount = PerkStorageService.getPerkCount(player);
+        int storageVersion = PerkStorageService.getStorageVersion(player);
         int tick = player.tickCount;
         CachedPerkSnapshot cached = perkSnapshots.get(uuid);
 
         if (cached != null
-                && cached.perkSerial == perkSerial
-                && cached.tagCount == tagCount
+                && cached.storageVersion == storageVersion
+                && cached.perkCount == perkCount
                 && tick >= cached.lastScanTick
                 && tick - cached.lastScanTick < PERK_SNAPSHOT_RESCAN_TICKS) {
             return cached.snapshot;
         }
 
         PerkSnapshot snapshot = buildSnapshot(player);
-        perkSnapshots.put(uuid, new CachedPerkSnapshot(snapshot, perkSerial, player.getTags().size(), tick));
+        perkSnapshots.put(uuid, new CachedPerkSnapshot(snapshot, storageVersion, perkCount, tick));
         return snapshot;
     }
 
@@ -91,22 +91,13 @@ public final class PlayerPerkTickService {
         }
     }
 
-    private static int getPerkSerial(ServerPlayer player) {
-        net.minecraft.nbt.CompoundTag data = player.getPersistentData();
-        int serial = data.getInt("TacRoguePerkSerial");
-        serial = 31 * serial + data.getInt("TacRogueDebugPerkSerial");
-        serial = 31 * serial + data.getInt("TacRogueRandomPerkSerial");
-        return serial;
-    }
-
     private static PerkSnapshot buildSnapshot(ServerPlayer player) {
         float[] categoryEffects = new float[PerkDefinition.Category.values().length];
         int[] modifierCounts = new int[PerkDefinition.Modifier.values().length];
         int[] cursedPenaltyCounts = new int[PerkDefinition.CursedPenaltyTarget.values().length];
         int perkCount = 0;
 
-        for (String tag : player.getTags()) {
-            if (!tag.startsWith("perk:")) continue;
+        for (String tag : PerkStorageService.getPerkTags(player)) {
             PerkDefinition perk = PerkDefinition.fromTag(tag);
             categoryEffects[perk.category.ordinal()] += perk.calculateEffect();
             modifierCounts[perk.modifier.ordinal()]++;

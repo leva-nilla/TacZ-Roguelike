@@ -370,10 +370,11 @@ public class ItemAndLifecycleHandler {
         if (event.isWasDeath()) {
             event.getEntity().getInventory().replaceWith(event.getOriginal().getInventory());
             event.getEntity().getPersistentData().merge(event.getOriginal().getPersistentData());
-            if (event.getEntity() instanceof ServerPlayer cloned) {
-                event.getOriginal().getTags().stream()
-                    .filter(tag -> tag.startsWith("perk:"))
-                    .forEach(cloned::addTag);
+            if (event.getEntity() instanceof ServerPlayer cloned
+                && event.getOriginal() instanceof ServerPlayer originalServer) {
+                com.levanilla.rogue.core.service.PerkStorageService.setPerks(
+                    cloned,
+                    com.levanilla.rogue.core.service.PerkStorageService.getPerkTags(originalServer));
                 RunManager.restorePerkTags(cloned);
             }
         }

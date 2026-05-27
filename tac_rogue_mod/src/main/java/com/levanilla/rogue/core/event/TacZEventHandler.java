@@ -2,6 +2,7 @@ package com.levanilla.rogue.core.event;
 
 import com.levanilla.rogue.core.*;
 import com.levanilla.rogue.core.registry.TacZGunRegistry;
+import com.levanilla.rogue.core.service.PerkStorageService;
 import com.levanilla.rogue.core.service.RogueMobAlertService;
 import com.levanilla.rogue.networking.TacRogueNetworking;
 import com.tacz.guns.api.event.common.*;
@@ -116,7 +117,7 @@ public class TacZEventHandler {
 
         // === 修飾子: CORRUPTED (自傷ダメージ) ===
         int corruptedCount = 0;
-        for (String tag : player.getTags()) {
+        for (String tag : PerkStorageService.getPerkTags(player)) {
             if (tag.startsWith("perk:") && tag.contains(":CORRUPTED:")) corruptedCount++;
         }
         if (corruptedCount > 0) {

@@ -15,6 +15,7 @@ import com.levanilla.rogue.core.registry.LrTacticalRegistry;
 import com.levanilla.rogue.core.registry.ShopCatalog;
 import com.levanilla.rogue.core.service.FloorInstanceManager;
 import com.levanilla.rogue.core.service.FloorObjectiveService;
+import com.levanilla.rogue.core.service.PerkStorageService;
 import com.levanilla.rogue.core.service.RogueItemFactory;
 import com.levanilla.rogue.core.service.RogueMobAlertService;
 import com.levanilla.rogue.world.MapGenerator;
@@ -56,9 +57,12 @@ public final class SmokeTestService {
     );
     public static final List<String> FULL_SUITES = List.of(
         "quick", "registry", "lobby", "ui", "floor", "combat", "economy", "quest", "deep",
-        "world", "thirdperson", "shooting", "monster", "ai_matrix", "generation", "objective", "encounter"
+        "world", "thirdperson", "shooting", "monster", "ai_matrix", "generation", "objective", "encounter",
+        "perk_storage"
     );
-    private static final List<String> EXTRA_SUITES = List.of("generation_view", "ai_matrix_view", "objective", "encounter");
+    private static final List<String> EXTRA_SUITES = List.of(
+        "generation_view", "ai_matrix_view", "objective", "encounter", "perk_storage"
+    );
     private static final BlockPos AI_MATRIX_CENTER = new BlockPos(7800, 80, 7800);
 
     private SmokeTestService() {}
@@ -110,6 +114,7 @@ public final class SmokeTestService {
             case "generation_view" -> generation(player, counter, true);
             case "objective" -> objective(counter);
             case "encounter" -> encounter(counter);
+            case "perk_storage" -> perkStorage(player, counter);
             default -> record(counter, suite, "suite.known", false, "known smoke suite", suite, "unknown suite");
         }
     }
@@ -276,6 +281,57 @@ public final class SmokeTestService {
             "highest ever floor tracks max floor", data.getHighestEverFloor() + " >= " + data.getMaxReachedFloor(), "");
         record(counter, suite, "deep.unlock.rule", data.getHighestEverFloor() < 100 || data.getDeepCore() >= 0,
             "deep state readable when unlocked", "highest=" + data.getHighestEverFloor(), "");
+    }
+
+    private static void perkStorage(ServerPlayer player, Counter counter) {
+        String suite = "perk_storage";
+        List<String> original = new ArrayList<>(PerkStorageService.getPerkTags(player));
+        try {
+            PerkStorageService.clearPerks(player);
+            record(counter, suite, "clear.empty", PerkStorageService.getPerkCount(player) == 0,
+                "storage clear removes all perks", String.valueOf(PerkStorageService.getPerkCount(player)), "");
+
+            for (int i = 0; i < 151; i++) {
+                PerkDefinition.Category category = i % 3 == 0
+                    ? PerkDefinition.Category.DAMAGE
+                    : (i % 3 == 1 ? PerkDefinition.Category.AMMO_EFFICIENCY : PerkDefinition.Category.DODGE);
+                PerkDefinition perk = new PerkDefinition(category, PerkDefinition.Modifier.NONE, 1 + (i % 10));
+                PerkStorageService.addPerk(player, perk.toTag() + ":#smoke" + i);
+            }
+
+            int storedCount = PerkStorageService.getPerkCount(player);
+            record(counter, suite, "bulk.151_stored", storedCount >= 151,
+                "151+ perks can be stored outside scoreboard tags", String.valueOf(storedCount), "");
+
+            long scoreboardPerks = player.getTags().stream().filter(tag -> tag.startsWith("perk:")).count();
+            record(counter, suite, "scoreboard.clean_after_bulk", scoreboardPerks == 0,
+                "bulk storage does not add scoreboard perk tags", String.valueOf(scoreboardPerks), "");
+
+            float damage = PerkDefinition.sumEffect(player, "perk:DAMAGE");
+            record(counter, suite, "effect.from_nbt", damage > 0.0f,
+                "perk effects are calculated from NBT storage", String.format(Locale.ROOT, "%.2f", damage), "");
+
+            String legacy = new PerkDefinition(PerkDefinition.Category.VITALITY, PerkDefinition.Modifier.BLESSED, 2).toTag()
+                + ":#legacy_smoke";
+            player.addTag(legacy);
+            boolean migrated = PerkStorageService.getPerkTags(player).contains(legacy);
+            long legacyAfter = player.getTags().stream().filter(tag -> tag.startsWith("perk:")).count();
+            record(counter, suite, "legacy.migrates", migrated,
+                "legacy scoreboard perk tag migrates into NBT storage", String.valueOf(migrated), legacy);
+            record(counter, suite, "legacy.removed_from_scoreboard", legacyAfter == 0,
+                "legacy scoreboard perk tag is removed after migration", String.valueOf(legacyAfter), "");
+
+            int removedDamage = PerkStorageService.removeMatching(player, tag -> tag.startsWith("perk:DAMAGE"));
+            record(counter, suite, "remove.matching", removedDamage > 0,
+                "storage removeMatching removes selected perks", String.valueOf(removedDamage), "");
+
+            PerkStorageService.clearPerks(player);
+            record(counter, suite, "clear.final", PerkStorageService.getPerkCount(player) == 0,
+                "storage clear works after bulk and migration", String.valueOf(PerkStorageService.getPerkCount(player)), "");
+        } finally {
+            PerkStorageService.setPerks(player, original);
+            RunManager.syncPlayer(player);
+        }
     }
 
     private static void world(ServerPlayer player, Counter counter) {

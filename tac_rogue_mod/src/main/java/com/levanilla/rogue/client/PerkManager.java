@@ -3,6 +3,7 @@ package com.levanilla.rogue.client;
 import com.levanilla.rogue.core.PerkDefinition;
 import com.levanilla.rogue.core.PerkGenerator;
 import com.levanilla.rogue.core.RunManager;
+import com.levanilla.rogue.core.ClientRunState;
 import net.minecraft.client.Minecraft;
 
 import java.util.HashSet;
@@ -75,13 +76,10 @@ public class PerkManager {
     private static List<PerkDefinition> generateClientChoices(boolean isBoss) {
         Set<String> existing = new HashSet<>();
         int overclockedCount = 0;
-        net.minecraft.client.player.LocalPlayer localPlayer = Minecraft.getInstance().player;
-        if (localPlayer != null) {
-            for (String tag : localPlayer.getTags()) {
-                if (tag.startsWith("perk:")) {
-                    existing.add(PerkDefinition.fromTag(tag).toTag());
-                    if (tag.contains(":OVERCLOCKED:")) overclockedCount++;
-                }
+        for (String tag : ClientRunState.getPerkTags()) {
+            if (tag.startsWith("perk:")) {
+                existing.add(PerkDefinition.fromTag(tag).toTag());
+                if (tag.contains(":OVERCLOCKED:")) overclockedCount++;
             }
         }
         return PerkGenerator.generateChoices(RunManager.getCurrentFloor(), isBoss, existing, overclockedCount);

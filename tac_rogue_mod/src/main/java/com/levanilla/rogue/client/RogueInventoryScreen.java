@@ -710,11 +710,6 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
 
     private static List<String> getClientPerkTags(net.minecraft.client.player.LocalPlayer player) {
         java.util.LinkedHashSet<String> tags = new java.util.LinkedHashSet<>(ClientRunState.getPerkTags());
-        if (player != null) {
-            for (String tag : player.getTags()) {
-                if (tag.startsWith("perk:")) tags.add(tag);
-            }
-        }
         return new ArrayList<>(tags);
     }
 

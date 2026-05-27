@@ -192,19 +192,10 @@ public final class ClientSyncHandler {
         }
         DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
             boolean hasStoredPerks = !ClientRunState.getPerkTags().isEmpty();
-            net.minecraft.client.player.LocalPlayer clientPlayer = net.minecraft.client.Minecraft.getInstance().player;
-            boolean hasCurrentPerks = clientPlayer != null
-                && clientPlayer.getTags().stream().anyMatch(t -> t.startsWith("perk:"));
-            if (tags.isEmpty() && !explicitClear && (hasCurrentPerks || hasStoredPerks)) {
+            if (tags.isEmpty() && !explicitClear && hasStoredPerks) {
                 return;
             }
             ClientRunState.setPerkTags(tags);
-            if (clientPlayer != null) {
-                clientPlayer.getTags().removeIf(t -> t.startsWith("perk:"));
-                for (String tag : tags) {
-                    clientPlayer.addTag(tag);
-                }
-            }
             com.levanilla.rogue.client.TitleRunSummary.recordPerks(tags.toArray(String[]::new));
         });
     }

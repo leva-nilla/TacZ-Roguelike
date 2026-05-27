@@ -4,6 +4,7 @@ import com.levanilla.rogue.core.PerkDefinition;
 import com.levanilla.rogue.core.PerkGenerator;
 import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.core.PlayerRunData;
+import com.levanilla.rogue.core.service.PerkStorageService;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraftforge.network.NetworkDirection;
@@ -77,11 +78,9 @@ public class OpenPerkChoiceMessage {
         // プレイヤーの既存パークを収集
         Set<String> existing = new HashSet<>();
         int overclockedCount = 0;
-        for (String tag : player.getTags()) {
-            if (tag.startsWith("perk:")) {
-                existing.add(PerkDefinition.fromTag(tag).toTag());
-                if (tag.contains(":OVERCLOCKED:")) overclockedCount++;
-            }
+        for (String tag : PerkStorageService.getPerkTags(player)) {
+            existing.add(PerkDefinition.fromTag(tag).toTag());
+            if (tag.contains(":OVERCLOCKED:")) overclockedCount++;
         }
 
         // サーバー側でパーク候補を生成

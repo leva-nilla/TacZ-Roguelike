@@ -429,10 +429,7 @@ public final class DeepProgressService {
         data.clearCurrentDeepTask();
         data.clearRunRewardClaims();
         player.removeTag("rogue:gear_selected");
-        for (String tag : new ArrayList<>(player.getTags())) {
-            if (tag.startsWith("perk:")) player.removeTag(tag);
-        }
-        RunManager.savePerkTags(player);
+        PerkStorageService.clearPerks(player);
         grantFirstPrestigeCache(player, data);
         reward(player, "message.tac_rogue.prestige_done", data.getPrestigeLevel());
         RunManager.syncPlayer(player);

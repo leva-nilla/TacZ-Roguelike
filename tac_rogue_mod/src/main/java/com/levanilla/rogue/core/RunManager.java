@@ -2,6 +2,7 @@ package com.levanilla.rogue.core;
 
 import com.levanilla.rogue.world.ThemeManager;
 import com.levanilla.rogue.core.service.FloorInstanceManager;
+import com.levanilla.rogue.core.service.PerkStorageService;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.server.level.ServerLevel;
@@ -38,8 +39,6 @@ public class RunManager {
     private static final String ORIGIN_X_KEY = "TacRogueDungeonOriginX";
     private static final String ORIGIN_Y_KEY = "TacRogueDungeonOriginY";
     private static final String ORIGIN_Z_KEY = "TacRogueDungeonOriginZ";
-    private static final String PERK_TAGS_KEY = "TacRoguePerkTags";
-    private static final Map<UUID, Set<String>> perkTagMemory = new ConcurrentHashMap<>();
 
     // レガシー互換 Theme enum
     public enum Theme {
@@ -104,12 +103,12 @@ public class RunManager {
     /** プレイヤーデータを削除（ログアウト時など） */
     public static void removeData(UUID uuid) {
         playerData.remove(uuid);
-        perkTagMemory.remove(uuid);
+        PerkStorageService.clearMemory(uuid);
     }
 
     public static void clearMemory() {
         playerData.clear();
-        perkTagMemory.clear();
+        PerkStorageService.clearMemory();
     }
 
     // ===== クライアント側: 自プレイヤー同期データ =====
@@ -403,80 +402,15 @@ public class RunManager {
     }
 
     public static void savePerkTags(ServerPlayer player) {
-        Set<String> current = collectPerkTags(player);
-        rememberPerkTags(player, current);
-        writePerkTags(player, current);
+        PerkStorageService.migrateLegacyScoreboardTags(player);
     }
 
     private static void savePerkTagsPreservingStored(ServerPlayer player) {
-        Set<String> current = collectPerkTags(player);
-        if (current.isEmpty()) {
-            Set<String> stored = getStoredPerkTags(player);
-            if (!stored.isEmpty()) {
-                applyPerkTags(player, stored);
-                rememberPerkTags(player, stored);
-                return;
-            }
-        }
-        rememberPerkTags(player, current);
-        writePerkTags(player, current);
-    }
-
-    private static Set<String> collectPerkTags(ServerPlayer player) {
-        Set<String> result = new java.util.LinkedHashSet<>();
-        for (String tag : player.getTags()) {
-            if (tag.startsWith("perk:")) {
-                result.add(tag);
-            }
-        }
-        return result;
-    }
-
-    private static void writePerkTags(ServerPlayer player, Set<String> perkTags) {
-        net.minecraft.nbt.ListTag tags = new net.minecraft.nbt.ListTag();
-        for (String tag : perkTags) {
-            tags.add(net.minecraft.nbt.StringTag.valueOf(tag));
-        }
-        player.getPersistentData().put(PERK_TAGS_KEY, tags);
+        PerkStorageService.migrateLegacyScoreboardTags(player);
     }
 
     public static void restorePerkTags(ServerPlayer player) {
-        if (!collectPerkTags(player).isEmpty()) return;
-        Set<String> stored = getStoredPerkTags(player);
-        if (stored.isEmpty()) return;
-        applyPerkTags(player, stored);
-        rememberPerkTags(player, stored);
-    }
-
-    private static Set<String> getStoredPerkTags(ServerPlayer player) {
-        Set<String> stored = new java.util.LinkedHashSet<>();
-        Set<String> remembered = perkTagMemory.get(player.getUUID());
-        if (remembered != null) {
-            stored.addAll(remembered);
-        }
-
-        net.minecraft.nbt.CompoundTag data = player.getPersistentData();
-        if (!data.contains(PERK_TAGS_KEY)) return stored;
-        net.minecraft.nbt.ListTag tags = data.getList(PERK_TAGS_KEY, net.minecraft.nbt.Tag.TAG_STRING);
-        for (int i = 0; i < tags.size(); i++) {
-            String tag = tags.getString(i);
-            if (tag.startsWith("perk:")) stored.add(tag);
-        }
-        return stored;
-    }
-
-    private static void applyPerkTags(ServerPlayer player, Set<String> perkTags) {
-        for (String tag : perkTags) {
-            if (tag.startsWith("perk:")) player.addTag(tag);
-        }
-    }
-
-    private static void rememberPerkTags(ServerPlayer player, Set<String> perkTags) {
-        if (perkTags.isEmpty()) {
-            perkTagMemory.remove(player.getUUID());
-        } else {
-            perkTagMemory.put(player.getUUID(), Set.copyOf(perkTags));
-        }
+        PerkStorageService.migrateLegacyScoreboardTags(player);
     }
 
     // ===== 同期 =====
@@ -515,14 +449,7 @@ public class RunManager {
         );
 
         // パーク同期
-        Set<String> effectivePerks = collectPerkTags(player);
-        if (effectivePerks.isEmpty()) {
-            effectivePerks = getStoredPerkTags(player);
-            if (!effectivePerks.isEmpty()) {
-                applyPerkTags(player, effectivePerks);
-                rememberPerkTags(player, effectivePerks);
-            }
-        }
+        Set<String> effectivePerks = PerkStorageService.getPerkTagSet(player);
         StringBuilder perks = new StringBuilder();
         for (String tag : effectivePerks) {
             perks.append(tag).append(",");

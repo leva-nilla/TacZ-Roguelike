@@ -127,7 +127,7 @@ public final class ShopUpgradeService {
     }
 
     public static void handleRandomPerkPurchase(ServerPlayer player) {
-        long perkCount = player.getTags().stream().filter(t -> t.startsWith("perk:")).count();
+        long perkCount = PerkStorageService.getPerkCount(player);
         if (perkCount >= GameConstants.MAX_PERK_TAG_COUNT) {
             player.sendSystemMessage(Component.literal("\u00A7c[SHOP] \u00A7fPerk storage limit reached."));
             return;
@@ -143,10 +143,8 @@ public final class ShopUpgradeService {
         player.getPersistentData().putInt("RandomPerkBuys", buys + 1);
 
         Set<String> existing = new HashSet<>();
-        for (String tag : player.getTags()) {
-            if (tag.startsWith("perk:")) {
-                existing.add(PerkDefinition.fromTag(tag).toTag());
-            }
+        for (String tag : PerkStorageService.getPerkTags(player)) {
+            existing.add(PerkDefinition.fromTag(tag).toTag());
         }
 
         int targetFloor = Math.max(RunManager.getData(player).getCurrentFloor(), RunManager.getData(player).getMaxReachedFloor());
@@ -156,8 +154,7 @@ public final class ShopUpgradeService {
         int serial = player.getPersistentData().getInt("TacRogueRandomPerkSerial") + 1;
         player.getPersistentData().putInt("TacRogueRandomPerkSerial", serial);
         String uniqueTag = chosen.toTag() + ":#" + serial;
-        player.addTag(uniqueTag);
-        RunManager.savePerkTags(player);
+        PerkStorageService.addPerk(player, uniqueTag);
         player.sendSystemMessage(Component.literal("\u00A7a[SHOP] \u00A7fObtained Perk: " + chosen.getDisplayName()));
         RunManager.syncPlayer(player);
     }

@@ -16,6 +16,7 @@ import com.levanilla.rogue.core.registry.ShopCatalog;
 import com.levanilla.rogue.core.service.FloorService;
 import com.levanilla.rogue.core.service.FloorInstanceManager;
 import com.levanilla.rogue.core.service.FloorObjectiveService;
+import com.levanilla.rogue.core.service.PerkStorageService;
 import com.levanilla.rogue.core.service.RogueMobAlertService;
 import com.levanilla.rogue.core.service.RogueItemFactory;
 import com.levanilla.rogue.core.service.ShopPlacementService;
@@ -188,6 +189,8 @@ public class RogueAdminCommand {
                             .executes(context -> debugSmoke(context.getSource(), "objective")))
                         .then(Commands.literal("encounter")
                             .executes(context -> debugSmoke(context.getSource(), "encounter")))
+                        .then(Commands.literal("perk_storage")
+                            .executes(context -> debugSmoke(context.getSource(), "perk_storage")))
                         .then(Commands.literal("generation_walk")
                             .executes(context -> debugGenerationWalk(context.getSource(), 8))
                             .then(Commands.argument("seconds", IntegerArgumentType.integer(2, 30))
@@ -979,11 +982,10 @@ public class RogueAdminCommand {
             return 0;
         }
 
-        for (String tag : new java.util.ArrayList<>(player.getTags())) {
-            if (!tag.startsWith("perk:")) continue;
+        for (String tag : PerkStorageService.getPerkTags(player)) {
             PerkDefinition perk = PerkDefinition.fromTag(tag);
             if (perk.category == category && perk.modifier == modifier && perk.level == level) {
-                player.removeTag(tag);
+                PerkStorageService.removePerk(player, tag);
                 RunManager.syncPlayer(player);
                 send(source, "Removed perk " + perk.getDisplayName());
                 return 1;
@@ -998,10 +1000,8 @@ public class RogueAdminCommand {
         ServerPlayer player = getPlayer(source);
         if (player == null) return 0;
 
-        int removed = 0;
-        for (String tag : new java.util.ArrayList<>(player.getTags())) {
-            if (tag.startsWith("perk:") && player.removeTag(tag)) removed++;
-        }
+        int removed = PerkStorageService.getPerkCount(player);
+        PerkStorageService.clearPerks(player);
         RunManager.syncPlayer(player);
         send(source, "Removed " + removed + " perk(s).");
         return 1;

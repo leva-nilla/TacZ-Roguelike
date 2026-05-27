@@ -13,6 +13,7 @@ import com.levanilla.rogue.core.registry.ShopCatalog;
 import com.levanilla.rogue.core.service.RogueItemFactory;
 import com.levanilla.rogue.core.service.ShopPlacementService;
 import com.levanilla.rogue.core.service.FloorInstanceManager;
+import com.levanilla.rogue.core.service.PerkStorageService;
 import com.levanilla.rogue.world.TacRogueBossEntity;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
@@ -233,8 +234,7 @@ public class DebugActionMessage {
         PerkDefinition perk = new PerkDefinition(category, modifier, level);
         int serial = player.getPersistentData().getInt("TacRogueDebugPerkSerial") + 1;
         player.getPersistentData().putInt("TacRogueDebugPerkSerial", serial);
-        player.addTag(perk.toTag() + ":#" + serial);
-        RunManager.savePerkTags(player);
+        PerkStorageService.addPerk(player, perk.toTag() + ":#" + serial);
         RunManager.syncPlayer(player);
         player.sendSystemMessage(Component.literal("\u00A7a[DEBUG] Gave perk " + perk.getDisplayName()));
     }
@@ -250,12 +250,10 @@ public class DebugActionMessage {
         PerkDefinition.Modifier modifier = PerkDefinition.Modifier.valueOf(parts[1].toUpperCase(Locale.ROOT));
         int level = Integer.parseInt(parts[2]);
 
-        for (String tag : new java.util.ArrayList<>(player.getTags())) {
-            if (!tag.startsWith("perk:")) continue;
+        for (String tag : PerkStorageService.getPerkTags(player)) {
             PerkDefinition perk = PerkDefinition.fromTag(tag);
             if (perk.category == category && perk.modifier == modifier && perk.level == level) {
-                player.removeTag(tag);
-                RunManager.savePerkTags(player);
+                PerkStorageService.removePerk(player, tag);
                 RunManager.syncPlayer(player);
                 player.sendSystemMessage(Component.literal("\u00A7a[DEBUG] Removed perk " + perk.getDisplayName()));
                 return;
@@ -266,13 +264,8 @@ public class DebugActionMessage {
     }
 
     private static void handleClearPerks(ServerPlayer player) {
-        int removed = 0;
-        for (String tag : new java.util.ArrayList<>(player.getTags())) {
-            if (tag.startsWith("perk:") && player.removeTag(tag)) {
-                removed++;
-            }
-        }
-        RunManager.savePerkTags(player);
+        int removed = PerkStorageService.getPerkCount(player);
+        PerkStorageService.clearPerks(player);
         RunManager.syncPlayer(player);
         player.sendSystemMessage(Component.literal("\u00A7a[DEBUG] Removed " + removed + " perk(s)."));
     }

@@ -265,42 +265,11 @@ public class PerkDefinition {
      * @return 全該当パークの効果値合計
      */
     public static float sumEffect(net.minecraft.server.level.ServerPlayer player, String perkPrefix) {
-        float total = 0;
-        Category category = categoryFromPrefix(perkPrefix);
-        for (String tag : player.getTags()) {
-            if (tag.startsWith(perkPrefix)) {
-                PerkDefinition perk = PerkDefinition.fromTag(tag);
-                total += perk.calculateEffect();
-                if (category == null) {
-                    category = perk.category;
-                }
-            }
-        }
-        return category == null ? total : softcapTotalEffect(category, total);
+        return com.levanilla.rogue.core.service.PerkStorageService.sumEffect(player, perkPrefix);
     }
 
     public static float sumCategoryEffect(net.minecraft.world.entity.LivingEntity entity, Category category) {
-        if (entity == null || category == null) return 0.0f;
-        float total = 0.0f;
-        String prefix = "perk:" + category.name();
-        for (String tag : entity.getTags()) {
-            if (tag.startsWith(prefix)) {
-                total += fromTag(tag).calculateEffect();
-            }
-        }
-        return softcapTotalEffect(category, total);
-    }
-
-    private static Category categoryFromPrefix(String perkPrefix) {
-        if (perkPrefix == null || !perkPrefix.startsWith("perk:")) return null;
-        String rest = perkPrefix.substring("perk:".length());
-        int colon = rest.indexOf(':');
-        String categoryName = colon >= 0 ? rest.substring(0, colon) : rest;
-        try {
-            return Category.valueOf(categoryName);
-        } catch (IllegalArgumentException ignored) {
-            return null;
-        }
+        return com.levanilla.rogue.core.service.PerkStorageService.sumCategoryEffect(entity, category);
     }
 
     /** シリアライズ用のタグ文字列 (プレイヤーの Tag として保存) */

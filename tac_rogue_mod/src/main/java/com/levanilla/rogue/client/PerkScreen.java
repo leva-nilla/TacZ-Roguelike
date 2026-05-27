@@ -3,9 +3,9 @@ package com.levanilla.rogue.client;
 import com.levanilla.rogue.core.PerkDefinition;
 import com.levanilla.rogue.core.PerkGenerator;
 import com.levanilla.rogue.core.RunManager;
+import com.levanilla.rogue.core.ClientRunState;
 import com.levanilla.rogue.networking.PerkActionMessage;
 import com.levanilla.rogue.networking.TacRogueNetworking;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
@@ -40,24 +40,18 @@ public class PerkScreen extends Screen {
 
         // 既存のパークタグを収集
         Set<String> existing = new HashSet<>();
-        Minecraft mc = Minecraft.getInstance();
-        net.minecraft.client.player.LocalPlayer localPlayer = mc.player;
-        if (localPlayer != null) {
-            for (String tag : localPlayer.getTags()) {
-                if (tag.startsWith("perk:")) {
-                    existing.add(PerkDefinition.fromTag(tag).toTag());
-                }
+        for (String tag : ClientRunState.getPerkTags()) {
+            if (tag.startsWith("perk:")) {
+                existing.add(PerkDefinition.fromTag(tag).toTag());
             }
         }
 
         // パーク候補を生成
         int floor = RunManager.getCurrentFloor();
         int overclockedCount = 0;
-        if (localPlayer != null) {
-            for (String tag : localPlayer.getTags()) {
-                if (tag.contains(":OVERCLOCKED:")) {
-                    overclockedCount++;
-                }
+        for (String tag : ClientRunState.getPerkTags()) {
+            if (tag.contains(":OVERCLOCKED:")) {
+                overclockedCount++;
             }
         }
         this.choices = PerkGenerator.generateChoices(floor, isBoss, existing, overclockedCount);

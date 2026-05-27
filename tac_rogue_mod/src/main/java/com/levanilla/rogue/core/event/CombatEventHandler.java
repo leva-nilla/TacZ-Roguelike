@@ -1,6 +1,7 @@
 package com.levanilla.rogue.core.event;
 
 import com.levanilla.rogue.core.*;
+import com.levanilla.rogue.core.service.PerkStorageService;
 import com.levanilla.rogue.core.service.RogueMobAlertService;
 import com.levanilla.rogue.core.service.RoguePickupService;
 import com.levanilla.rogue.networking.StealthTakedownHintMessage;
@@ -213,7 +214,7 @@ public class CombatEventHandler {
             }
 
             int volatilePerks = 0;
-            for (String tag : damagedPlayer.getTags()) {
+            for (String tag : PerkStorageService.getPerkTags(damagedPlayer)) {
                 if (tag.startsWith("perk:") && tag.contains(":VOLATILE:")) {
                     volatilePerks++;
                 }
@@ -322,16 +323,12 @@ public class CombatEventHandler {
                 default -> 0;
             };
             if (perksToLose > 0) {
-                java.util.List<String> perkTags = new java.util.ArrayList<>();
-                for (String tag : player.getTags()) {
-                    if (tag.startsWith("perk:")) perkTags.add(tag);
-                }
+                java.util.List<String> perkTags = new java.util.ArrayList<>(PerkStorageService.getPerkTags(player));
                 java.util.Collections.shuffle(perkTags);
                 int removed = 0;
                 for (String tag : perkTags) {
                     if (removed >= perksToLose) break;
-                    player.removeTag(tag);
-                    removed++;
+                    if (PerkStorageService.removePerk(player, tag)) removed++;
                 }
                 if (removed > 0) {
                     RunManager.savePerkTags(player);
@@ -444,12 +441,7 @@ public class CombatEventHandler {
         data.clearCurrentDeepTask();
         data.clearRunRewardClaims();
         player.removeTag("rogue:gear_selected");
-        for (String tag : new ArrayList<>(player.getTags())) {
-            if (tag.startsWith("perk:")) {
-                player.removeTag(tag);
-            }
-        }
-        RunManager.savePerkTags(player);
+        PerkStorageService.clearPerks(player);
         player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
             "message.tac_rogue.ironman_run_reset"), true);
     }
