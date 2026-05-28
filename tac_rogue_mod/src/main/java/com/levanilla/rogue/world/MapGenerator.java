@@ -1462,6 +1462,11 @@ public class MapGenerator {
         chest.getPersistentData().putBoolean("TacRogueLootChest", true);
         chest.getPersistentData().putBoolean("TacRogueChestClaimed", false);
         chest.getPersistentData().putInt(com.levanilla.rogue.core.service.ChestLootService.CHEST_INDEX_KEY, Math.max(0, chestIndex));
+        chest.getPersistentData().putLong(com.levanilla.rogue.core.service.ChestLootService.CHEST_LOOT_SEED_KEY,
+            level.random.nextLong()
+                ^ ((long) Objects.hashCode(instanceId) * 0x9E37_79B9_7F4A_7C15L)
+                ^ ((long) Math.max(1, floor) * 0xD1B5_4A32_D192_ED03L)
+                ^ ((long) Math.max(0, chestIndex) * 0x94D0_49BB_1331_11EBL));
         com.levanilla.rogue.core.service.FloorInstanceManager.stampBlockEntity(
             chest,
             instanceId,

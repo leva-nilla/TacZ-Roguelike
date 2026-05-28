@@ -132,13 +132,15 @@ public class ItemAndLifecycleHandler {
                                                   ServerPlayer player,
                                                   int floor,
                                                   int chestIndex) {
+        long chestLootSeed = ensureChestLootSeed(chest, player, floor, chestIndex);
         java.util.Random rand = new java.util.Random(player.getUUID().getMostSignificantBits()
             ^ Long.rotateLeft(player.getUUID().getLeastSignificantBits(), 21)
             ^ ((long) Math.max(1, floor) * 0x9E3779B97F4A7C15L)
-            ^ ((long) Math.max(0, chestIndex) * 0xD1B54A32D192ED03L));
+            ^ ((long) Math.max(0, chestIndex) * 0xD1B54A32D192ED03L)
+            ^ Long.rotateLeft(chestLootSeed, 13));
         chest.clearContent();
         java.util.List<ItemStack> loot =
-            com.levanilla.rogue.core.service.ChestLootService.generatePersonalChestLoot(player, floor, chestIndex);
+            com.levanilla.rogue.core.service.ChestLootService.generatePersonalChestLoot(player, floor, chestIndex, chestLootSeed);
 
         for (ItemStack stack : loot) {
             if (stack.isEmpty()) continue;
@@ -149,6 +151,25 @@ public class ItemAndLifecycleHandler {
             chest.setItem(slot, stack);
         }
         chest.setChanged();
+    }
+
+    private static long ensureChestLootSeed(net.minecraft.world.level.block.entity.ChestBlockEntity chest,
+                                            ServerPlayer player,
+                                            int floor,
+                                            int chestIndex) {
+        String key = com.levanilla.rogue.core.service.ChestLootService.CHEST_LOOT_SEED_KEY;
+        if (chest.getPersistentData().contains(key)) {
+            return chest.getPersistentData().getLong(key);
+        }
+        long seed = player.getRandom().nextLong()
+            ^ player.serverLevel().getSeed()
+            ^ ((long) Math.max(1, floor) * 0x9E3779B97F4A7C15L)
+            ^ ((long) Math.max(0, chestIndex) * 0xD1B54A32D192ED03L)
+            ^ Long.rotateLeft(player.getUUID().getMostSignificantBits(), 11)
+            ^ Long.rotateLeft(player.getUUID().getLeastSignificantBits(), 37);
+        chest.getPersistentData().putLong(key, seed);
+        chest.setChanged();
+        return seed;
     }
 
     // ===== ステーキ使用完了時の回復 =====

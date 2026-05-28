@@ -22,6 +22,7 @@ import java.util.UUID;
 public final class ChestLootService {
     public static final String CHEST_INDEX_KEY = "TacRogueChestIndex";
     public static final String CHEST_TOTAL_KEY = "TacRogueChestTotal";
+    public static final String CHEST_LOOT_SEED_KEY = "TacRogueLootSeed";
 
     private ChestLootService() {}
 
@@ -30,9 +31,13 @@ public final class ChestLootService {
     }
 
     public static List<ItemStack> generatePersonalChestLoot(ServerPlayer player, int floor, int chestIndex) {
+        return generatePersonalChestLoot(player, floor, chestIndex, 0L);
+    }
+
+    public static List<ItemStack> generatePersonalChestLoot(ServerPlayer player, int floor, int chestIndex, long chestLootSeed) {
         int safeFloor = Math.max(1, floor);
         int safeChestIndex = Math.max(0, chestIndex);
-        Random rand = new Random(stableSeed(player.getUUID(), safeFloor, safeChestIndex));
+        Random rand = new Random(stableSeed(player.getUUID(), safeFloor, safeChestIndex, chestLootSeed));
         List<ItemStack> loot = new ArrayList<>();
 
         if (rand.nextFloat() < recoverySlotChance(safeFloor, safeChestIndex)) {
@@ -55,12 +60,13 @@ public final class ChestLootService {
         return loot;
     }
 
-    private static long stableSeed(UUID uuid, int floor, int chestIndex) {
+    private static long stableSeed(UUID uuid, int floor, int chestIndex, long chestLootSeed) {
         long seed = 0x7E57_1A2B_D4C3_9F01L;
         seed ^= uuid.getMostSignificantBits();
         seed = Long.rotateLeft(seed, 19) ^ uuid.getLeastSignificantBits();
         seed ^= (long) floor * 0x9E37_79B9_7F4A_7C15L;
         seed = Long.rotateLeft(seed, 23) ^ ((long) chestIndex * 0xD1B5_4A32_D192_ED03L);
+        seed = Long.rotateLeft(seed, 17) ^ chestLootSeed;
         return seed;
     }
 
