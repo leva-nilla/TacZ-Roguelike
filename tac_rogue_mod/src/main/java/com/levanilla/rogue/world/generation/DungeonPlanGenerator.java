@@ -49,7 +49,7 @@ public final class DungeonPlanGenerator {
         DungeonPlan last = null;
         for (int reroll = 0; reroll < MAX_REROLLS; reroll++) {
             Random rand = new Random(context.rerollSeed(reroll));
-            MacroArchetype archetype = bossFloor ? MacroArchetype.BOSS_RING : pickArchetype(rand, context.floor(), style);
+            MacroArchetype archetype = bossFloor ? MacroArchetype.BOSS_APPROACH : pickArchetype(rand, context.floor(), style);
             DungeonPlan plan = buildPlan(context, archetype, rand, bossFloor, style);
             DungeonPlanValidator.ValidationResult result = DungeonPlanValidator.validate(plan, bossFloor);
             if (result.valid() && rememberIfFresh(context, plan)) {
@@ -73,7 +73,7 @@ public final class DungeonPlanGenerator {
             return themed;
         }
         List<MacroArchetype> candidates = new ArrayList<>(EnumSet.allOf(MacroArchetype.class));
-        candidates.remove(MacroArchetype.BOSS_RING);
+        candidates.remove(MacroArchetype.BOSS_APPROACH);
         if (floor < 3) {
             candidates.remove(MacroArchetype.DENSE_CLUSTER);
             candidates.remove(MacroArchetype.LONG_CORRIDOR_COMBAT);
@@ -117,7 +117,7 @@ public final class DungeonPlanGenerator {
                                          Random rand, boolean bossFloor, ThemeManager.ThemeGenerationStyle style) {
         PlanBuilder builder = new PlanBuilder(context, archetype, rand, style);
         switch (archetype) {
-            case BOSS_RING -> buildBossRing(builder);
+            case BOSS_APPROACH -> buildBossApproach(builder);
             case HUB_AND_SPOKES -> buildHubAndSpokes(builder);
             case TWO_LANES -> buildTwoLanes(builder);
             case LONG_CORRIDOR_COMBAT -> buildLongCorridor(builder);
@@ -128,22 +128,28 @@ public final class DungeonPlanGenerator {
         return builder.toPlan(bossFloor ? 1 : 0);
     }
 
-    private static void buildBossRing(PlanBuilder builder) {
-        builder.addFixed(-12, -12, 24, 24, RoomRole.BOSS_ARENA);
-        builder.addFixed(-7, 46, 14, 12, RoomRole.BOSS_ENTRY);
-        int ring = 42 + builder.rand.nextInt(7);
-        int count = 7 + builder.rand.nextInt(3);
-        for (int i = 0; i < count; i++) {
-            double angle = (Math.PI * 2.0D * (i + 0.5D) / count) + builder.rand.nextDouble() * 0.16D;
-            int w = builder.roomSize(9, 15);
-            int d = builder.roomSize(9, 15);
-            int x = (int) Math.round(Math.cos(angle) * ring) - w / 2;
-            int z = (int) Math.round(Math.sin(angle) * ring) - d / 2;
-            RoomRole role = i % 3 == 0 ? RoomRole.ELITE : (i % 3 == 1 ? RoomRole.COVER_DENSE : RoomRole.COMBAT_SMALL);
-            builder.addNear(x, z, w, d, role);
-        }
-        builder.connect(1, 0, CorridorVariant.WIDE_COVER, 5);
-        builder.connectRingFrom(1, CorridorVariant.LOOP_CONNECTOR, 5);
+    private static void buildBossApproach(PlanBuilder builder) {
+        int arena = builder.addFixed(-15, 38, 30, 26, RoomRole.BOSS_ARENA);
+        int entry = builder.addFixed(-7, -62, 14, 12, RoomRole.BOSS_ENTRY);
+        int staging = builder.addFixed(-10, -44, 20, 14, RoomRole.COVER_DENSE);
+        int guard = builder.addFixed(-14, -22, 28, 14, RoomRole.COMBAT_LONG);
+        int gate = builder.addFixed(-12, 0, 24, 14, RoomRole.ELITE);
+        int prep = builder.addFixed(-10, 20, 20, 12, RoomRole.COVER_DENSE);
+
+        int leftFlank = builder.addFixed(-34, -22, 12, 12, RoomRole.AMBUSH);
+        int rightCache = builder.addFixed(22, -24, 12, 12, RoomRole.SUPPLY_RISK);
+        int sideReward = builder.addFixed(22, 8, 12, 12, RoomRole.SIDE_REWARD);
+
+        builder.connect(entry, staging, CorridorVariant.WIDE_COVER, 5);
+        builder.connect(staging, guard, CorridorVariant.NARROW_PRESSURE, 5);
+        builder.connect(guard, gate, CorridorVariant.WIDE_COVER, 5);
+        builder.connect(gate, prep, CorridorVariant.NARROW_PRESSURE, 5);
+        builder.connect(prep, arena, CorridorVariant.WIDE_COVER, 6);
+
+        builder.connect(guard, leftFlank, CorridorVariant.BROKEN_ALCOVE, 3);
+        builder.connect(guard, rightCache, CorridorVariant.DOGLEG, 3);
+        builder.connect(gate, sideReward, CorridorVariant.DOGLEG, 3);
+        builder.connect(rightCache, sideReward, CorridorVariant.LOOP_CONNECTOR, 3);
     }
 
     private static void buildHubAndSpokes(PlanBuilder builder) {
@@ -278,10 +284,10 @@ public final class DungeonPlanGenerator {
 
     private static DungeonPlan fallbackPlan(FloorGenerationContext context, boolean bossFloor) {
         Random rand = new Random(context.layoutSeed() ^ 0x51ED5EEDL);
-        PlanBuilder builder = new PlanBuilder(context, bossFloor ? MacroArchetype.BOSS_RING : MacroArchetype.LINEAR_BRANCHING,
+        PlanBuilder builder = new PlanBuilder(context, bossFloor ? MacroArchetype.BOSS_APPROACH : MacroArchetype.LINEAR_BRANCHING,
             rand, ThemeManager.ThemeGenerationStyle.DEFAULT);
         if (bossFloor) {
-            buildBossRing(builder);
+            buildBossApproach(builder);
             return builder.toPlan(1);
         }
         int prev = builder.addFixed(-54, -6, 12, 12, RoomRole.START);

@@ -481,7 +481,7 @@ public class MapGenerator {
 
         // --- Phase 5.6: スポーン部屋の特別装飾 ---
         if (!rooms.isEmpty()) {
-            int[] spawnRoom = rooms.get(0);
+            int[] spawnRoom = roomArrayById(rooms, plan.spawnRoomId());
             int sx = center.getX() + spawnRoom[0];
             int sz = center.getZ() + spawnRoom[1];
             int sw = spawnRoom[2];
@@ -496,9 +496,9 @@ public class MapGenerator {
             }
         }
 
-        // --- Phase 5.7: ボス部屋アリーナ装飾 (RING中心) ---
+        // --- Phase 5.7: ボス部屋アリーナ装飾 ---
         if (isBoss && rooms.size() > 1) {
-            int[] bossRoom = rooms.get(0); // RING中心
+            int[] bossRoom = firstRoomByRole(rooms, plan, RoomRole.BOSS_ARENA);
             int bx = center.getX() + bossRoom[0];
             int bz = center.getZ() + bossRoom[1];
             int bw = bossRoom[2];
@@ -544,9 +544,9 @@ public class MapGenerator {
 
         int totalMobsSpawned = 0;
 
-        // ボスフロア: ボスは中心部屋 (index 0) にスポーン
+        // ボスフロア: ボスはBOSS_ARENAにスポーン
         if (isBoss && !rooms.isEmpty()) {
-            int[] bossRoom = rooms.get(0);
+            int[] bossRoom = firstRoomByRole(rooms, plan, RoomRole.BOSS_ARENA);
             int bossX = center.getX() + bossRoom[0] + bossRoom[2] / 2;
             int bossZ = center.getZ() + bossRoom[1] + bossRoom[3] / 2;
             BlockPos bossSpawnPos = new BlockPos(bossX, baseY + 1, bossZ);
@@ -1534,6 +1534,22 @@ public class MapGenerator {
             setBlock(level, new BlockPos(cx - radius, baseY, cz + d), theme.accent);
             setBlock(level, new BlockPos(cx + radius, baseY, cz + d), theme.accent);
         }
+    }
+
+    private static int[] roomArrayById(List<int[]> rooms, int roomId) {
+        if (rooms.isEmpty()) return new int[] { 0, 0, 12, 12 };
+        int safe = Math.max(0, Math.min(roomId, rooms.size() - 1));
+        return rooms.get(safe);
+    }
+
+    private static int[] firstRoomByRole(List<int[]> rooms, DungeonPlan plan, RoomRole role) {
+        if (rooms.isEmpty()) return new int[] { 0, 0, 12, 12 };
+        for (DungeonRoom room : plan.rooms()) {
+            if (room.role() == role && room.id() >= 0 && room.id() < rooms.size()) {
+                return rooms.get(room.id());
+            }
+        }
+        return rooms.get(0);
     }
 
     private static void buildLowVisibilityRoom(ServerLevel level, Random rand, ThemeManager.ThemeInstance theme,

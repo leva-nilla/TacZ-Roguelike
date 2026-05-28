@@ -21,7 +21,8 @@ public final class DungeonPlanValidator {
         if (plan.rooms().isEmpty()) return ValidationResult.fail("no rooms");
         if (plan.room(plan.spawnRoomId()) == null) return ValidationResult.fail("missing spawn room");
 
-        boolean hasBossArena = false;
+        int bossArenaId = -1;
+        int bossEntryId = -1;
         for (int i = 0; i < plan.rooms().size(); i++) {
             DungeonRoom room = plan.rooms().get(i);
             if (room.x() < -ROOM_RADIUS || room.z() < -ROOM_RADIUS
@@ -29,7 +30,8 @@ public final class DungeonPlanValidator {
                 || room.z() + room.depth() > ROOM_RADIUS) {
                 return ValidationResult.fail("room out of bounds: " + room.id());
             }
-            if (room.role() == RoomRole.BOSS_ARENA) hasBossArena = true;
+            if (room.role() == RoomRole.BOSS_ARENA) bossArenaId = room.id();
+            if (room.role() == RoomRole.BOSS_ENTRY) bossEntryId = room.id();
             for (int j = i + 1; j < plan.rooms().size(); j++) {
                 DungeonRoom other = plan.rooms().get(j);
                 if (overlaps(room, other, 2)) {
@@ -38,8 +40,14 @@ public final class DungeonPlanValidator {
             }
         }
 
-        if (bossFloor && !hasBossArena) {
-            return ValidationResult.fail("boss floor without arena");
+        if (bossFloor) {
+            if (bossArenaId < 0) return ValidationResult.fail("boss floor without arena");
+            if (bossEntryId < 0) return ValidationResult.fail("boss floor without entry");
+            if (plan.spawnRoomId() == bossArenaId) return ValidationResult.fail("boss floor spawns inside arena");
+            int pathLength = shortestPathLength(plan, plan.spawnRoomId(), bossArenaId);
+            if (pathLength < 4) {
+                return ValidationResult.fail("boss approach too short: " + pathLength);
+            }
         }
         if (!isConnected(plan)) {
             return ValidationResult.fail("room graph disconnected");
@@ -75,6 +83,32 @@ public final class DungeonPlanValidator {
             }
         }
         return seen.size() == plan.rooms().size();
+    }
+
+    private static int shortestPathLength(DungeonPlan plan, int startId, int targetId) {
+        Map<Integer, Set<Integer>> graph = new HashMap<>();
+        for (DungeonRoom room : plan.rooms()) {
+            graph.put(room.id(), new HashSet<>());
+        }
+        for (DungeonCorridor corridor : plan.corridors()) {
+            if (!graph.containsKey(corridor.fromRoomId()) || !graph.containsKey(corridor.toRoomId())) continue;
+            graph.get(corridor.fromRoomId()).add(corridor.toRoomId());
+            graph.get(corridor.toRoomId()).add(corridor.fromRoomId());
+        }
+        ArrayDeque<int[]> queue = new ArrayDeque<>();
+        Set<Integer> seen = new HashSet<>();
+        queue.add(new int[] { startId, 0 });
+        while (!queue.isEmpty()) {
+            int[] next = queue.removeFirst();
+            int id = next[0];
+            int depth = next[1];
+            if (!seen.add(id)) continue;
+            if (id == targetId) return depth;
+            for (int neighbor : graph.getOrDefault(id, Set.of())) {
+                if (!seen.contains(neighbor)) queue.addLast(new int[] { neighbor, depth + 1 });
+            }
+        }
+        return -1;
     }
 
     public record ValidationResult(boolean valid, String reason) {

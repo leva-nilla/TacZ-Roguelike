@@ -7,5 +7,5 @@ public enum MacroArchetype {
     TWO_LANES,
     LONG_CORRIDOR_COMBAT,
     DENSE_CLUSTER,
-    BOSS_RING
+    BOSS_APPROACH
 }
