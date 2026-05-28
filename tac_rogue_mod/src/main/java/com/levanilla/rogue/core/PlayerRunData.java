@@ -60,6 +60,14 @@ public class PlayerRunData {
         progressData.markBossRewardClaimed(floor);
     }
 
+    public boolean hasClaimedPerkReward(int floor) {
+        return progressData.hasClaimedPerkReward(floor);
+    }
+
+    public void markPerkRewardClaimed(int floor) {
+        progressData.markPerkRewardClaimed(floor);
+    }
+
     public boolean hasClaimedSupplyChest(String key) {
         return supplyChestTracker.hasClaimed(key);
     }

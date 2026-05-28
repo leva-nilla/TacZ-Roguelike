@@ -30,11 +30,23 @@ public final class PerkApplyService {
             return false;
         }
 
+        String context = RogueActionMessage.getPendingPerkContext(player.getUUID());
+        com.levanilla.rogue.core.PlayerRunData runData = RunManager.getData(player);
+        int floor = runData.getCurrentFloor();
+        if ("floor_clear".equals(context) && floor > 0 && runData.hasClaimedPerkReward(floor)) {
+            RogueActionMessage.clearPerkChoices(player.getUUID());
+            player.sendSystemMessage(Component.literal("\u00A7e[PERK] This floor reward was already claimed."));
+            return false;
+        }
+
         RogueActionMessage.clearPerkChoices(player.getUUID());
         int serial = player.getPersistentData().getInt("TacRoguePerkSerial") + 1;
         player.getPersistentData().putInt("TacRoguePerkSerial", serial);
         String storedTag = perkTag + ":#" + serial;
         PerkStorageService.addPerk(player, storedTag);
+        if ("floor_clear".equals(context) && floor > 0) {
+            runData.markPerkRewardClaimed(floor);
+        }
         net.minecraft.network.chat.MutableComponent acquired =
             Component.literal(perk.getDisplayName() + " \u00A77- " + perk.getDescription());
         if (perk.modifier == PerkDefinition.Modifier.CURSED) {

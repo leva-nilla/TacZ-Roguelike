@@ -184,7 +184,10 @@ public class RoomManager {
                 fallback.addTag("tac_rogue_spawned");
                 fallback.addTag("rogue:boss");
                 fallback.getPersistentData().putInt("TacRogueSpawnFloor", floor);
-                fallback.getPersistentData().putLong("TacRogueSpawnTick", level.getServer().getTickCount());
+                long spawnTick = level.getServer().getTickCount();
+                fallback.getPersistentData().putLong("TacRogueSpawnTick", spawnTick);
+                fallback.getPersistentData().putLong(TacRogueBossEntity.VULNERABLE_AFTER_TICK_KEY,
+                    spawnTick + TacRogueBossEntity.SPAWN_PROTECTION_TICKS);
                 applyParticipantHealthScaling(fallback, participantCount, true);
                 FloorInstanceManager.stampEntity(fallback, instanceId, floor,
                     FloorInstanceManager.EntryMode.parse(mode), null);

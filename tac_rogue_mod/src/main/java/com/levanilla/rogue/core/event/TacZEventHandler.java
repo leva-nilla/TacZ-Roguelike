@@ -5,6 +5,7 @@ import com.levanilla.rogue.core.registry.TacZGunRegistry;
 import com.levanilla.rogue.core.service.PerkStorageService;
 import com.levanilla.rogue.core.service.RogueMobAlertService;
 import com.levanilla.rogue.networking.TacRogueNetworking;
+import com.levanilla.rogue.world.TacRogueBossEntity;
 import com.tacz.guns.api.event.common.*;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
@@ -155,6 +156,11 @@ public class TacZEventHandler {
             && event.getHurtEntity() != null
             && event.getHurtEntity().getTags().contains("rogue:boss");
         if (attacker.level().dimension() != ROGUE_DIM && !lobbyDebugBoss) return;
+        if (TacRogueBossEntity.isSpawnProtectionActive(event.getHurtEntity())) {
+            TacRogueBossEntity.forceEngageIfBoss(event.getHurtEntity(), attacker);
+            event.setCanceled(true);
+            return;
+        }
 
         float damage = event.getBaseAmount();
 

@@ -39,6 +39,8 @@ final class DeepProgressData {
     private long floorStartTick = 0;
     /** 初回ボス報酬を受領済みのフロア */
     private final Set<Integer> claimedBossRewardFloors = new HashSet<>();
+    /** 現ランでフロアクリアパークを受領済みのフロア */
+    private final Set<Integer> claimedPerkRewardFloors = new HashSet<>();
     /** 101層以降の専用通貨。 */
     private int deepCore = 0;
     /** Prestige実行回数。 */
@@ -131,8 +133,17 @@ final class DeepProgressData {
         claimedBossRewardFloors.add(floor);
     }
 
+    boolean hasClaimedPerkReward(int floor) {
+        return claimedPerkRewardFloors.contains(floor);
+    }
+
+    void markPerkRewardClaimed(int floor) {
+        if (floor > 0) claimedPerkRewardFloors.add(floor);
+    }
+
     void clearRunRewardClaims() {
         claimedBossRewardFloors.clear();
+        claimedPerkRewardFloors.clear();
     }
 
     int getDeepCore() { return deepCore; }
@@ -211,6 +222,7 @@ final class DeepProgressData {
         floorCleared = false;
         runSeed = System.nanoTime();
         startFloorAttempt(runSeed);
+        claimedPerkRewardFloors.clear();
         floorStartTick = 0; // 呼び出し元でサーバーtickを設定
     }
 
@@ -246,6 +258,7 @@ final class DeepProgressData {
             bossRewards.add(IntTag.valueOf(floor));
         }
         tag.put("ClaimedBossRewardFloors", bossRewards);
+        tag.put("ClaimedPerkRewardFloors", intSetToTag(claimedPerkRewardFloors));
         tag.putInt("DeepCore", deepCore);
         tag.putInt("PrestigeLevel", prestigeLevel);
         tag.putInt("HighestEverFloor", getHighestEverFloor());
@@ -295,6 +308,10 @@ final class DeepProgressData {
                 claimedBossRewardFloors.add(bossRewards.getInt(i));
             }
         }
+        claimedPerkRewardFloors.clear();
+        if (tag.contains("ClaimedPerkRewardFloors")) {
+            readIntSet(tag.getList("ClaimedPerkRewardFloors", 3), claimedPerkRewardFloors);
+        }
         if (tag.contains("DeepCore")) deepCore = Math.max(0, tag.getInt("DeepCore"));
         if (tag.contains("PrestigeLevel")) prestigeLevel = Math.max(0, tag.getInt("PrestigeLevel"));
         if (tag.contains("HighestEverFloor")) highestEverFloor = Math.max(0, tag.getInt("HighestEverFloor"));
@@ -328,6 +345,7 @@ final class DeepProgressData {
         dungeonOrigin = new BlockPos(0, GameConstants.DUNGEON_BASE_Y, 0);
         floorStartTick = 0;
         // ボス初回報酬履歴は進行データなので通常リセットでは保持する
+        claimedPerkRewardFloors.clear();
     }
 
     private static ListTag intSetToTag(Set<Integer> set) {

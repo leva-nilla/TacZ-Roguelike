@@ -489,14 +489,19 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         float goldBonus = sumClientPerkEffect(player, "perk:GOLD_RUSH");
         float staminaBonus = sumClientPerkEffect(player, "perk:STAMINA");
         float magBonus = sumClientPerkEffect(player, "perk:MAG_SIZE");
-        List<String> details = buildStatusDetailLines(player, armor, resistBonus, fireRateBonus, reloadBonus, autoloaderEffect, staminaBonus);
-        int tacticalH = Math.max(54, 43 + details.size() * 10 + (isCompactLayout() ? 11 : 0));
+        float meleeSpeedBonus = WeaponRarity.getMeleeSpeedPerkBonusPercent(player);
+        List<String> survivalDetails = buildSurvivalStatusLines(player, armor, resistBonus);
+        List<String> weaponDetails = buildWeaponStatusLines(player, fireRateBonus, meleeSpeedBonus, reloadBonus, autoloaderEffect);
+        List<String> utilityDetails = buildUtilityStatusLines(player, staminaBonus, magBonus);
+        List<String> activeDetails = buildActiveStatusLines(player);
         boolean showDeepPanel = com.levanilla.rogue.core.ClientRunState.getDeepCore() > 0
             || com.levanilla.rogue.core.ClientRunState.getHighestEverFloor() >= 100;
         int combatBottomY = top + 188;
         int deepPanelH = showDeepPanel ? 74 : 0;
-        int tacticalY = combatBottomY + (showDeepPanel ? deepPanelH + 8 : 0);
-        int contentHeight = (tacticalY + tacticalH + 8) - viewportTop;
+        int detailStartY = combatBottomY + (showDeepPanel ? deepPanelH + 8 : 0);
+        int detailsBottom = detailStartY + statusDetailsHeight(compact, leftW + rightW + 10,
+            survivalDetails, weaponDetails, utilityDetails, activeDetails);
+        int contentHeight = (detailsBottom + 8) - viewportTop;
         int maxScroll = Math.max(0, contentHeight - viewportHeight);
         statusScrollOffset = Math.max(0, Math.min(statusScrollOffset, maxScroll));
 
@@ -542,8 +547,6 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
             drawDeepOperationsPanel(graphics, lx, combatBottomY, leftW + rightW + 10, deepPanelH);
         }
 
-        int bottomY = tacticalY;
-        drawPanel(graphics, lx, bottomY, leftW + rightW + 10, tacticalH, tr("gui.tac_rogue.status.panel.tactical_state"), 0xFFAAFFCC);
         boolean prone = com.levanilla.rogue.core.CombatPostureHelper.isProne(player);
         boolean sneaking = player.hasPose(net.minecraft.world.entity.Pose.CROUCHING)
             || player.isShiftKeyDown()
@@ -552,19 +555,10 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
             ? "\u00A72" + tr("gui.tac_rogue.status.stance.prone")
             : sneaking ? "\u00A7e" + tr("gui.tac_rogue.status.stance.sneak") : "\u00A7f" + tr("gui.tac_rogue.status.stance.standing");
         float postureDmg = prone ? GameConstants.CRAWL_DAMAGE_MULT : sneaking ? GameConstants.SNEAK_DAMAGE_MULT : 1.0f;
-        graphics.drawString(this.font, "\u00A77" + tr("gui.tac_rogue.status.stance", posture), lx + 10, bottomY + 17, 0xFFFFFFFF, false);
-        graphics.drawString(this.font, "\u00A77" + tr("gui.tac_rogue.status.posture_damage", String.format(java.util.Locale.ROOT, "%.2f", postureDmg)), lx + 116, bottomY + 17, 0xFFFFFFFF, false);
-        int staminaX = compact ? lx + 10 : lx + 236;
-        int magazineX = compact ? lx + 150 : lx + 322;
-        int secondLineY = compact ? bottomY + 27 : bottomY + 17;
-        graphics.drawString(this.font, "\u00A77" + tr("gui.tac_rogue.status.stamina_mult", fmtMult(1.0f + staminaBonus / 100.0f)), staminaX, secondLineY, 0xFFAAFFCC, false);
-        graphics.drawString(this.font, "\u00A77" + tr("gui.tac_rogue.status.magazine_mult", fmtMult(1.0f + magBonus / 100.0f)), magazineX, secondLineY, 0xFFAAFFCC, false);
-
-        int detailY = bottomY + (compact ? 42 : 31);
-        for (int i = 0; i < details.size(); i++) {
-            graphics.drawString(this.font, "\u00A78- \u00A7f" + details.get(i),
-                lx + 10, detailY + i * 10, 0xFFE0E0E0, false);
-        }
+        utilityDetails.add(0, tr("gui.tac_rogue.status.stance", posture));
+        utilityDetails.add(1, tr("gui.tac_rogue.status.posture_damage", String.format(java.util.Locale.ROOT, "%.2f", postureDmg)));
+        drawStatusDetailPanels(graphics, lx, detailStartY, leftW + rightW + 10, compact,
+            survivalDetails, weaponDetails, utilityDetails, activeDetails);
         graphics.pose().popPose();
         graphics.disableScissor();
 
@@ -597,32 +591,115 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         graphics.drawString(this.font, trim(line, Math.max(18, (w - 100) / 6)), x + 82, y + 49, 0xFFE8FFF8, false);
     }
 
-    private List<String> buildStatusDetailLines(net.minecraft.client.player.LocalPlayer player, int armor,
-                                                float resistBonus, float fireRateBonus, float reloadBonus,
-                                                float autoloaderEffect, float staminaBonus) {
+    private List<String> buildSurvivalStatusLines(net.minecraft.client.player.LocalPlayer player, int armor,
+                                                  float resistBonus) {
         List<String> lines = new ArrayList<>();
         float armorReduction = GameConstants.getArmorMitigationEstimate(armor);
         float volatileTaken = 1.0f + countModifier(player, PerkDefinition.Modifier.VOLATILE) * 0.20f;
         lines.add(tr("gui.tac_rogue.status.armor_mitigation", fmtOnePercent(armorReduction * 100.0f)));
         lines.add(tr("gui.tac_rogue.status.resistance_damage_taken", fmtMult(specialResistanceTaken(resistBonus))));
+        lines.add(tr("gui.tac_rogue.status.resistance_debuff_duration", fmtMult(specialResistanceTaken(resistBonus))));
         lines.add(tr("gui.tac_rogue.status.volatile_damage_taken", fmtMult(volatileTaken)));
         lines.add(tr("gui.tac_rogue.status.dodge_effective",
             fmtOnePercent(effectiveDodgeChance(player))));
+        return lines;
+    }
+
+    private List<String> buildWeaponStatusLines(net.minecraft.client.player.LocalPlayer player,
+                                                float fireRateBonus, float meleeSpeedBonus, float reloadBonus,
+                                                float autoloaderEffect) {
+        List<String> lines = new ArrayList<>();
         lines.add(tr("gui.tac_rogue.status.ammo_save_effective", fmtOnePercent(effectiveAmmoSaveChance(player))));
-        lines.add(formatEffectivePerkValue(player, PerkDefinition.Category.SCAVENGER, sumClientPerkEffect(player, "perk:SCAVENGER")));
         lines.add(tr("gui.tac_rogue.status.fire_rate_effective", fmtMult(1.0f + fireRateBonus / 100.0f)));
+        lines.add(tr("gui.tac_rogue.status.melee_speed_effective", fmtMult(1.0f + meleeSpeedBonus / 100.0f)));
         lines.add(tr("gui.tac_rogue.status.reload_effective", fmtMult(1.0f + reloadBonus / 100.0f)));
         lines.add(tr("gui.tac_rogue.status.autoloader_rate", fmtAutoloaderRate(autoloaderEffect)));
+        return lines;
+    }
+
+    private List<String> buildUtilityStatusLines(net.minecraft.client.player.LocalPlayer player,
+                                                 float staminaBonus, float magBonus) {
+        List<String> lines = new ArrayList<>();
+        lines.add(formatEffectivePerkValue(player, PerkDefinition.Category.SCAVENGER, sumClientPerkEffect(player, "perk:SCAVENGER")));
         lines.add(tr("gui.tac_rogue.status.regen_delay",
             String.format(java.util.Locale.ROOT, "%.1fs", GameConstants.REGEN_DAMAGE_COOLDOWN_TICKS / 20.0f)));
         lines.add(tr("gui.tac_rogue.status.ads_stamina_drain", fmtMult(Math.max(0.1f, 1.0f - staminaBonus / 200.0f))));
+        lines.add(tr("gui.tac_rogue.status.stamina_mult", fmtMult(1.0f + staminaBonus / 100.0f)));
+        lines.add(tr("gui.tac_rogue.status.magazine_mult", fmtMult(1.0f + magBonus / 100.0f)));
+        lines.add(tr("gui.tac_rogue.status.flashlight_level", com.levanilla.rogue.core.ClientRunState.getFlashlightLevel()));
+        return lines;
+    }
+
+    private List<String> buildActiveStatusLines(net.minecraft.client.player.LocalPlayer player) {
+        List<String> lines = new ArrayList<>();
         int medicalBuffSeconds = com.levanilla.rogue.core.ClientRunState.getMedicalBuffRemainingSeconds();
         if (medicalBuffSeconds > 0) {
             lines.add(tr("gui.tac_rogue.status.medical_buff_remaining", fmtDuration(medicalBuffSeconds)));
         }
+        for (net.minecraft.world.effect.MobEffectInstance effect : player.getActiveEffects()) {
+            if (effect == null || !effect.isVisible()) continue;
+            if (effect.getDuration() <= 0 || effect.isInfiniteDuration()) continue;
+            String name = effect.getEffect().getDisplayName().getString();
+            String suffix = effect.getAmplifier() > 0 ? " " + (effect.getAmplifier() + 1) : "";
+            lines.add(tr("gui.tac_rogue.status.active_effect", name + suffix, fmtDuration(effect.getDuration() / 20)));
+            if (lines.size() >= 5) break;
+        }
         addCursedPenaltyDetailLines(player, lines);
-        lines.add(tr("gui.tac_rogue.status.flashlight_level", com.levanilla.rogue.core.ClientRunState.getFlashlightLevel()));
+        if (lines.isEmpty()) {
+            lines.add(tr("gui.tac_rogue.status.active_none"));
+        }
         return lines;
+    }
+
+    private int statusDetailsHeight(boolean compact, int width, List<String> survival, List<String> weapon,
+                                    List<String> utility, List<String> active) {
+        int gap = 8;
+        if (compact) {
+            return detailPanelHeight(survival) + detailPanelHeight(weapon)
+                + detailPanelHeight(utility) + detailPanelHeight(active) + gap * 3;
+        }
+        int colW = (width - gap) / 2;
+        int left = detailPanelHeight(survival) + detailPanelHeight(utility) + gap;
+        int right = detailPanelHeight(weapon) + detailPanelHeight(active) + gap;
+        return Math.max(left, right);
+    }
+
+    private void drawStatusDetailPanels(GuiGraphics graphics, int x, int y, int width, boolean compact,
+                                        List<String> survival, List<String> weapon,
+                                        List<String> utility, List<String> active) {
+        int gap = 8;
+        if (compact) {
+            int cy = y;
+            cy += drawDetailPanel(graphics, x, cy, width, tr("gui.tac_rogue.status.panel.survival"), 0xFF88CCFF, survival) + gap;
+            cy += drawDetailPanel(graphics, x, cy, width, tr("gui.tac_rogue.status.panel.weapon"), 0xFFFF6666, weapon) + gap;
+            cy += drawDetailPanel(graphics, x, cy, width, tr("gui.tac_rogue.status.panel.utility"), 0xFFAAFFCC, utility) + gap;
+            drawDetailPanel(graphics, x, cy, width, tr("gui.tac_rogue.status.panel.active_effects"), 0xFFFFDD66, active);
+            return;
+        }
+        int colW = (width - gap) / 2;
+        int leftY = y;
+        int rightY = y;
+        leftY += drawDetailPanel(graphics, x, leftY, colW, tr("gui.tac_rogue.status.panel.survival"), 0xFF88CCFF, survival) + gap;
+        drawDetailPanel(graphics, x, leftY, colW, tr("gui.tac_rogue.status.panel.utility"), 0xFFAAFFCC, utility);
+        int rightX = x + colW + gap;
+        rightY += drawDetailPanel(graphics, rightX, rightY, colW, tr("gui.tac_rogue.status.panel.weapon"), 0xFFFF6666, weapon) + gap;
+        drawDetailPanel(graphics, rightX, rightY, colW, tr("gui.tac_rogue.status.panel.active_effects"), 0xFFFFDD66, active);
+    }
+
+    private int drawDetailPanel(GuiGraphics graphics, int x, int y, int w, String title, int color, List<String> lines) {
+        int h = detailPanelHeight(lines);
+        drawPanel(graphics, x, y, w, h, title, color);
+        int lineY = y + 20;
+        int maxChars = Math.max(14, (w - 20) / 6);
+        for (String line : lines) {
+            graphics.drawString(this.font, "\u00A78- \u00A7f" + trim(line, maxChars), x + 10, lineY, 0xFFE0E0E0, false);
+            lineY += 10;
+        }
+        return h;
+    }
+
+    private static int detailPanelHeight(List<String> lines) {
+        return Math.max(42, 26 + Math.max(1, lines == null ? 0 : lines.size()) * 10);
     }
 
     private static void addCursedPenaltyDetailLines(net.minecraft.client.player.LocalPlayer player, List<String> lines) {

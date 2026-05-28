@@ -51,6 +51,8 @@ public class TacRogueBossEntity extends Monster {
     private static final EntityDataAccessor<String> ROLE =
         SynchedEntityData.defineId(TacRogueBossEntity.class, EntityDataSerializers.STRING);
     private static final String ADD_TAG = "tac_rogue_boss_add";
+    public static final String VULNERABLE_AFTER_TICK_KEY = "TacRogueBossVulnerableAfterTick";
+    public static final int SPAWN_PROTECTION_TICKS = 20 * 4;
     public static final String SHOCKWAVE_COUNT_KEY = "TacRogueBossShockwaveCount";
     public static final String SUMMON_COUNT_KEY = "TacRogueBossSummonCount";
     public static final String PRESSURE_COUNT_KEY = "TacRogueBossPressureCount";
@@ -141,8 +143,10 @@ public class TacRogueBossEntity extends Monster {
         setRole(role);
         addTag("tac_rogue_spawned");
         addTag("rogue:boss");
+        long spawnTick = level().getServer() != null ? level().getServer().getTickCount() : 0L;
         getPersistentData().putInt("TacRogueSpawnFloor", floor);
-        getPersistentData().putLong("TacRogueSpawnTick", level().getServer() != null ? level().getServer().getTickCount() : 0L);
+        getPersistentData().putLong("TacRogueSpawnTick", spawnTick);
+        getPersistentData().putLong(VULNERABLE_AFTER_TICK_KEY, spawnTick + SPAWN_PROTECTION_TICKS);
         ScalingEngine.applyBossScaling(this, floor, biomeIndex);
         setCustomName(Component.literal("§c§l[BOSS] §e" + role.label));
         setCustomNameVisible(false);
@@ -262,7 +266,32 @@ public class TacRogueBossEntity extends Monster {
             if (getHealth() <= getMaxHealth() * 0.45F) {
                 speed += 0.08D;
             }
-            getNavigation().moveTo(target, speed);
+            boolean pathing = getNavigation().moveTo(target, speed);
+            if (!pathing && hasLineOfSight(target)) {
+                getMoveControl().setWantedPosition(target.getX(), target.getY(), target.getZ(), speed);
+            }
+        }
+    }
+
+    public static boolean isSpawnProtectionActive(net.minecraft.world.entity.Entity entity) {
+        if (entity == null || !entity.getTags().contains("rogue:boss")) return false;
+        long vulnerableAfter = entity.getPersistentData().getLong(VULNERABLE_AFTER_TICK_KEY);
+        if (vulnerableAfter <= 0L || entity.level().getServer() == null) return false;
+        return entity.level().getServer().getTickCount() < vulnerableAfter;
+    }
+
+    public static void forceEngageIfBoss(net.minecraft.world.entity.Entity entity, LivingEntity target) {
+        if (entity instanceof TacRogueBossEntity boss && target != null && target.isAlive()) {
+            boss.setTarget(target);
+            boss.setAggressive(true);
+            boss.navigationRefreshCooldown = 0;
+            boss.getLookControl().setLookAt(target, 45.0F, 45.0F);
+            boss.getNavigation().moveTo(target, 1.2D);
+        } else if (entity instanceof Mob mob && entity.getTags().contains("rogue:boss") && target != null && target.isAlive()) {
+            mob.setTarget(target);
+            mob.setAggressive(true);
+            mob.getLookControl().setLookAt(target, 45.0F, 45.0F);
+            mob.getNavigation().moveTo(target, 1.1D);
         }
     }
 

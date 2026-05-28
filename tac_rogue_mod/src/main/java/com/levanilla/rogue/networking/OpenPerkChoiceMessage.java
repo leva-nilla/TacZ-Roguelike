@@ -97,7 +97,7 @@ public class OpenPerkChoiceMessage {
         }
 
         // セッションに候補を登録（APPLY_PERK 受信時の照合用）
-        RogueActionMessage.registerPerkChoices(player.getUUID(), choices);
+        RogueActionMessage.registerPerkChoices(player.getUUID(), choices, type.name().toLowerCase(java.util.Locale.ROOT));
 
         // パーク候補をクライアントに送信
         List<String> tags = choices.stream().map(PerkDefinition::toTag).toList();

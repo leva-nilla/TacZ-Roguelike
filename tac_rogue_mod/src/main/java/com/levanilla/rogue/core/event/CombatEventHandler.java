@@ -6,12 +6,16 @@ import com.levanilla.rogue.core.service.RogueMobAlertService;
 import com.levanilla.rogue.core.service.RoguePickupService;
 import com.levanilla.rogue.networking.StealthTakedownHintMessage;
 import com.levanilla.rogue.networking.TacRogueNetworking;
+import com.levanilla.rogue.world.TacRogueBossEntity;
 import net.minecraft.util.Mth;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageTypes;
+import net.minecraft.world.effect.MobEffect;
+import net.minecraft.world.effect.MobEffectCategory;
+import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.item.ItemStack;
@@ -23,6 +27,7 @@ import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraftforge.event.entity.living.LivingDamageEvent;
 import net.minecraftforge.event.entity.living.LivingDeathEvent;
 import net.minecraftforge.event.entity.living.LivingHurtEvent;
+import net.minecraftforge.event.entity.living.MobEffectEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.network.NetworkDirection;
@@ -71,6 +76,7 @@ public class CombatEventHandler {
     private static final java.util.Map<String, java.util.List<String>> attachmentIdsBySlot =
         new java.util.concurrent.ConcurrentHashMap<>();
     private static final long PENDING_GUN_CONTEXT_TTL_MS = 5000L;
+    private static final String RESISTANCE_EFFECT_ADJUSTING_KEY = "TacRogueResistanceEffectAdjusting";
 
     public static void registerGunDamageContext(int entityId, boolean isHeadShot, boolean isShotgun, boolean isPerkCrit, net.minecraft.world.phys.Vec3 impactPos) {
         pendingGunContext.put(entityId, new GunDamageContext(isHeadShot, isShotgun, isPerkCrit, impactPos));
@@ -150,6 +156,14 @@ public class CombatEventHandler {
     @SubscribeEvent
     public static void onLivingHurt(LivingHurtEvent event) {
         if (event.getEntity().level().isClientSide) return;
+
+        if (TacRogueBossEntity.isSpawnProtectionActive(event.getEntity())) {
+            if (event.getSource().getEntity() instanceof net.minecraft.world.entity.LivingEntity attacker) {
+                TacRogueBossEntity.forceEngageIfBoss(event.getEntity(), attacker);
+            }
+            event.setCanceled(true);
+            return;
+        }
 
         if ((event.getEntity().level().dimension() == ROGUE_DIM || event.getEntity().level().dimension() == LOBBY_DIM)
                 && event.getSource().is(DamageTypes.STARVE)) {
@@ -299,6 +313,41 @@ public class CombatEventHandler {
             }
         }
 
+    }
+
+
+
+    @SubscribeEvent
+    public static void onMobEffectAdded(MobEffectEvent.Added event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+        if (player.level().dimension() != ROGUE_DIM && player.level().dimension() != LOBBY_DIM) return;
+        if (player.getPersistentData().getBoolean(RESISTANCE_EFFECT_ADJUSTING_KEY)) return;
+
+        MobEffectInstance instance = event.getEffectInstance();
+        if (instance == null || instance.isInfiniteDuration()) return;
+        MobEffect effect = instance.getEffect();
+        if (effect == null || effect.isInstantenous() || effect.getCategory() != MobEffectCategory.HARMFUL) return;
+
+        int original = instance.getDuration();
+        int adjusted = reduceNegativeEffectDuration(player, original);
+        if (adjusted >= original) return;
+
+        MobEffectInstance replacement = new MobEffectInstance(
+            effect,
+            adjusted,
+            instance.getAmplifier(),
+            instance.isAmbient(),
+            instance.isVisible(),
+            instance.showIcon());
+        replacement.setCurativeItems(instance.getCurativeItems());
+
+        player.getPersistentData().putBoolean(RESISTANCE_EFFECT_ADJUSTING_KEY, true);
+        try {
+            player.removeEffect(effect);
+            player.addEffect(replacement, event.getEffectSource());
+        } finally {
+            player.getPersistentData().remove(RESISTANCE_EFFECT_ADJUSTING_KEY);
+        }
     }
 
 
@@ -605,6 +654,8 @@ public class CombatEventHandler {
         String msgId = source.getMsgId().toLowerCase(Locale.ROOT);
         return msgId.contains("explosion")
             || msgId.contains("fireworks")
+            || msgId.contains("poison")
+            || msgId.contains("wither")
             || msgId.contains("fire")
             || msgId.contains("burn")
             || msgId.contains("lava")

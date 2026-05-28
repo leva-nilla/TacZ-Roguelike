@@ -68,6 +68,11 @@ public class OpenFloorClearScreenMessage {
      */
     public static void sendFloorClear(ServerPlayer player, boolean isFarming) {
         List<String> perkTags = List.of();
+        PlayerRunData data = RunManager.getData(player);
+        int floor = data.getCurrentFloor();
+        if (floor > 0 && data.hasClaimedPerkReward(floor)) {
+            isFarming = true;
+        }
 
         if (!isFarming) {
             // プレイヤーの既存パークを収集
@@ -78,8 +83,6 @@ public class OpenFloorClearScreenMessage {
                 if (tag.contains(":OVERCLOCKED:")) overclockedCount++;
             }
 
-            PlayerRunData data = RunManager.getData(player);
-            int floor = data.getCurrentFloor();
             List<PerkDefinition> choices = PerkGenerator.generateChoices(
                 floor,
                 com.levanilla.rogue.world.ThemeManager.isBossFloor(floor),
@@ -87,9 +90,11 @@ public class OpenFloorClearScreenMessage {
                 overclockedCount);
 
             // セッションに候補を登録（APPLY_PERK 受信時の照合用）
-            RogueActionMessage.registerPerkChoices(player.getUUID(), choices);
+            RogueActionMessage.registerPerkChoices(player.getUUID(), choices, "floor_clear");
 
             perkTags = choices.stream().map(PerkDefinition::toTag).toList();
+        } else {
+            RogueActionMessage.clearPerkChoices(player.getUUID());
         }
 
         TacRogueNetworking.CHANNEL.send(

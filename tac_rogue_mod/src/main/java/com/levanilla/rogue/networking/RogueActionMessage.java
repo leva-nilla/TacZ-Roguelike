@@ -29,16 +29,23 @@ public class RogueActionMessage {
      * 未登録のパークタグは拒否される（チート防止）。
      */
     private static final Map<UUID, List<String>> pendingPerkChoices = new ConcurrentHashMap<>();
+    private static final Map<UUID, String> pendingPerkContexts = new ConcurrentHashMap<>();
 
     /** パーク候補をサーバー側に登録する（パーク画面表示時に呼び出す） */
     public static void registerPerkChoices(UUID playerId, List<PerkDefinition> choices) {
+        registerPerkChoices(playerId, choices, "generic");
+    }
+
+    public static void registerPerkChoices(UUID playerId, List<PerkDefinition> choices, String context) {
         List<String> tags = choices.stream().map(PerkDefinition::toTag).toList();
         pendingPerkChoices.put(playerId, tags);
+        pendingPerkContexts.put(playerId, context == null || context.isBlank() ? "generic" : context);
     }
 
     /** パーク候補をクリアする */
     public static void clearPerkChoices(UUID playerId) {
         pendingPerkChoices.remove(playerId);
+        pendingPerkContexts.remove(playerId);
     }
 
     /** パーク候補を取得する（PerkActionMessage からの照合用） */
@@ -46,9 +53,14 @@ public class RogueActionMessage {
         return pendingPerkChoices.get(playerId);
     }
 
+    public static String getPendingPerkContext(UUID playerId) {
+        return pendingPerkContexts.getOrDefault(playerId, "generic");
+    }
+
     /** サーバー停止時にセッションデータをクリア */
     public static void clearMemory() {
         pendingPerkChoices.clear();
+        pendingPerkContexts.clear();
     }
 
     public enum ActionType {
