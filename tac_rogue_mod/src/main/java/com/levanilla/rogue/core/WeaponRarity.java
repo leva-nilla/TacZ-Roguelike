@@ -181,12 +181,41 @@ public class WeaponRarity {
 
     /** MELEE_SPEED パークのソフトキャップ後ボーナスを取得 */
     public static float getMeleeSpeedPerkBonusPercent(LivingEntity holder) {
-        float meleeSpeedBonus = PerkDefinition.sumCategoryEffect(holder, PerkDefinition.Category.MELEE_SPEED);
+        float meleeSpeedBonus = getRawMeleeSpeedPerkBonusPercent(holder);
         return softcapPercent(
             meleeSpeedBonus,
             GameConstants.FIRE_RATE_SOFTCAP_START,
             GameConstants.FIRE_RATE_POST_SOFTCAP_SCALE,
-            GameConstants.FIRE_RATE_HARD_CAP);
+            GameConstants.MELEE_SPEED_HARD_CAP);
+    }
+
+    public static float getRawMeleeSpeedPerkBonusPercent(LivingEntity holder) {
+        return PerkDefinition.sumCategoryEffect(holder, PerkDefinition.Category.MELEE_SPEED);
+    }
+
+    public static float getMeleeSpeedOverflowPercent(LivingEntity holder) {
+        float raw = getRawMeleeSpeedPerkBonusPercent(holder);
+        float overflowStart = rawPercentForSoftcapOutput(
+            GameConstants.MELEE_SPEED_HARD_CAP,
+            GameConstants.FIRE_RATE_SOFTCAP_START,
+            GameConstants.FIRE_RATE_POST_SOFTCAP_SCALE);
+        return Math.max(0.0f, raw - overflowStart);
+    }
+
+    public static float getMeleeSpeedOverflowDamageBonusPercent(LivingEntity holder) {
+        return getMeleeSpeedOverflowPercent(holder) * GameConstants.MELEE_SPEED_OVERFLOW_DAMAGE_SCALE;
+    }
+
+    public static float getMeleeSpeedOverflowCriticalDamageBonusPercent(LivingEntity holder) {
+        return getMeleeSpeedOverflowPercent(holder) * GameConstants.MELEE_SPEED_OVERFLOW_CRIT_DAMAGE_SCALE;
+    }
+
+    public static float getMeleeSpeedOverflowDamageMultiplier(LivingEntity holder) {
+        return 1.0f + getMeleeSpeedOverflowDamageBonusPercent(holder) / 100.0f;
+    }
+
+    public static float getMeleeSpeedOverflowCriticalDamageMultiplier(LivingEntity holder) {
+        return 1.0f + getMeleeSpeedOverflowCriticalDamageBonusPercent(holder) / 100.0f;
     }
 
     /** レアリティと FIRE_RATE パークを合算した実効連射速度倍率を取得 */
@@ -248,6 +277,12 @@ public class WeaponRarity {
         }
         float compressed = softStart + (rawPercent - softStart) * postSoftScale;
         return Math.min(compressed, hardCap);
+    }
+
+    private static float rawPercentForSoftcapOutput(float outputPercent, float softStart, float postSoftScale) {
+        if (outputPercent <= softStart) return outputPercent;
+        if (postSoftScale <= 0.0f) return Float.MAX_VALUE;
+        return softStart + (outputPercent - softStart) / postSoftScale;
     }
 
     private static int scaleTicksByMultiplier(int originalTicks, float multiplier) {

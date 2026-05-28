@@ -24,7 +24,10 @@ import com.levanilla.rogue.world.TacRogueNpcEntity;
 import com.levanilla.rogue.world.ThemeManager;
 import com.levanilla.rogue.world.generation.DungeonPlanGenerator;
 import com.levanilla.rogue.world.generation.FloorGenerationContext;
+import com.levanilla.rogue.world.generation.plan.DungeonCorridor;
 import com.levanilla.rogue.world.generation.plan.DungeonPlan;
+import com.levanilla.rogue.world.generation.plan.DungeonRoom;
+import com.levanilla.rogue.world.generation.plan.MacroArchetype;
 import com.levanilla.rogue.world.generation.plan.RoomRole;
 import com.levanilla.rogue.world.goal.RogueMobVisionGoal;
 import com.mojang.brigadier.context.CommandContext;
@@ -57,11 +60,11 @@ public final class SmokeTestService {
     );
     public static final List<String> FULL_SUITES = List.of(
         "quick", "registry", "lobby", "ui", "floor", "combat", "economy", "quest", "deep",
-        "world", "thirdperson", "shooting", "monster", "ai_matrix", "generation", "objective", "encounter",
-        "perk_storage"
+        "world", "thirdperson", "shooting", "monster", "ai_matrix", "generation", "boss_generation",
+        "objective", "encounter", "perk_storage"
     );
     private static final List<String> EXTRA_SUITES = List.of(
-        "generation_view", "ai_matrix_view", "objective", "encounter", "perk_storage"
+        "generation_view", "boss_generation_view", "ai_matrix_view", "objective", "encounter", "perk_storage"
     );
     private static final BlockPos AI_MATRIX_CENTER = new BlockPos(7800, 80, 7800);
 
@@ -112,6 +115,8 @@ public final class SmokeTestService {
             case "ai_matrix_view" -> aiMatrix(player, counter, true);
             case "generation" -> generation(player, counter, false);
             case "generation_view" -> generation(player, counter, true);
+            case "boss_generation" -> bossGeneration(player, counter, false);
+            case "boss_generation_view" -> bossGeneration(player, counter, true);
             case "objective" -> objective(counter);
             case "encounter" -> encounter(counter);
             case "perk_storage" -> perkStorage(player, counter);
@@ -1117,6 +1122,114 @@ public final class SmokeTestService {
         restorePlayerInstance(player, originalInstancePresent, originalInstance);
     }
 
+    private static void bossGeneration(ServerPlayer player, Counter counter, boolean keepLastForInspection) {
+        String suite = keepLastForInspection ? "boss_generation_view" : "boss_generation";
+        ServerLevel rogue = player.server.getLevel(CommonEventHandler.ROGUE_DIM);
+        if (rogue == null) {
+            record(counter, suite, "dimension.rogue.available", false,
+                "rogue dimension available for live boss generation", "not loaded", "");
+            return;
+        }
+        record(counter, suite, "dimension.rogue.available", true,
+            "rogue dimension available for live boss generation", rogue.dimension().location().toString(), "");
+
+        BlockPos center = new BlockPos(7600, 80, 7600);
+        boolean originalInstancePresent = player.getPersistentData().contains(FloorInstanceManager.INSTANCE_ID_KEY);
+        String originalInstance = player.getPersistentData().getString(FloorInstanceManager.INSTANCE_ID_KEY);
+        long runSeed = 0xB055_0950L;
+        int checked = 0;
+        int failed = 0;
+        BlockPos lastSpawn = null;
+        int[] bossFloors = { 10, 20, 30 };
+        for (int floor : bossFloors) {
+            int biome = Math.floorMod(floor / 10 - 1, ThemeManager.biomeCount());
+            int variant = Math.floorMod(floor / 10, ThemeManager.variantCount(biome));
+            ThemeManager.ThemeInstance theme = ThemeManager.getThemeForIndices(biome, variant);
+            long salt = 0xB055_0000L + floor;
+            String instanceId = "smoke-generation-boss-" + floor;
+            String caseId = "floor." + floor + "." + theme.biomeName.toLowerCase(Locale.ROOT)
+                + "." + theme.variantName.toLowerCase(Locale.ROOT);
+            try {
+                FloorGenerationContext generationContext = new FloorGenerationContext(
+                    runSeed, floor, salt, 1, instanceId, "SMOKE", "ELIMINATE", 1, rogue.getSeed());
+                DungeonPlan plan = DungeonPlanGenerator.generate(generationContext, true, theme);
+                int pathLength = shortestPlanPath(plan, plan.spawnRoomId(), firstRoomIdByRole(plan, RoomRole.BOSS_ARENA));
+                boolean planValid = plan.archetype() == MacroArchetype.BOSS_APPROACH
+                    && roleOf(plan, plan.spawnRoomId()) == RoomRole.BOSS_ENTRY
+                    && pathLength >= 4;
+
+                MapGenerator.GenerationJob job = MapGenerator.generateRoomJob(
+                    rogue,
+                    center,
+                    theme,
+                    floor,
+                    runSeed,
+                    salt,
+                    instanceId,
+                    "SMOKE",
+                    1,
+                    0,
+                    checked + 1);
+                int total = job.totalBlockUpdates();
+                int ticks = 0;
+                while (!job.isComplete() && ticks < 80) {
+                    job.tick(25000);
+                    ticks++;
+                }
+                BlockPos spawn = job.getSpawnPos();
+                if (spawn != null) {
+                    player.teleportTo(rogue, spawn.getX() + 0.5D, spawn.getY(), spawn.getZ() + 0.5D,
+                        Direction.SOUTH.toYRot(), 0.0F);
+                    player.getPersistentData().putString(FloorInstanceManager.INSTANCE_ID_KEY, instanceId);
+                    RunManager.requestJourneyMapRefresh(player, spawn, 128);
+                }
+                AABB bounds = new AABB(center).inflate(96.0D, 32.0D, 96.0D);
+                long bossCount = rogue.getEntitiesOfClass(Mob.class, bounds, mob ->
+                    mob.isAlive()
+                        && mob.getTags().contains("rogue:boss")
+                        && instanceId.equals(mob.getPersistentData().getString(FloorInstanceManager.INSTANCE_ID_KEY)))
+                    .size();
+                boolean complete = job.isComplete();
+                boolean entered = spawn != null && player.level() == rogue && player.blockPosition().distSqr(spawn) <= 4.0D;
+                boolean spawnClear = spawn != null && rogue.getBlockState(spawn).isAir()
+                    && rogue.getBlockState(spawn.above()).isAir();
+                boolean spawnFloor = spawn != null && !rogue.getBlockState(spawn.below()).isAir();
+                boolean pass = planValid && complete && entered && spawnClear && spawnFloor && total > 1000 && bossCount >= 1;
+                if (!pass) failed++;
+                if (pass) lastSpawn = spawn == null ? null : spawn.immutable();
+                record(counter, suite, caseId, pass,
+                    "boss floor generates approach route, safe entry, and live boss",
+                    "plan=" + plan.archetype() + " path=" + pathLength + " complete=" + complete
+                        + " ticks=" + ticks + " blocks=" + total + " boss=" + bossCount
+                        + " spawn=" + spawn + " style=" + ThemeManager.generationStyle(theme),
+                    "planValid=" + planValid + " entered=" + entered
+                        + " spawnClear=" + spawnClear + " spawnFloor=" + spawnFloor);
+            } catch (Throwable ex) {
+                failed++;
+                record(counter, suite, caseId, false,
+                    "boss generation does not throw", ex.getClass().getSimpleName(), ex.getMessage());
+            } finally {
+                boolean lastCase = floor == bossFloors[bossFloors.length - 1];
+                if (!keepLastForInspection || !lastCase) {
+                    discardSmokeEntities(rogue, center);
+                    MapGenerator.clearStoredDungeon(rogue, center);
+                }
+            }
+            checked++;
+        }
+        record(counter, suite, "boss_floors.all", checked == bossFloors.length && failed == 0,
+            "all sampled boss floors generate as approach layouts",
+            "checked=" + checked + " failed=" + failed,
+            "center=" + center + " lastSpawn=" + lastSpawn);
+        if (keepLastForInspection) {
+            record(counter, suite, "inspection.left_in_world", lastSpawn != null,
+                "last boss floor remains in world for visual inspection",
+                String.valueOf(lastSpawn),
+                "run /rogue_admin debug smoke boss_generation to clean it after inspection");
+        }
+        restorePlayerInstance(player, originalInstancePresent, originalInstance);
+    }
+
     private static void restorePlayerInstance(ServerPlayer player, boolean originalPresent, String originalValue) {
         if (player == null) return;
         if (originalPresent) {
@@ -1124,6 +1237,45 @@ public final class SmokeTestService {
         } else {
             player.getPersistentData().remove(FloorInstanceManager.INSTANCE_ID_KEY);
         }
+    }
+
+    private static int firstRoomIdByRole(DungeonPlan plan, RoomRole role) {
+        for (DungeonRoom room : plan.rooms()) {
+            if (room.role() == role) return room.id();
+        }
+        return -1;
+    }
+
+    private static RoomRole roleOf(DungeonPlan plan, int roomId) {
+        DungeonRoom room = plan.room(roomId);
+        return room == null ? null : room.role();
+    }
+
+    private static int shortestPlanPath(DungeonPlan plan, int startId, int targetId) {
+        if (startId < 0 || targetId < 0) return -1;
+        Map<Integer, java.util.Set<Integer>> graph = new java.util.HashMap<>();
+        for (DungeonRoom room : plan.rooms()) {
+            graph.put(room.id(), new java.util.HashSet<>());
+        }
+        for (DungeonCorridor corridor : plan.corridors()) {
+            if (!graph.containsKey(corridor.fromRoomId()) || !graph.containsKey(corridor.toRoomId())) continue;
+            graph.get(corridor.fromRoomId()).add(corridor.toRoomId());
+            graph.get(corridor.toRoomId()).add(corridor.fromRoomId());
+        }
+        java.util.ArrayDeque<int[]> queue = new java.util.ArrayDeque<>();
+        java.util.Set<Integer> seen = new java.util.HashSet<>();
+        queue.add(new int[] { startId, 0 });
+        while (!queue.isEmpty()) {
+            int[] next = queue.removeFirst();
+            int id = next[0];
+            int depth = next[1];
+            if (!seen.add(id)) continue;
+            if (id == targetId) return depth;
+            for (int neighbor : graph.getOrDefault(id, java.util.Set.of())) {
+                if (!seen.contains(neighbor)) queue.addLast(new int[] { neighbor, depth + 1 });
+            }
+        }
+        return -1;
     }
 
     private static void discardSmokeEntities(ServerLevel level, BlockPos center) {

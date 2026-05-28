@@ -59,8 +59,8 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
 
     public RogueInventoryScreen(AbstractContainerMenu menu, Inventory playerInventory, Component title) {
         super(menu, playerInventory, title);
-        this.imageWidth = 236;
-        this.imageHeight = 172;
+        this.imageWidth = 260;
+        this.imageHeight = 218;
     }
 
     @Override
@@ -460,7 +460,9 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         boolean compact = isCompactLayout();
         int lx = compact ? x - sidePad() + 8 : x - 96;
         int viewportTop = y + 5;
-        int viewportBottom = Math.min(this.height - 28, y + imageHeight + (compact ? 8 : 35));
+        int actionTop = bottomActionY(y);
+        int viewportBottom = Math.min(Math.min(this.height - 28, y + imageHeight + (compact ? 8 : 35)), actionTop - 8);
+        viewportBottom = Math.max(viewportTop + 72, viewportBottom);
         int viewportHeight = viewportBottom - viewportTop;
         int top = y + 8;
         int totalW = compact ? Math.max(236, imageWidth + sidePad() * 2 - 16) : 406;
@@ -481,7 +483,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
 
         float dmgBonus = sumClientPerkEffect(player, "perk:DAMAGE");
         float fortuneEffect = sumClientPerkEffect(player, "perk:FORTUNE");
-        float fireRateBonus = WeaponRarity.getFireRatePerkBonusPercent(player);
+        float fireRateBonus = effectiveClientFireRateBonus(player);
         float reloadBonus = sumClientPerkEffect(player, "perk:RELOAD_SPEED");
         float autoloaderEffect = sumClientPerkEffect(player, "perk:AUTOLOADER");
         float resistBonus = sumClientPerkEffect(player, "perk:RESISTANCE");
@@ -489,19 +491,29 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         float goldBonus = sumClientPerkEffect(player, "perk:GOLD_RUSH");
         float staminaBonus = sumClientPerkEffect(player, "perk:STAMINA");
         float magBonus = sumClientPerkEffect(player, "perk:MAG_SIZE");
-        float meleeSpeedBonus = WeaponRarity.getMeleeSpeedPerkBonusPercent(player);
+        float meleeSpeedBonus = effectiveClientMeleeSpeedBonus(player);
         List<String> survivalDetails = buildSurvivalStatusLines(player, armor, resistBonus);
         List<String> weaponDetails = buildWeaponStatusLines(player, fireRateBonus, meleeSpeedBonus, reloadBonus, autoloaderEffect);
         List<String> utilityDetails = buildUtilityStatusLines(player, staminaBonus, magBonus);
         List<String> activeDetails = buildActiveStatusLines(player);
         boolean showDeepPanel = com.levanilla.rogue.core.ClientRunState.getDeepCore() > 0
             || com.levanilla.rogue.core.ClientRunState.getHighestEverFloor() >= 100;
+        boolean prone = com.levanilla.rogue.core.CombatPostureHelper.isProne(player);
+        boolean sneaking = player.hasPose(net.minecraft.world.entity.Pose.CROUCHING)
+            || player.isShiftKeyDown()
+            || ClientEventHandler.isRogueSneakToggled();
+        String posture = prone
+            ? "\u00A72" + tr("gui.tac_rogue.status.stance.prone")
+            : sneaking ? "\u00A7e" + tr("gui.tac_rogue.status.stance.sneak") : "\u00A7f" + tr("gui.tac_rogue.status.stance.standing");
+        float postureDmg = prone ? GameConstants.CRAWL_DAMAGE_MULT : sneaking ? GameConstants.SNEAK_DAMAGE_MULT : 1.0f;
+        utilityDetails.add(0, tr("gui.tac_rogue.status.stance", posture));
+        utilityDetails.add(1, tr("gui.tac_rogue.status.posture_damage", String.format(java.util.Locale.ROOT, "%.2f", postureDmg)));
         int combatBottomY = top + 188;
         int deepPanelH = showDeepPanel ? 74 : 0;
         int detailStartY = combatBottomY + (showDeepPanel ? deepPanelH + 8 : 0);
         int detailsBottom = detailStartY + statusDetailsHeight(compact, leftW + rightW + 10,
             survivalDetails, weaponDetails, utilityDetails, activeDetails);
-        int contentHeight = (detailsBottom + 8) - viewportTop;
+        int contentHeight = (detailsBottom + 24) - viewportTop;
         int maxScroll = Math.max(0, contentHeight - viewportHeight);
         statusScrollOffset = Math.max(0, Math.min(statusScrollOffset, maxScroll));
 
@@ -547,16 +559,6 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
             drawDeepOperationsPanel(graphics, lx, combatBottomY, leftW + rightW + 10, deepPanelH);
         }
 
-        boolean prone = com.levanilla.rogue.core.CombatPostureHelper.isProne(player);
-        boolean sneaking = player.hasPose(net.minecraft.world.entity.Pose.CROUCHING)
-            || player.isShiftKeyDown()
-            || ClientEventHandler.isRogueSneakToggled();
-        String posture = prone
-            ? "\u00A72" + tr("gui.tac_rogue.status.stance.prone")
-            : sneaking ? "\u00A7e" + tr("gui.tac_rogue.status.stance.sneak") : "\u00A7f" + tr("gui.tac_rogue.status.stance.standing");
-        float postureDmg = prone ? GameConstants.CRAWL_DAMAGE_MULT : sneaking ? GameConstants.SNEAK_DAMAGE_MULT : 1.0f;
-        utilityDetails.add(0, tr("gui.tac_rogue.status.stance", posture));
-        utilityDetails.add(1, tr("gui.tac_rogue.status.posture_damage", String.format(java.util.Locale.ROOT, "%.2f", postureDmg)));
         drawStatusDetailPanels(graphics, lx, detailStartY, leftW + rightW + 10, compact,
             survivalDetails, weaponDetails, utilityDetails, activeDetails);
         graphics.pose().popPose();
@@ -612,6 +614,13 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         lines.add(tr("gui.tac_rogue.status.ammo_save_effective", fmtOnePercent(effectiveAmmoSaveChance(player))));
         lines.add(tr("gui.tac_rogue.status.fire_rate_effective", fmtMult(1.0f + fireRateBonus / 100.0f)));
         lines.add(tr("gui.tac_rogue.status.melee_speed_effective", fmtMult(1.0f + meleeSpeedBonus / 100.0f)));
+        float meleeOverflowDamage = clientMeleeSpeedOverflowDamageBonusPercent(player);
+        float meleeOverflowCrit = clientMeleeSpeedOverflowCriticalDamageBonusPercent(player);
+        if (meleeOverflowDamage > 0.0f || meleeOverflowCrit > 0.0f) {
+            lines.add(tr("gui.tac_rogue.status.melee_speed_conversion",
+                fmtOnePercent(meleeOverflowDamage),
+                fmtOnePercent(meleeOverflowCrit)));
+        }
         lines.add(tr("gui.tac_rogue.status.reload_effective", fmtMult(1.0f + reloadBonus / 100.0f)));
         lines.add(tr("gui.tac_rogue.status.autoloader_rate", fmtAutoloaderRate(autoloaderEffect)));
         return lines;
@@ -1079,9 +1088,20 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
                 1.0f + totalEffect * 0.18f / 100.0f,
                 Math.min(35.0f, totalEffect * 0.35f));
             case FIRE_RATE -> tr("gui.tac_rogue.status.summary.fire_rate",
-                fmtMult(1.0f + WeaponRarity.getFireRatePerkBonusPercent(player) / 100.0f));
-            case MELEE_SPEED -> tr("gui.tac_rogue.status.summary.melee_speed",
-                fmtMult(1.0f + WeaponRarity.getMeleeSpeedPerkBonusPercent(player) / 100.0f));
+                fmtMult(1.0f + effectiveClientFireRateBonus(player) / 100.0f));
+            case MELEE_SPEED -> {
+                float meleeSpeedBonus = effectiveClientMeleeSpeedBonus(player);
+                float overflowDamage = clientMeleeSpeedOverflowDamageBonusPercent(player);
+                float overflowCrit = clientMeleeSpeedOverflowCriticalDamageBonusPercent(player);
+                if (overflowDamage > 0.0f || overflowCrit > 0.0f) {
+                    yield tr("gui.tac_rogue.status.summary.melee_speed_overflow",
+                        fmtMult(1.0f + meleeSpeedBonus / 100.0f),
+                        fmtOnePercent(overflowDamage),
+                        fmtOnePercent(overflowCrit));
+                }
+                yield tr("gui.tac_rogue.status.summary.melee_speed",
+                    fmtMult(1.0f + meleeSpeedBonus / 100.0f));
+            }
             case FORTUNE -> String.format(java.util.Locale.ROOT, "%.1f%% / x%.2f",
                 PerkDefinition.getCriticalChance(totalEffect) * 100.0f,
                 PerkDefinition.getCriticalDamageMultiplier(totalEffect));
@@ -1103,6 +1123,54 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
         return Math.min(GameConstants.DODGE_MAX_CHANCE * 100.0f,
             effectiveStackedChance(player, PerkDefinition.Category.DODGE,
                 GameConstants.DODGE_EFFECT_SCALE));
+    }
+
+    private static float effectiveClientFireRateBonus(net.minecraft.client.player.LocalPlayer player) {
+        return softcapClientPercent(
+            sumClientPerkEffect(player, "perk:FIRE_RATE"),
+            GameConstants.FIRE_RATE_SOFTCAP_START,
+            GameConstants.FIRE_RATE_POST_SOFTCAP_SCALE,
+            GameConstants.FIRE_RATE_HARD_CAP);
+    }
+
+    private static float effectiveClientMeleeSpeedBonus(net.minecraft.client.player.LocalPlayer player) {
+        return softcapClientPercent(
+            sumClientPerkEffect(player, "perk:MELEE_SPEED"),
+            GameConstants.FIRE_RATE_SOFTCAP_START,
+            GameConstants.FIRE_RATE_POST_SOFTCAP_SCALE,
+            GameConstants.MELEE_SPEED_HARD_CAP);
+    }
+
+    private static float clientMeleeSpeedOverflowDamageBonusPercent(net.minecraft.client.player.LocalPlayer player) {
+        return clientMeleeSpeedOverflowPercent(player) * GameConstants.MELEE_SPEED_OVERFLOW_DAMAGE_SCALE;
+    }
+
+    private static float clientMeleeSpeedOverflowCriticalDamageBonusPercent(net.minecraft.client.player.LocalPlayer player) {
+        return clientMeleeSpeedOverflowPercent(player) * GameConstants.MELEE_SPEED_OVERFLOW_CRIT_DAMAGE_SCALE;
+    }
+
+    private static float clientMeleeSpeedOverflowPercent(net.minecraft.client.player.LocalPlayer player) {
+        float raw = sumClientPerkEffect(player, "perk:MELEE_SPEED");
+        float overflowStart = rawForSoftcapOutput(
+            GameConstants.MELEE_SPEED_HARD_CAP,
+            GameConstants.FIRE_RATE_SOFTCAP_START,
+            GameConstants.FIRE_RATE_POST_SOFTCAP_SCALE);
+        return Math.max(0.0f, raw - overflowStart);
+    }
+
+    private static float softcapClientPercent(float rawPercent, float softStart, float postSoftScale, float hardCap) {
+        if (rawPercent <= softStart) {
+            return Math.max(0.0f, rawPercent);
+        }
+        float compressed = softStart + (rawPercent - softStart) * postSoftScale;
+        return Math.min(compressed, hardCap);
+    }
+
+    private static float rawForSoftcapOutput(float outputPercent, float softStart, float postSoftScale) {
+        if (outputPercent <= softStart || postSoftScale <= 0.0f) {
+            return outputPercent;
+        }
+        return softStart + (outputPercent - softStart) / postSoftScale;
     }
 
     private static float specialResistanceTaken(float totalEffect) {

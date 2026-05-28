@@ -16,7 +16,7 @@ public abstract class MixinObjectAnimationRunner {
 
     @ModifyVariable(method = "updateProgress", at = @At("HEAD"), argsOnly = true, remap = false)
     private long tacRogue$speedUpReloadAnimation(long deltaNs) {
-        if (animation == null || animation.name == null || !animation.name.startsWith("reload")) {
+        if (animation == null || animation.name == null) {
             return deltaNs;
         }
 
@@ -24,6 +24,18 @@ public abstract class MixinObjectAnimationRunner {
         if (mc.player == null) return deltaNs;
 
         ItemStack stack = mc.player.getMainHandItem();
+        if (animation.name.startsWith("melee_")) {
+            float meleeMult = WeaponRarity.getEffectiveMeleeFireRateMult(stack, mc.player);
+            if (meleeMult <= 1.005f) return deltaNs;
+
+            double accelerated = deltaNs * meleeMult;
+            return accelerated >= Long.MAX_VALUE ? Long.MAX_VALUE : Math.max(1L, Math.round(accelerated));
+        }
+
+        if (!animation.name.startsWith("reload")) {
+            return deltaNs;
+        }
+
         if (stack.isEmpty() || !stack.hasTag() || !stack.getTag().contains("GunId")) {
             return deltaNs;
         }

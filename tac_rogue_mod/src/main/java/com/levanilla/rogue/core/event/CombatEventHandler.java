@@ -179,9 +179,7 @@ public class CombatEventHandler {
 
         if (event.getSource().getDirectEntity() instanceof ServerPlayer srcPlayer) {
             net.minecraft.world.item.ItemStack hand = srcPlayer.getMainHandItem();
-            net.minecraft.nbt.CompoundTag handTag = hand.getTag();
-            if ((handTag != null && handTag.contains("MeleeWeaponId"))
-                    || com.levanilla.rogue.core.registry.LrTacticalRegistry.isMeleeWeapon(hand)) {
+            if (isMeleeWeapon(hand)) {
                 float dmgMul = WeaponRarity.getDamageMult(hand);
                 int meleeLevel = srcPlayer.getPersistentData().getInt("TacRogueMeleeLevel");
                 if (meleeLevel > 0) {
@@ -260,15 +258,26 @@ public class CombatEventHandler {
 
             if (!isTaczGunDamage) {
                 float damage = event.getAmount();
+                boolean meleeHit = event.getSource().getDirectEntity() == attacker
+                    && isMeleeWeapon(attacker.getMainHandItem());
 
                 float damageBonus = sumPerkEffect(attacker, "perk:DAMAGE") / 100.0f;
                 damage *= (1.0f + damageBonus);
                 damage = RogueCombatEffects.applyAdrenalineDamage(attacker, damage);
+                if (meleeHit) {
+                    damage *= WeaponRarity.getMeleeSpeedOverflowDamageMultiplier(attacker);
+                }
 
                 float fortuneEffect = sumPerkEffect(attacker, "perk:FORTUNE");
                 float critChance = PerkDefinition.getCriticalChance(fortuneEffect);
                 boolean perkCrit = critChance > 0 && attacker.getRandom().nextFloat() < critChance;
-                if (perkCrit) damage *= PerkDefinition.getCriticalDamageMultiplier(fortuneEffect);
+                boolean meleeCrit = meleeHit && isMeleeCriticalState(attacker);
+                if (perkCrit) {
+                    damage *= PerkDefinition.getCriticalDamageMultiplier(fortuneEffect);
+                }
+                if ((perkCrit || meleeCrit) && meleeHit) {
+                    damage *= WeaponRarity.getMeleeSpeedOverflowCriticalDamageMultiplier(attacker);
+                }
 
                 float explosiveBonus = sumPerkEffect(attacker, "perk:EXPLOSIVE") / 100.0f;
                 if (explosiveBonus > 0) {
@@ -288,7 +297,7 @@ public class CombatEventHandler {
                 double x = event.getEntity().getX();
                 double y = event.getEntity().getY() + event.getEntity().getBbHeight();
                 double z = event.getEntity().getZ();
-                boolean isCritical = perkCrit || damage > GameConstants.CRITICAL_DAMAGE_THRESHOLD;
+                boolean isCritical = perkCrit || meleeCrit || damage > GameConstants.CRITICAL_DAMAGE_THRESHOLD;
                 String data = String.format(java.util.Locale.US, "%.1f:%.2f:%.2f:%.2f:%b:%b:%b", damage, x, y, z, isCritical, false, false);
                 TacRogueNetworking.CHANNEL.send(
                     net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> attacker),
@@ -625,6 +634,22 @@ public class CombatEventHandler {
             if (nearest instanceof ServerPlayer p) return p;
         }
         return null;
+    }
+
+    private static boolean isMeleeWeapon(ItemStack stack) {
+        if (stack == null || stack.isEmpty()) return false;
+        net.minecraft.nbt.CompoundTag tag = stack.getTag();
+        return (tag != null && tag.contains("MeleeWeaponId"))
+            || com.levanilla.rogue.core.registry.LrTacticalRegistry.isMeleeWeapon(stack);
+    }
+
+    private static boolean isMeleeCriticalState(ServerPlayer player) {
+        return player.fallDistance > 0.0F
+            && !player.onGround()
+            && !player.onClimbable()
+            && !player.isInWater()
+            && !player.hasEffect(net.minecraft.world.effect.MobEffects.BLINDNESS)
+            && !player.isPassenger();
     }
 
     private static ServerPlayer findKiller(LivingDeathEvent event, ServerLevel level) {

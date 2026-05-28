@@ -213,6 +213,12 @@ public final class GameConstants {
     public static final float FIRE_RATE_POST_SOFTCAP_SCALE = 0.20f;
     /** FIRE_RATE パークの最大ボーナス */
     public static final float FIRE_RATE_HARD_CAP = 125.0f;
+    /** MELEE_SPEED パークの最大ボーナス */
+    public static final float MELEE_SPEED_HARD_CAP = 165.0f;
+    /** 近接速度の実効上限を超えた効果値を近接ダメージへ変換する係数 */
+    public static final float MELEE_SPEED_OVERFLOW_DAMAGE_SCALE = 0.40f;
+    /** 近接速度の実効上限を超えた効果値を近接クリティカルダメージへ変換する係数 */
+    public static final float MELEE_SPEED_OVERFLOW_CRIT_DAMAGE_SCALE = 0.20f;
 
     public static float getArmorOvercapExtraReduction(double armor) {
         double extraArmor = Math.max(0.0D, armor - ARMOR_OVERCAP_START);
