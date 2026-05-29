@@ -288,8 +288,11 @@ public class TacZEventHandler {
         // ここでは最終ダメージを知ることができない。コンテキストのみ受け渡す。
         if (hurtEntity != null) {
             net.minecraft.world.phys.Vec3 impactPos = resolveDamageIndicatorAnchor(attacker, hurtEntity, event.getBullet(), event.isHeadShot());
+            float predictedIndicatorDamage = event.isHeadShot()
+                ? damage * event.getHeadshotMultiplier()
+                : damage;
             CombatEventHandler.registerGunDamageContext(
-                hurtEntity.getId(), event.isHeadShot(), isShotgun, perkCrit, impactPos);
+                event.getBullet().getId(), event.isHeadShot(), isShotgun, perkCrit, impactPos, predictedIndicatorDamage);
         }
     }
 
@@ -334,6 +337,14 @@ public class TacZEventHandler {
         return vec != null && Double.isFinite(vec.x) && Double.isFinite(vec.y) && Double.isFinite(vec.z);
     }
 
+    @SubscribeEvent
+    public static void onEntityHurtByGunPost(EntityHurtByGunEvent.Post event) {
+        if (event.getLogicalSide() != LogicalSide.SERVER) return;
+        if (!(event.getAttacker() instanceof ServerPlayer attacker)) return;
+        if (attacker.level().dimension() != ROGUE_DIM) return;
+        CombatEventHandler.flushGunDamageIndicator(attacker, event.getHurtEntity(), event.getBullet(), event.getBaseAmount());
+    }
+
     // ===== EntityKillByGunEvent: 銃撃キル報酬 =====
 
     /**
@@ -353,6 +364,7 @@ public class TacZEventHandler {
         net.minecraft.world.entity.Entity killed = event.getKilledEntity();
         if (killed != null) {
             processedGunKills.put(killed.getUUID(), System.currentTimeMillis());
+            CombatEventHandler.flushGunDamageIndicator(killer, killed, event.getBullet(), event.getBaseDamage());
         }
 
         // Boss reward is shared with non-TacZ kills so gun kills do not miss the weapon roll.

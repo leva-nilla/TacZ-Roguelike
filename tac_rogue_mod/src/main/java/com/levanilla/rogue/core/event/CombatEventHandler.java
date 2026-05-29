@@ -16,6 +16,7 @@ import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectCategory;
 import net.minecraft.world.effect.MobEffectInstance;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.item.ItemStack;
@@ -54,19 +55,24 @@ public class CombatEventHandler {
     private static final double STEALTH_HEAD_BACK_DOT = -0.55D;
     private static final double DECOY_STEALTH_HEAD_SEES_PLAYER_DOT = 0.85D;
 
-    // TacZ damage context is registered by TacZEventHandler and consumed by LivingHurtEvent.
+    // TacZ damage context is registered per bullet, accumulated in LivingDamageEvent,
+    // and flushed from TacZ Post/Kill after split armor/non-armor damage is done.
     public static class GunDamageContext {
         public final boolean isHeadShot;
         public final boolean isShotgun;
         public final boolean isPerkCrit;
         public final net.minecraft.world.phys.Vec3 impactPos;
+        public final float predictedDamage;
+        public float appliedDamage;
         public final long createdAtMs;
 
-        public GunDamageContext(boolean isHeadShot, boolean isShotgun, boolean isPerkCrit, net.minecraft.world.phys.Vec3 impactPos) {
+        public GunDamageContext(boolean isHeadShot, boolean isShotgun, boolean isPerkCrit, net.minecraft.world.phys.Vec3 impactPos, float predictedDamage) {
             this.isHeadShot = isHeadShot;
             this.isShotgun = isShotgun;
             this.isPerkCrit = isPerkCrit;
             this.impactPos = impactPos;
+            this.predictedDamage = predictedDamage;
+            this.appliedDamage = 0.0f;
             this.createdAtMs = System.currentTimeMillis();
         }
     }
@@ -78,8 +84,53 @@ public class CombatEventHandler {
     private static final long PENDING_GUN_CONTEXT_TTL_MS = 5000L;
     private static final String RESISTANCE_EFFECT_ADJUSTING_KEY = "TacRogueResistanceEffectAdjusting";
 
-    public static void registerGunDamageContext(int entityId, boolean isHeadShot, boolean isShotgun, boolean isPerkCrit, net.minecraft.world.phys.Vec3 impactPos) {
-        pendingGunContext.put(entityId, new GunDamageContext(isHeadShot, isShotgun, isPerkCrit, impactPos));
+    public static void registerGunDamageContext(int damageKey, boolean isHeadShot, boolean isShotgun, boolean isPerkCrit, net.minecraft.world.phys.Vec3 impactPos, float predictedDamage) {
+        pendingGunContext.put(damageKey, new GunDamageContext(isHeadShot, isShotgun, isPerkCrit, impactPos, predictedDamage));
+    }
+
+    public static void recordAppliedGunDamage(Entity entity, DamageSource source, float amount) {
+        if (entity == null || !Float.isFinite(amount) || amount <= 0.0f) return;
+        Entity direct = source == null ? null : source.getDirectEntity();
+        int damageKey = direct != null ? direct.getId() : entity.getId();
+        GunDamageContext ctx = pendingGunContext.get(damageKey);
+        if (ctx == null && direct != null) {
+            ctx = pendingGunContext.get(entity.getId());
+        }
+        if (ctx != null) {
+            ctx.appliedDamage += amount;
+        }
+    }
+
+    public static void flushGunDamageIndicator(ServerPlayer attacker, Entity hurtEntity, Entity bullet, float fallbackDamage) {
+        if (attacker == null || hurtEntity == null) return;
+        int damageKey = bullet != null ? bullet.getId() : hurtEntity.getId();
+        GunDamageContext ctx = pendingGunContext.remove(damageKey);
+        if (ctx == null && bullet != null) {
+            ctx = pendingGunContext.remove(hurtEntity.getId());
+        }
+        float finalDamage = 0.0f;
+        boolean isCritical = false;
+        boolean isHeadShot = false;
+        boolean isShotgun = false;
+        net.minecraft.world.phys.Vec3 impact = hurtEntity.position().add(0.0D, hurtEntity.getBbHeight() * 0.72D, 0.0D);
+        if (ctx != null) {
+            finalDamage = ctx.appliedDamage > 0.0f ? ctx.appliedDamage : ctx.predictedDamage;
+            isCritical = ctx.isPerkCrit;
+            isHeadShot = ctx.isHeadShot;
+            isShotgun = ctx.isShotgun;
+            if (ctx.impactPos != null) impact = ctx.impactPos;
+        }
+        if ((!Float.isFinite(finalDamage) || finalDamage <= 0.0f) && Float.isFinite(fallbackDamage)) {
+            finalDamage = fallbackDamage;
+        }
+        if (!Float.isFinite(finalDamage) || finalDamage <= 0.0f) {
+            finalDamage = 0.0f;
+        }
+        String data = String.format(java.util.Locale.US, "%.1f:%.2f:%.2f:%.2f:%b:%b:%b",
+            finalDamage, impact.x, impact.y, impact.z, isCritical, isHeadShot, isShotgun);
+        TacRogueNetworking.CHANNEL.send(
+            net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> attacker),
+            new com.levanilla.rogue.networking.SyncDataMessage("dmg:" + data));
     }
 
     @SubscribeEvent
@@ -303,22 +354,9 @@ public class CombatEventHandler {
                     net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> attacker),
                     new com.levanilla.rogue.networking.SyncDataMessage("dmg:" + data));
             } else {
-                GunDamageContext ctx = pendingGunContext.remove(event.getEntity().getId());
-                if (ctx != null) {
-                    float finalDamage = event.getAmount();
-                    net.minecraft.world.phys.Vec3 impact = ctx.impactPos != null
-                        ? ctx.impactPos
-                        : event.getEntity().position().add(0.0D, event.getEntity().getBbHeight() * 0.72D, 0.0D);
-                    double x = impact.x;
-                    double y = impact.y;
-                    double z = impact.z;
-                    boolean isCritical = ctx.isPerkCrit;
-                    String data = String.format(java.util.Locale.US, "%.1f:%.2f:%.2f:%.2f:%b:%b:%b",
-                        finalDamage, x, y, z, isCritical, ctx.isHeadShot, ctx.isShotgun);
-                    TacRogueNetworking.CHANNEL.send(
-                        net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> attacker),
-                        new com.levanilla.rogue.networking.SyncDataMessage("dmg:" + data));
-                }
+                // TacZ can split one bullet into normal and armor-piercing damage events.
+                // The indicator is flushed from TacZ Post/Kill after LivingDamage has
+                // accumulated the actual applied amount for the whole bullet.
             }
         }
 
@@ -506,8 +544,15 @@ public class CombatEventHandler {
 
     @SubscribeEvent
     public static void onLivingDamage(LivingDamageEvent event) {
+        if (!event.getEntity().level().isClientSide
+            && event.getEntity().level().dimension() == ROGUE_DIM
+            && event.getEntity() instanceof Mob
+            && event.getSource().is(com.tacz.guns.init.ModDamageTypes.BULLETS_TAG)) {
+            recordAppliedGunDamage(event.getEntity(), event.getSource(), event.getAmount());
+        }
+
         if (!(event.getEntity() instanceof ServerPlayer player)) return;
-        if (player.level().isClientSide || player.level().dimension() != ROGUE_DIM) return;
+        if (player.level().dimension() != ROGUE_DIM) return;
         if (event.getSource().is(DamageTypeTags.BYPASSES_ARMOR)) return;
 
         double armor = player.getAttributeValue(Attributes.ARMOR);
