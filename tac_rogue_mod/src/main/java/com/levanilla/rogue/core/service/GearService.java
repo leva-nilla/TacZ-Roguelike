@@ -123,8 +123,7 @@ public final class GearService {
         }
 
         // 4.5 雪玉 (ステルス用)
-        ItemStack snowballs = new ItemStack(Items.SNOWBALL, 16);
-        player.getInventory().add(snowballs);
+        player.getInventory().add(RogueItemFactory.createRogueSnowballStack());
 
         // 5. 弾薬
         try {
@@ -179,7 +178,8 @@ public final class GearService {
     }
 
     public static ItemStack createMedkitStack(int count) {
-        ItemStack medkit = new ItemStack(Items.PAPER, count);
+        int stackLimit = RogueItemFactory.getConsumableStackLimit("rogue:medkit");
+        ItemStack medkit = new ItemStack(Items.PAPER, Math.min(count, stackLimit));
         medkit.setHoverName(Component.translatable("item.tac_rogue.medkit"));
         CompoundTag medkitTag = medkit.getOrCreateTag();
         medkitTag.putBoolean("rogue_item", true);
@@ -191,6 +191,6 @@ public final class GearService {
             Component.Serializer.toJson(
                 Component.translatable("item.tac_rogue.medkit.lore"))));
         displayTag.put("Lore", loreList);
-        return medkit;
+        return RogueItemFactory.applyConsumableStackLimit(medkit, "rogue:medkit");
     }
 }

@@ -67,6 +67,51 @@ public final class RogueUtilityItemService {
         };
     }
 
+    public static int getConsumableShopUnlockFloor(String id) {
+        return switch (id) {
+            case "rogue:noise_maker" -> 6;
+            case "rogue:smoke_canister" -> 8;
+            case "rogue:flash_charge" -> 10;
+            case "rogue:portable_shield" -> 12;
+            case "rogue:micro_turret" -> 18;
+            default -> 1;
+        };
+    }
+
+    public static int getUtilityStackLimit(String id) {
+        return switch (id) {
+            case "rogue:noise_maker" -> 7;
+            case "rogue:smoke_canister" -> 5;
+            case "rogue:flash_charge" -> 5;
+            case "rogue:portable_shield" -> 3;
+            case "rogue:micro_turret" -> 3;
+            default -> 1;
+        };
+    }
+
+    public static int getReferencePrice(String id) {
+        return switch (id) {
+            case "rogue:ballistic_charm" -> 850;
+            case "rogue:quickdraw_charm" -> 900;
+            case "rogue:ammo_saver_charm" -> 950;
+            case "rogue:terminal_decoder" -> 1100;
+            case "rogue:recovery_beacon", "rogue:defense_sensor" -> 1250;
+            case "rogue:maintenance_kit" -> 1050;
+            case "rogue:range_card" -> 800;
+            case "rogue:ballistic_computer" -> 1350;
+            case "rogue:blood_dogtag" -> 1500;
+            case "rogue:mag_pouch_rig" -> 1600;
+            case "rogue:overheat_core" -> 1700;
+            case "rogue:ballistic_insert" -> 1800;
+            case "rogue:noise_maker" -> 700;
+            case "rogue:smoke_canister" -> 950;
+            case "rogue:flash_charge" -> 1150;
+            case "rogue:portable_shield" -> 1650;
+            case "rogue:micro_turret" -> 3200;
+            default -> 250;
+        };
+    }
+
     public static Set<String> getActivePassiveIds(Player player) {
         LinkedHashSet<String> active = new LinkedHashSet<>();
         if (player == null) return active;
@@ -192,12 +237,8 @@ public final class RogueUtilityItemService {
 
     public static String rollChestUtilityId(Random random, int floor) {
         List<String> ids = new ArrayList<>();
-        ids.add("rogue:smoke_canister");
-        ids.add("rogue:noise_maker");
-        if (floor >= 3) ids.add("rogue:flash_charge");
         if (floor >= 5) ids.add("rogue:ballistic_charm");
         if (floor >= 7) ids.add("rogue:quickdraw_charm");
-        if (floor >= 8) ids.add("rogue:portable_shield");
         if (floor >= 10) ids.add("rogue:terminal_decoder");
         if (floor >= 12) ids.add("rogue:defense_sensor");
         if (floor >= 14) ids.add("rogue:ammo_saver_charm");
@@ -206,7 +247,6 @@ public final class RogueUtilityItemService {
         if (floor >= 20) ids.add("rogue:range_card");
         if (floor >= 24) ids.add("rogue:ballistic_computer");
         if (floor >= 28) ids.add("rogue:mag_pouch_rig");
-        if (floor >= 30) ids.add("rogue:micro_turret");
         if (floor >= 34) ids.add("rogue:blood_dogtag");
         if (floor >= 40) ids.add("rogue:ballistic_insert");
         if (floor >= 45) ids.add("rogue:overheat_core");
@@ -277,13 +317,20 @@ public final class RogueUtilityItemService {
         List<Mob> mobs = level.getEntitiesOfClass(Mob.class, area, m -> isRogueMob(m) && !m.getTags().contains("rogue:boss"));
         mobs.sort(java.util.Comparator.comparingDouble(player::distanceToSqr));
         int hits = 0;
+        Vec3 muzzle = player.getEyePosition().add(player.getLookAngle().scale(0.45D));
         for (Mob mob : mobs) {
             if (hits >= 4) break;
             if (!hasLineOfEffect(level, player.getEyePosition(), mob.getEyePosition(), player)) continue;
+            Vec3 target = mob.getEyePosition();
+            for (int i = 1; i <= 6; i++) {
+                Vec3 spark = muzzle.lerp(target, i / 6.0D);
+                level.sendParticles(ParticleTypes.CRIT, spark.x, spark.y, spark.z, 1, 0.015D, 0.015D, 0.015D, 0.0D);
+            }
             mob.invulnerableTime = 0;
             mob.hurt(player.damageSources().playerAttack(player), Math.max(40.0F, mob.getMaxHealth() + 4.0F));
             level.sendParticles(ParticleTypes.CRIT, mob.getX(), mob.getY() + mob.getBbHeight() * 0.55D, mob.getZ(),
                 6, 0.22D, 0.22D, 0.22D, 0.02D);
+            level.playSound(null, mob.blockPosition(), SoundEvents.ARROW_HIT_PLAYER, SoundSource.PLAYERS, 0.35F, 1.8F);
             hits++;
         }
         level.playSound(null, player.blockPosition(), SoundEvents.CROSSBOW_SHOOT, SoundSource.PLAYERS, 1.0F, 1.35F);

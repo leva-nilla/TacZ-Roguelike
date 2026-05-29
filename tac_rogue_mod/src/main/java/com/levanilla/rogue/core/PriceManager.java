@@ -281,7 +281,9 @@ public class PriceManager {
             String utilityId = tag.getString(com.levanilla.rogue.core.service.RogueUtilityItemService.UTILITY_ID_KEY);
             if (!utilityId.isEmpty()) {
                 ShopCatalog.ShopItem utilityItem = findCatalogItem(utilityId);
-                int buyPrice = utilityItem != null ? utilityItem.price : 250;
+                int buyPrice = utilityItem != null
+                    ? utilityItem.price
+                    : com.levanilla.rogue.core.service.RogueUtilityItemService.getReferencePrice(utilityId);
                 return Math.round(buyPrice * GameConstants.GUN_SELL_RATE) * stack.getCount();
             }
             int unitPrice;

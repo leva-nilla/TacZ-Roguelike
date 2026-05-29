@@ -1,5 +1,6 @@
 package com.levanilla.rogue.core.service;
 
+import com.levanilla.rogue.core.GameConstants;
 import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.core.TacZRegistryHelper;
 import com.levanilla.rogue.core.WeaponRarity;
@@ -17,12 +18,13 @@ import net.minecraft.world.item.Items;
 import net.minecraftforge.registries.ForgeRegistries;
 
 public final class RogueItemFactory {
+    public static final String CONSUMABLE_MAX_STACK_KEY = "TacRogueConsumableMaxStack";
 
     private RogueItemFactory() {}
 
     public static ItemStack createItemStack(ServerPlayer player, String itemId) {
         if (itemId.equals("minecraft:snowball")) {
-            return new ItemStack(Items.SNOWBALL, 16);
+            return createRogueSnowballStack();
         }
 
         if (itemId.startsWith("rogue:")) {
@@ -176,6 +178,20 @@ public final class RogueItemFactory {
 
     public static ItemStack createRecoveryItem(String itemId) {
         return switch (itemId) {
+            case "rogue:gold_cache" -> createGoldCacheStack(1);
+            case "rogue:scrap_metal" -> createScrapMetalStack(1);
+            case "rogue:emergency_ration" -> {
+                ItemStack stack = new ItemStack(Items.GOLDEN_APPLE, 1);
+                applyRecoveryLore(stack,
+                    Component.translatable("item.tac_rogue.emergency_ration"),
+                    Component.translatable("item.tac_rogue.emergency_ration.lore.0"),
+                    Component.translatable("item.tac_rogue.emergency_ration.lore.1"));
+                stack.enchant(net.minecraft.world.item.enchantment.Enchantments.UNBREAKING, 1);
+                stack.getOrCreateTag().putInt("HideFlags", 1);
+                stack.getOrCreateTag().putInt("CustomModelData", 39001);
+                applyConsumableStackLimit(stack, itemId);
+                yield stack;
+            }
             case "rogue:medkit" -> GearService.createMedkitStack(1);
             case "rogue:field_ration" -> {
                 var stack = new ItemStack(Items.COOKED_BEEF, 3);
@@ -184,6 +200,7 @@ public final class RogueItemFactory {
                     Component.translatable("item.tac_rogue.field_ration.lore.0"),
                     Component.translatable("item.tac_rogue.field_ration.lore.1"));
                 stack.getOrCreateTag().putInt("CustomModelData", 39003);
+                applyConsumableStackLimit(stack, itemId);
                 yield stack;
             }
             case "rogue:stamina_shot" -> {
@@ -195,6 +212,7 @@ public final class RogueItemFactory {
                 stack.enchant(net.minecraft.world.item.enchantment.Enchantments.UNBREAKING, 1);
                 stack.getOrCreateTag().putInt("HideFlags", 1);
                 stack.getOrCreateTag().putInt("CustomModelData", 39005);
+                applyConsumableStackLimit(stack, itemId);
                 yield stack;
             }
             case "rogue:bandage" -> {
@@ -204,6 +222,7 @@ public final class RogueItemFactory {
                     Component.translatable("item.tac_rogue.bandage.lore.0"),
                     Component.translatable("item.tac_rogue.bandage.lore.1"));
                 stack.getOrCreateTag().putInt("CustomModelData", 39010);
+                applyConsumableStackLimit(stack, itemId);
                 yield stack;
             }
             case "rogue:armor_plate" -> {
@@ -213,6 +232,7 @@ public final class RogueItemFactory {
                     Component.translatable("item.tac_rogue.armor_plate.lore.0"),
                     Component.translatable("item.tac_rogue.armor_plate.lore.1"));
                 stack.getOrCreateTag().putInt("CustomModelData", 39011);
+                applyConsumableStackLimit(stack, itemId);
                 yield stack;
             }
             case "rogue:adrenaline" -> {
@@ -225,6 +245,7 @@ public final class RogueItemFactory {
                 stack.enchant(net.minecraft.world.item.enchantment.Enchantments.UNBREAKING, 1);
                 stack.getOrCreateTag().putInt("HideFlags", 1);
                 stack.getOrCreateTag().putInt("CustomModelData", 39012);
+                applyConsumableStackLimit(stack, itemId);
                 yield stack;
             }
             case "rogue:emp_device" -> {
@@ -235,6 +256,7 @@ public final class RogueItemFactory {
                     Component.translatable("item.tac_rogue.emp_device.lore.1"),
                     Component.translatable("item.tac_rogue.emp_device.lore.2"));
                 stack.getOrCreateTag().putInt("CustomModelData", 39013);
+                applyConsumableStackLimit(stack, itemId);
                 yield stack;
             }
             case "rogue:ballistic_charm" -> createUtilityItem(Items.PRISMARINE_SHARD, itemId, 39200, 1);
@@ -244,17 +266,17 @@ public final class RogueItemFactory {
             case "rogue:mag_pouch_rig" -> createUtilityItem(Items.LEATHER, itemId, 39204, 2);
             case "rogue:terminal_decoder" -> createUtilityItem(Items.COMPARATOR, itemId, 39205, 1);
             case "rogue:recovery_beacon" -> createUtilityItem(Items.EMERALD, itemId, 39206, 1);
-            case "rogue:defense_sensor" -> createUtilityItem(Items.OBSERVER, itemId, 39207, 1);
+            case "rogue:defense_sensor" -> createUtilityItem(Items.REDSTONE_TORCH, itemId, 39207, 1);
             case "rogue:blood_dogtag" -> createUtilityItem(Items.NAME_TAG, itemId, 39208, 2);
             case "rogue:overheat_core" -> createUtilityItem(Items.BLAZE_POWDER, itemId, 39209, 2);
             case "rogue:smoke_canister" -> createUtilityItem(Items.GUNPOWDER, itemId, 39210, 1);
             case "rogue:flash_charge" -> createUtilityItem(Items.GLOWSTONE_DUST, itemId, 39211, 1);
-            case "rogue:noise_maker" -> createUtilityItem(Items.NOTE_BLOCK, itemId, 39212, 1);
-            case "rogue:portable_shield" -> createUtilityItem(Items.SHIELD, itemId, 39213, 1);
-            case "rogue:micro_turret" -> createUtilityItem(Items.DISPENSER, itemId, 39214, 1);
+            case "rogue:noise_maker" -> createUtilityItem(Items.GOAT_HORN, itemId, 39212, 1);
+            case "rogue:portable_shield" -> createUtilityItem(Items.IRON_HORSE_ARMOR, itemId, 39213, 1);
+            case "rogue:micro_turret" -> createUtilityItem(Items.TRIPWIRE_HOOK, itemId, 39214, 1);
             case "rogue:maintenance_kit" -> createUtilityItem(Items.IRON_NUGGET, itemId, 39215, 1);
-            case "rogue:ballistic_computer" -> createUtilityItem(Items.CLOCK, itemId, 39216, 1);
-            case "rogue:range_card" -> createUtilityItem(Items.MAP, itemId, 39217, 1);
+            case "rogue:ballistic_computer" -> createUtilityItem(Items.REPEATER, itemId, 39216, 1);
+            case "rogue:range_card" -> createUtilityItem(Items.PAPER, itemId, 39217, 1);
             case "rogue:inv_upgrade" -> createSpecialPreviewItem(
                 Items.LEATHER, "shop_item.tac_rogue.inv_upgrade", 39100);
             case "rogue:stash_upgrade" -> createSpecialPreviewItem(
@@ -269,6 +291,55 @@ public final class RogueItemFactory {
                 Items.ENCHANTED_BOOK, "shop_item.tac_rogue.random_perk", 39105);
             default -> ItemStack.EMPTY;
         };
+    }
+
+    public static ItemStack createGoldCacheStack(int count) {
+        ItemStack stack = new ItemStack(Items.RAW_GOLD, Math.max(1, count));
+        applyRecoveryLore(stack,
+            Component.translatable("item.tac_rogue.gold_cache"),
+            Component.translatable("item.tac_rogue.gold_cache.lore.0"),
+            Component.translatable("item.tac_rogue.gold_cache.lore.1", GameConstants.GOLD_CACHE_VALUE));
+        stack.getOrCreateTag().putInt("CustomModelData", 39004);
+        return stack;
+    }
+
+    public static ItemStack createScrapMetalStack(int count) {
+        ItemStack stack = new ItemStack(Items.RAW_IRON, Math.max(1, count));
+        applyRecoveryLore(stack,
+            Component.translatable("item.tac_rogue.scrap_metal"),
+            Component.translatable("item.tac_rogue.scrap_metal.lore.0"),
+            Component.translatable("item.tac_rogue.scrap_metal.lore.1", GameConstants.SCRAP_SELL_VALUE));
+        stack.getOrCreateTag().putInt("CustomModelData", 39006);
+        return stack;
+    }
+
+    public static ItemStack createRogueSnowballStack() {
+        ItemStack stack = new ItemStack(Items.SNOWBALL, getConsumableStackLimit("minecraft:snowball"));
+        stack.getOrCreateTag().putBoolean("rogue_item", true);
+        applyConsumableStackLimit(stack, "minecraft:snowball");
+        return stack;
+    }
+
+    public static int getConsumableStackLimit(String itemId) {
+        return switch (itemId) {
+            case "minecraft:snowball" -> 7;
+            case "rogue:field_ration" -> 3;
+            case "rogue:bandage" -> 5;
+            case "rogue:medkit", "rogue:stamina_shot", "rogue:armor_plate",
+                 "rogue:emergency_ration",
+                 "rogue:adrenaline", "rogue:emp_device" -> 3;
+            default -> 1;
+        };
+    }
+
+    public static ItemStack applyConsumableStackLimit(ItemStack stack, String itemId) {
+        if (stack.isEmpty()) return stack;
+        int limit = getConsumableStackLimit(itemId);
+        stack.getOrCreateTag().putInt(CONSUMABLE_MAX_STACK_KEY, limit);
+        if (stack.getCount() > limit) {
+            stack.setCount(limit);
+        }
+        return stack;
     }
 
     private static ItemStack createUtilityItem(net.minecraft.world.item.Item item, String itemId, int customModelData, int loreLines) {
@@ -287,8 +358,11 @@ public final class RogueItemFactory {
         tag.putInt("CustomModelData", customModelData);
         if (RogueUtilityItemService.isConsumableUtilityId(itemId)) {
             tag.putBoolean("TacRogueConsumableUtility", true);
+            tag.putInt("TacRogueUtilityMaxStack", RogueUtilityItemService.getUtilityStackLimit(itemId));
+            stack.setCount(RogueUtilityItemService.getUtilityStackLimit(itemId));
         } else {
             tag.putBoolean("TacRoguePassiveUtility", true);
+            tag.putInt("TacRogueUtilityMaxStack", 1);
         }
         return stack;
     }

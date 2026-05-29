@@ -27,7 +27,7 @@ import java.util.Locale;
 import java.util.Map;
 
 public class DebugMenuScreen extends Screen {
-    private enum Tab { WEAPONS, PERKS, QUESTS, STATE, MULTIPLAYER }
+    private enum Tab { WEAPONS, ITEMS, PERKS, QUESTS, STATE, MULTIPLAYER }
 
     private static final ShopCatalog.Category[] WEAPON_CATEGORIES = {
         ShopCatalog.Category.PISTOL,
@@ -58,6 +58,10 @@ public class DebugMenuScreen extends Screen {
     private int selectedWeaponIndex = 0;
     private int hoveredWeaponIndex = -1;
     private String weaponSearch = "";
+    private int itemPage = 0;
+    private int selectedItemIndex = 0;
+    private int hoveredItemIndex = -1;
+    private String itemSearch = "";
     private WeaponRarity.Rarity selectedRarity = WeaponRarity.Rarity.COMMON;
     private int perkCategoryIndex = 0;
     private int perkCategoryScroll = 0;
@@ -74,7 +78,40 @@ public class DebugMenuScreen extends Screen {
     private ShopCatalog.Category cachedWeaponCategory = null;
     private String cachedWeaponSearch = null;
     private final Map<String, ItemStack> previewWeaponStackCache = new HashMap<>();
+    private final Map<String, ItemStack> previewDebugItemStackCache = new HashMap<>();
     private WeaponRarity.Rarity cachedPreviewRarity = null;
+
+    private static final List<DebugItem> DEBUG_ITEMS = List.of(
+        new DebugItem("rogue:medkit", "Medkit", "Recovery"),
+        new DebugItem("rogue:field_ration", "Field Ration", "Recovery"),
+        new DebugItem("rogue:stamina_shot", "Stamina Shot", "Recovery"),
+        new DebugItem("rogue:bandage", "Bandage", "Recovery"),
+        new DebugItem("rogue:armor_plate", "Armor Plate", "Recovery"),
+        new DebugItem("rogue:adrenaline", "Adrenaline Syringe", "Recovery"),
+        new DebugItem("rogue:emp_device", "EMP Device", "Recovery"),
+        new DebugItem("rogue:emergency_ration", "Emergency Ration", "Recovery"),
+        new DebugItem("minecraft:snowball", "Snowball", "Tactical"),
+        new DebugItem("rogue:noise_maker", "Noise Maker", "Tactical"),
+        new DebugItem("rogue:smoke_canister", "Smoke Canister", "Tactical"),
+        new DebugItem("rogue:flash_charge", "Flash Charge", "Tactical"),
+        new DebugItem("rogue:portable_shield", "Portable Shield", "Tactical"),
+        new DebugItem("rogue:micro_turret", "Micro Turret", "Tactical"),
+        new DebugItem("rogue:ballistic_charm", "Ballistic Charm", "Passive"),
+        new DebugItem("rogue:quickdraw_charm", "Quickdraw Charm", "Passive"),
+        new DebugItem("rogue:ammo_saver_charm", "Ammo Saver Charm", "Passive"),
+        new DebugItem("rogue:terminal_decoder", "Terminal Decoder", "Passive"),
+        new DebugItem("rogue:recovery_beacon", "Recovery Beacon", "Passive"),
+        new DebugItem("rogue:defense_sensor", "Defense Sensor", "Passive"),
+        new DebugItem("rogue:maintenance_kit", "Maintenance Kit", "Passive"),
+        new DebugItem("rogue:range_card", "Range Card", "Passive"),
+        new DebugItem("rogue:ballistic_computer", "Ballistic Computer", "Passive"),
+        new DebugItem("rogue:ballistic_insert", "Ballistic Insert", "Risk"),
+        new DebugItem("rogue:mag_pouch_rig", "Mag Pouch Rig", "Risk"),
+        new DebugItem("rogue:blood_dogtag", "Blood Dogtag", "Risk"),
+        new DebugItem("rogue:overheat_core", "Overheat Core", "Risk"),
+        new DebugItem("rogue:gold_cache", "Gold Cache", "Currency"),
+        new DebugItem("rogue:scrap_metal", "Scrap Metal", "Currency")
+    );
 
     public DebugMenuScreen() {
         super(Component.translatable("gui.tac_rogue.debug.title"));
@@ -101,6 +138,7 @@ public class DebugMenuScreen extends Screen {
 
         switch (tab) {
             case WEAPONS -> initWeapons(panelX, panelY, panelW, panelH);
+            case ITEMS -> initItems(panelX, panelY, panelW, panelH);
             case PERKS -> initPerks(panelX, panelY, panelW, panelH);
             case QUESTS -> initQuests(panelX, panelY, panelW, panelH);
             case STATE -> initState(panelX, panelY, panelW, panelH);
@@ -151,6 +189,29 @@ public class DebugMenuScreen extends Screen {
             if (!current.isEmpty()) {
                 int index = Math.max(0, Math.min(selectedWeaponIndex, current.size() - 1));
                 send(DebugActionMessage.ActionType.GIVE_GUN, current.get(index).id + "|" + selectedRarity.name());
+            }
+        }).bounds(detailX, panelY + panelH - 28, 140, 20).build());
+    }
+
+    private void initItems(int panelX, int panelY, int panelW, int panelH) {
+        int gridX = panelX + 18;
+        int top = panelY + 32;
+        int searchW = Math.max(120, Math.min(240, panelW / 3));
+        searchBox = new EditBox(this.font, gridX, top, searchW, 18, Component.translatable("gui.tac_rogue.debug.search"));
+        searchBox.setValue(itemSearch);
+        searchBox.setResponder(s -> {
+            itemSearch = s;
+            itemPage = 0;
+            selectedItemIndex = 0;
+        });
+        this.addRenderableWidget(searchBox);
+
+        int detailX = gridX + WEAPON_COLS * SLOT + 18;
+        this.addRenderableWidget(Button.builder(Component.translatable("gui.tac_rogue.debug.give_selected_item"), b -> {
+            List<DebugItem> current = getFilteredDebugItems();
+            if (!current.isEmpty()) {
+                int index = Math.max(0, Math.min(selectedItemIndex, current.size() - 1));
+                send(DebugActionMessage.ActionType.GIVE_ITEM, current.get(index).id());
             }
         }).bounds(detailX, panelY + panelH - 28, 140, 20).build());
     }
@@ -433,6 +494,20 @@ public class DebugMenuScreen extends Screen {
         return cachedFilteredWeapons;
     }
 
+    private List<DebugItem> getFilteredDebugItems() {
+        String query = itemSearch.toLowerCase(Locale.ROOT).trim();
+        if (query.isEmpty()) return DEBUG_ITEMS;
+        List<DebugItem> result = new ArrayList<>();
+        for (DebugItem item : DEBUG_ITEMS) {
+            if (item.id().toLowerCase(Locale.ROOT).contains(query)
+                || item.label().toLowerCase(Locale.ROOT).contains(query)
+                || item.group().toLowerCase(Locale.ROOT).contains(query)) {
+                result.add(item);
+            }
+        }
+        return result;
+    }
+
     private void send(DebugActionMessage.ActionType action, String data) {
         TacRogueNetworking.CHANNEL.sendToServer(new DebugActionMessage(action, data));
     }
@@ -450,6 +525,7 @@ public class DebugMenuScreen extends Screen {
 
         switch (tab) {
             case WEAPONS -> renderWeapons(graphics, mouseX, mouseY, panelX, panelY, panelW, panelH);
+            case ITEMS -> renderItems(graphics, mouseX, mouseY, panelX, panelY, panelW, panelH);
             case PERKS -> renderPerks(graphics, panelX, panelY, panelW, panelH);
             case QUESTS -> renderQuests(graphics, panelX, panelY, panelW, panelH);
             case STATE -> renderStateInfo(graphics, panelX, panelY, panelW, panelH);
@@ -458,6 +534,7 @@ public class DebugMenuScreen extends Screen {
 
         super.render(graphics, mouseX, mouseY, partialTick);
         if (tab == Tab.WEAPONS) renderWeaponTooltip(graphics, mouseX, mouseY);
+        if (tab == Tab.ITEMS) renderItemTooltip(graphics, mouseX, mouseY);
     }
 
     private void renderWeapons(GuiGraphics graphics, int mouseX, int mouseY, int panelX, int panelY, int panelW, int panelH) {
@@ -530,6 +607,67 @@ public class DebugMenuScreen extends Screen {
             fmt(selectedRarity.magSizeMult)), x + 8, y + 124, 0xFFCCCCCC, false);
         graphics.drawString(this.font, Component.translatable("gui.tac_rogue.debug.fire_rate_mult",
             fmt(selectedRarity.fireRateMult)), x + 94, y + 124, 0xFFCCCCCC, false);
+    }
+
+    private void renderItems(GuiGraphics graphics, int mouseX, int mouseY, int panelX, int panelY, int panelW, int panelH) {
+        int gridX = panelX + 18;
+        int gridY = panelY + 58;
+        graphics.drawString(this.font, Component.translatable("gui.tac_rogue.debug.items_title"), gridX, panelY + 34, 0xFF88CCFF, false);
+        renderItemGrid(graphics, mouseX, mouseY, gridX, gridY);
+        renderPageControls(graphics, gridX, panelY + panelH - 28, getFilteredDebugItems().size(), itemPage);
+        int detailX = gridX + WEAPON_COLS * SLOT + 18;
+        renderItemDetail(graphics, detailX, gridY, panelX + panelW - detailX - 12, panelH - 88);
+    }
+
+    private void renderItemGrid(GuiGraphics graphics, int mouseX, int mouseY, int gridX, int gridY) {
+        List<DebugItem> items = getFilteredDebugItems();
+        int maxPage = maxPage(items.size(), WEAPON_PAGE_SIZE);
+        if (itemPage > maxPage) itemPage = maxPage;
+        hoveredItemIndex = -1;
+        int start = itemPage * WEAPON_PAGE_SIZE;
+        for (int i = 0; i < WEAPON_PAGE_SIZE; i++) {
+            int index = start + i;
+            int col = i % WEAPON_COLS;
+            int row = i / WEAPON_COLS;
+            int sx = gridX + col * SLOT;
+            int sy = gridY + row * SLOT;
+            boolean hovered = mouseX >= sx && mouseX < sx + 20 && mouseY >= sy && mouseY < sy + 20;
+            boolean selected = index == selectedItemIndex;
+            graphics.fill(sx, sy, sx + 20, sy + 20, selected ? 0x7744AAFF : hovered ? 0x5544AAFF : 0x55000000);
+            graphics.renderOutline(sx, sy, 20, 20, selected ? 0xFFAAEEFF : 0x66336655);
+            if (index >= items.size()) continue;
+            if (hovered) hoveredItemIndex = index;
+            ItemStack stack = previewDebugItemStack(items.get(index));
+            if (!stack.isEmpty()) {
+                graphics.renderItem(stack, sx + 2, sy + 2);
+                graphics.renderItemDecorations(this.font, stack, sx + 2, sy + 2);
+            } else {
+                graphics.drawCenteredString(this.font, "?", sx + 10, sy + 6, 0xFF777777);
+            }
+        }
+    }
+
+    private void renderItemDetail(GuiGraphics graphics, int x, int y, int w, int h) {
+        graphics.fill(x, y, x + w, y + h, 0x55000000);
+        graphics.renderOutline(x, y, w, h, 0x66336655);
+        List<DebugItem> items = getFilteredDebugItems();
+        if (items.isEmpty()) {
+            graphics.drawString(this.font, Component.translatable("gui.tac_rogue.debug.no_item"), x + 8, y + 8, 0xFF777777, false);
+            return;
+        }
+        int index = Math.max(0, Math.min(selectedItemIndex, items.size() - 1));
+        DebugItem item = items.get(index);
+        selectedItemIndex = index;
+        ItemStack stack = previewDebugItemStack(item);
+
+        graphics.drawString(this.font, stack.isEmpty() ? Component.literal(item.label()) : stack.getHoverName(), x + 8, y + 8, 0xFFFFFFFF, false);
+        graphics.drawString(this.font, item.id(), x + 8, y + 26, 0xFF888888, false);
+        graphics.drawString(this.font, item.group(), x + 8, y + 42, itemGroupColor(item.group()), false);
+        if (!stack.isEmpty()) {
+            graphics.drawString(this.font, Component.translatable("gui.tac_rogue.debug.item_stack", stack.getCount(), stack.getMaxStackSize()), x + 8, y + 60, 0xFFAAFFDD, false);
+            graphics.renderItem(stack, x + 8, y + 82);
+            graphics.renderItemDecorations(this.font, stack, x + 8, y + 82);
+        }
     }
 
     private void renderPerks(GuiGraphics graphics, int panelX, int panelY, int panelW, int panelH) {
@@ -649,6 +787,16 @@ public class DebugMenuScreen extends Screen {
         }
     }
 
+    private void renderItemTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
+        if (hoveredItemIndex < 0) return;
+        List<DebugItem> items = getFilteredDebugItems();
+        if (hoveredItemIndex >= items.size()) return;
+        ItemStack stack = previewDebugItemStack(items.get(hoveredItemIndex));
+        if (!stack.isEmpty()) {
+            graphics.renderTooltip(this.font, stack, mouseX, mouseY);
+        }
+    }
+
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (tab == Tab.WEAPONS) {
@@ -679,6 +827,34 @@ public class DebugMenuScreen extends Screen {
                 return true;
             }
         }
+        if (tab == Tab.ITEMS) {
+            int panelX = panelX();
+            int panelY = panelY();
+            int panelH = panelH();
+            int gridX = panelX + 18;
+            int gridY = panelY + 58;
+            int gridW = WEAPON_COLS * SLOT;
+            int gridH = WEAPON_ROWS * SLOT;
+            if (mouseX >= gridX && mouseX < gridX + gridW && mouseY >= gridY && mouseY < gridY + gridH) {
+                int col = ((int) mouseX - gridX) / SLOT;
+                int row = ((int) mouseY - gridY) / SLOT;
+                int index = itemPage * WEAPON_PAGE_SIZE + row * WEAPON_COLS + col;
+                if (index < getFilteredDebugItems().size()) {
+                    selectedItemIndex = index;
+                    return true;
+                }
+            }
+            int pageY = panelY + panelH - 28;
+            if (mouseX >= gridX && mouseX < gridX + 40 && mouseY >= pageY && mouseY < pageY + 18) {
+                if (itemPage > 0) itemPage--;
+                return true;
+            }
+            if (mouseX >= gridX + 54 && mouseX < gridX + 94 && mouseY >= pageY && mouseY < pageY + 18) {
+                int max = maxPage(getFilteredDebugItems().size(), WEAPON_PAGE_SIZE);
+                if (itemPage < max) itemPage++;
+                return true;
+            }
+        }
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
@@ -696,6 +872,11 @@ public class DebugMenuScreen extends Screen {
             }
             int max = maxPage(getFilteredWeapons().size(), WEAPON_PAGE_SIZE);
             weaponPage = scrollIndex(weaponPage, max, delta);
+            return true;
+        }
+        if (tab == Tab.ITEMS) {
+            int max = maxPage(getFilteredDebugItems().size(), WEAPON_PAGE_SIZE);
+            itemPage = scrollIndex(itemPage, max, delta);
             return true;
         }
         if (tab == Tab.PERKS) {
@@ -725,6 +906,21 @@ public class DebugMenuScreen extends Screen {
         String fullId = item.id.contains(":") ? item.id : "tacz:" + item.id;
         return previewWeaponStackCache.computeIfAbsent(fullId,
             id -> RogueItemFactory.createGunStack(id, selectedRarity));
+    }
+
+    private ItemStack previewDebugItemStack(DebugItem item) {
+        return previewDebugItemStackCache.computeIfAbsent(item.id(), id -> RogueItemFactory.createItemStack(null, id));
+    }
+
+    private int itemGroupColor(String group) {
+        return switch (group) {
+            case "Recovery" -> 0xFF80FFAA;
+            case "Tactical" -> 0xFFFFD45C;
+            case "Passive" -> 0xFF88CCFF;
+            case "Risk" -> 0xFFFF8866;
+            case "Currency" -> 0xFFFFE680;
+            default -> 0xFFCCCCCC;
+        };
     }
 
     private int panelW() {
@@ -799,6 +995,8 @@ public class DebugMenuScreen extends Screen {
     private static String fmt(float value) {
         return String.format(Locale.ROOT, "%.2f", value);
     }
+
+    private record DebugItem(String id, String label, String group) {}
 
     @Override
     public boolean isPauseScreen() {

@@ -241,8 +241,8 @@ final class ClientInputEventDelegate {
     private static void ensureNonEmptySelectedSlot(Minecraft mc) {
         if (mc == null || mc.screen != null || mc.player == null || mc.player.isSpectator()) return;
         int selected = mc.player.getInventory().selected;
-        if (selected >= com.levanilla.rogue.core.GameConstants.SLOT_ITEM_START
-            && selected <= com.levanilla.rogue.core.GameConstants.SLOT_ITEM_END
+        if (selected >= selectableStart()
+            && selected <= selectableEnd()
             && !mc.player.getInventory().getItem(selected).isEmpty()) {
             return;
         }
@@ -251,8 +251,8 @@ final class ClientInputEventDelegate {
     }
 
     private static int findNextSelectableSlot(Minecraft mc, int current, int direction) {
-        int start = com.levanilla.rogue.core.GameConstants.SLOT_ITEM_START;
-        int end = com.levanilla.rogue.core.GameConstants.SLOT_ITEM_END;
+        int start = selectableStart();
+        int end = selectableEnd();
         int size = end - start + 1;
         int normalized = current < start || current > end ? start : current;
         for (int offset = 1; offset <= size; offset++) {
@@ -266,13 +266,21 @@ final class ClientInputEventDelegate {
 
     private static void setSelectedSlot(Minecraft mc, int slot) {
         if (mc == null || mc.player == null) return;
-        int start = com.levanilla.rogue.core.GameConstants.SLOT_ITEM_START;
-        int end = com.levanilla.rogue.core.GameConstants.SLOT_ITEM_END;
+        int start = selectableStart();
+        int end = selectableEnd();
         if (slot < start || slot > end || mc.player.getInventory().selected == slot) return;
         mc.player.getInventory().selected = slot;
         if (mc.getConnection() != null) {
             mc.getConnection().send(new net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket(slot));
         }
+    }
+
+    private static int selectableStart() {
+        return com.levanilla.rogue.core.GameConstants.SLOT_GUN_START;
+    }
+
+    private static int selectableEnd() {
+        return com.levanilla.rogue.core.GameConstants.SLOT_ITEM_END;
     }
 
     static void onKey(net.minecraftforge.client.event.InputEvent.Key event) {

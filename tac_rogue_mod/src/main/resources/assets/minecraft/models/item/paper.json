@@ -4,6 +4,17 @@
         "layer0": "minecraft:item/paper"
     },
     "overrides": [
-        {"predicate": {"custom_model_data": 1001}, "model": "minecraft:item/rogue/medkit"}
+        {
+            "predicate": {
+                "custom_model_data": 1001
+            },
+            "model": "minecraft:item/rogue/medkit"
+        },
+        {
+            "predicate": {
+                "custom_model_data": 39217
+            },
+            "model": "minecraft:item/rogue/range_card"
+        }
     ]
 }

@@ -1,0 +1,14 @@
+{
+    "parent": "minecraft:item/generated",
+    "textures": {
+        "layer0": "minecraft:item/netherite_scrap"
+    },
+    "overrides": [
+        {
+            "predicate": {
+                "custom_model_data": 39203
+            },
+            "model": "minecraft:item/rogue/ballistic_insert"
+        }
+    ]
+}

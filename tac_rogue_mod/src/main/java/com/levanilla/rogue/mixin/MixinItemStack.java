@@ -17,14 +17,22 @@ public abstract class MixinItemStack {
 
     @Inject(method = "getMaxStackSize", at = @At("RETURN"), cancellable = true)
     private void onGetMaxStackSize(CallbackInfoReturnable<Integer> cir) {
+        ItemStack self = (ItemStack) (Object) this;
+        if (self.hasTag() && self.getTag().contains(com.levanilla.rogue.core.service.RogueItemFactory.CONSUMABLE_MAX_STACK_KEY)) {
+            cir.setReturnValue(Math.max(1, self.getTag().getInt(com.levanilla.rogue.core.service.RogueItemFactory.CONSUMABLE_MAX_STACK_KEY)));
+            return;
+        }
+        if (self.hasTag() && self.getTag().contains("TacRogueUtilityMaxStack")) {
+            cir.setReturnValue(Math.max(1, self.getTag().getInt("TacRogueUtilityMaxStack")));
+            return;
+        }
         Item item = this.getItem();
         if (item != null) {
             ResourceLocation registryName = ForgeRegistries.ITEMS.getKey(item);
             if (registryName != null && "tacz".equals(registryName.getNamespace()) && "ammo".equals(registryName.getPath())) {
-                ItemStack stack = (ItemStack) (Object) this;
                 int baseSize = 60; // fallback
-                if (stack.hasTag() && stack.getTag().contains("AmmoId")) {
-                    String ammoId = stack.getTag().getString("AmmoId");
+                if (self.hasTag() && self.getTag().contains("AmmoId")) {
+                    String ammoId = self.getTag().getString("AmmoId");
                     baseSize = com.levanilla.rogue.core.registry.AmmoDatabase.getAmmoStackSize(ammoId);
                 }
                 int capLevel = com.levanilla.rogue.core.RunManager.getGlobalAmmoCapacityLevel();
@@ -34,7 +42,7 @@ public abstract class MixinItemStack {
                 cir.setReturnValue(finalLimit);
             } else {
                 // 弾薬以外のアイテムは、Bigger Stacksの設定によらず、本来のアイテムの最大スタック数（Minecraftデフォルト）に落とす
-                int originalLimit = item.getMaxStackSize((ItemStack)(Object)this);
+                int originalLimit = item.getMaxStackSize(self);
                 // フォーマットが古い可能性があるため、64より大きい場合は64にクリップするか、アイテム自身の制限に揃える
                 if (cir.getReturnValue() != null && cir.getReturnValue() > 64) {
                     cir.setReturnValue(Math.min(64, originalLimit <= 0 ? 64 : originalLimit));

@@ -42,8 +42,8 @@ public final class FloorObjectiveService {
     public static final String OBJECTIVE_TYPE_KEY = "TacRogueObjectiveType";
     private static final String OBJECTIVE_CACHE_FILLED_KEY = "TacRogueObjectiveCacheFilled";
 
-    private static final int SECURE_TERMINAL_TICKS = 12 * 20;
-    private static final int HOLD_POSITION_TICKS = 25 * 20;
+    private static final int SECURE_TERMINAL_TICKS = 18 * 20;
+    private static final int HOLD_POSITION_TICKS = 35 * 20;
     private static final double OBJECTIVE_RADIUS_SQR = 6.5D * 6.5D;
     private static final double HOLD_CONTEST_RADIUS = 7.0D;
     private static final long OBJECTIVE_LURE_INTERVAL_TICKS = 50L;
@@ -644,7 +644,7 @@ public final class FloorObjectiveService {
         if (RogueUtilityItemService.hasRecoveryBeacon(player)) {
             addIfPresent(supplies, RogueItemFactory.createRecoveryItem("rogue:armor_plate"));
             addIfPresent(supplies, RogueItemFactory.createRecoveryItem("rogue:maintenance_kit"));
-            if (floor >= 10) addIfPresent(supplies, RogueItemFactory.createRecoveryItem("rogue:portable_shield"));
+            if (floor >= 10) addIfPresent(supplies, RogueItemFactory.createRecoveryItem("rogue:medkit"));
         }
 
         int delivered = 0;

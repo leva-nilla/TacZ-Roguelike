@@ -1,0 +1,14 @@
+{
+    "parent": "minecraft:item/generated",
+    "textures": {
+        "layer0": "minecraft:item/goat_horn"
+    },
+    "overrides": [
+        {
+            "predicate": {
+                "custom_model_data": 39212
+            },
+            "model": "minecraft:item/rogue/noise_maker"
+        }
+    ]
+}

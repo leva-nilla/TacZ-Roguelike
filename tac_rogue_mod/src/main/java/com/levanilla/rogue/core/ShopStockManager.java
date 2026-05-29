@@ -33,6 +33,10 @@ public final class ShopStockManager {
         if (item == null) {
             return false;
         }
+        if (com.levanilla.rogue.core.service.RogueUtilityItemService.isConsumableUtilityId(item.id)
+                && floor < com.levanilla.rogue.core.service.RogueUtilityItemService.getConsumableShopUnlockFloor(item.id)) {
+            return false;
+        }
         if (isAlwaysAvailable(item)) {
             return true;
         }

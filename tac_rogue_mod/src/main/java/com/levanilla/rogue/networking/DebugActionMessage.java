@@ -27,6 +27,7 @@ import java.util.function.Supplier;
 public class DebugActionMessage {
     public enum ActionType {
         GIVE_GUN,
+        GIVE_ITEM,
         ADD_GOLD,
         SYNC,
         ADVANCE_QUEST,
@@ -83,6 +84,7 @@ public class DebugActionMessage {
             try {
                 switch (msg.action) {
                     case GIVE_GUN -> handleGiveGun(player, msg.data);
+                    case GIVE_ITEM -> handleGiveItem(player, msg.data);
                     case ADD_GOLD -> {
                         int amount = Integer.parseInt(msg.data);
                         CurrencyManager.addGoldNoQuest(player, amount);
@@ -157,6 +159,21 @@ public class DebugActionMessage {
 
         ShopPlacementService.placeRewardItem(player, stack, fullId);
         player.sendSystemMessage(Component.literal("\u00A7a[DEBUG] Gave " + fullId + " " + rarity.name()));
+    }
+
+    private static void handleGiveItem(ServerPlayer player, String data) {
+        String itemId = data == null ? "" : data.trim();
+        if (itemId.isBlank()) {
+            player.sendSystemMessage(Component.literal("\u00A7c[DEBUG] Missing item id."));
+            return;
+        }
+        ItemStack stack = RogueItemFactory.createItemStack(player, itemId);
+        if (stack.isEmpty()) {
+            player.sendSystemMessage(Component.literal("\u00A7c[DEBUG] Failed to create item: " + itemId));
+            return;
+        }
+        ShopPlacementService.placeRewardItem(player, stack, itemId);
+        player.sendSystemMessage(Component.literal("\u00A7a[DEBUG] Gave item " + itemId + " x" + stack.getCount()));
     }
 
     private static void handleAddDeepCore(ServerPlayer player, String data) {

@@ -887,8 +887,8 @@ public final class SmokeTestService {
 
             int target = FloorObjectiveService.progressTarget(type);
             boolean targetValid = switch (type) {
-                case SECURE_TERMINAL -> target == 240;
-                case HOLD_POSITION -> target == 500;
+                case SECURE_TERMINAL -> target == 360;
+                case HOLD_POSITION -> target == 700;
                 case ELIMINATE, RECOVER_CACHE, HUNT_ELITE, ESCAPE_ROUTE -> target == 1;
             };
             record(counter, suite, "target." + type.name().toLowerCase(Locale.ROOT),
