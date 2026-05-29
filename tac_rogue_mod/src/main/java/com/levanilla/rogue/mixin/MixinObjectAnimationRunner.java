@@ -1,5 +1,7 @@
 package com.levanilla.rogue.mixin;
 
+import com.levanilla.rogue.core.PerkDefinition;
+import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.core.WeaponRarity;
 import com.tacz.guns.api.client.animation.ObjectAnimation;
 import net.minecraft.client.Minecraft;
@@ -32,6 +34,15 @@ public abstract class MixinObjectAnimationRunner {
             return accelerated >= Long.MAX_VALUE ? Long.MAX_VALUE : Math.max(1L, Math.round(accelerated));
         }
 
+        if (isDrawAnimation(animation.name) && RunManager.isRunActive()) {
+            float effect = PerkDefinition.sumClientCategoryEffect(PerkDefinition.Category.HANDLING);
+            if (effect > 0.0f) {
+                double speed = 1.0D + Math.min(0.85D, effect / 100.0D);
+                double accelerated = deltaNs * speed;
+                return accelerated >= Long.MAX_VALUE ? Long.MAX_VALUE : Math.max(1L, Math.round(accelerated));
+            }
+        }
+
         if (!animation.name.startsWith("reload")) {
             return deltaNs;
         }
@@ -45,5 +56,9 @@ public abstract class MixinObjectAnimationRunner {
 
         double accelerated = deltaNs / reloadMult;
         return accelerated >= Long.MAX_VALUE ? Long.MAX_VALUE : Math.max(1L, Math.round(accelerated));
+    }
+
+    private static boolean isDrawAnimation(String name) {
+        return name.startsWith("draw") || name.startsWith("put_away") || name.startsWith("putaway");
     }
 }

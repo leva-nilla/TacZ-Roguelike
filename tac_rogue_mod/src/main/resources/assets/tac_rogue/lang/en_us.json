@@ -87,7 +87,7 @@
   "perk.tac_rogue.cat.explosive": "Explosive Dmg +%s%% \u2014 Increases explosion-type damage.",
   "perk.tac_rogue.cat.resistance": "Special Resist +%s%% \u2014 Reduces explosions, fire, poison, boss abilities, and debuff duration.",
   "perk.tac_rogue.cat.fortune": "Crit Rate +%s%% \u2014 Increases critical hit chance for bonus damage.",
-  "perk.tac_rogue.cat.handling": "Handling +%s%% \u2014 Improves damage while firing from stable crouch/prone stances.",
+  "perk.tac_rogue.cat.handling": "Handling +%s%% \u2014 Speeds up weapon swap/draw and improves stable firing.",
   "perk.tac_rogue.cat.mag_size": "Mag Size +%s%% \u2014 Increases magazine capacity for all firearms.",
   "perk.tac_rogue.cat.bloodlust": "Bloodlust \u2014 Kills grant a short speed boost and restore %s HP.",
   "perk.tac_rogue.cat.medic": "Combat Medic \u2014 Healing items are +%s%% more effective.",

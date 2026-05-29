@@ -84,7 +84,7 @@
   "perk.tac_rogue.cat.explosive": "爆発ダメージ +%s%% — 爆発属性のダメージを増加。",
   "perk.tac_rogue.cat.resistance": "特殊耐性 +%s%% — 爆発・炎・毒・ボス能力・弱体効果を軽減。",
   "perk.tac_rogue.cat.fortune": "クリティカル率 +%s%% — クリティカルヒットの発生率を上昇。",
-  "perk.tac_rogue.cat.handling": "取り回し +%s%% — しゃがみ/伏せなど安定姿勢での射撃ダメージを補助。",
+  "perk.tac_rogue.cat.handling": "取り回し +%s%% — 銃の持ち替え・構え速度と安定姿勢射撃を補助。",
   "perk.tac_rogue.cat.mag_size": "マガジン容量 +%s%% — 全火器のマガジン容量を増加。",
   "perk.tac_rogue.cat.bloodlust": "ブラッドラスト — キル時に短時間加速し、HPを%s回復。",
   "perk.tac_rogue.cat.medic": "コンバットメディック — 回復アイテムの効果量が%s%%増加。",

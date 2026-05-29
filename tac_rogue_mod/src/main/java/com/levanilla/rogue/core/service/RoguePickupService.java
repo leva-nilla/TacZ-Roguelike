@@ -1,7 +1,8 @@
 package com.levanilla.rogue.core.service;
 
 import com.levanilla.rogue.core.GameConstants;
-import com.levanilla.rogue.core.StashSavedData;
+import com.levanilla.rogue.core.RunManager;
+import com.levanilla.rogue.core.TacZRegistryHelper;
 import com.levanilla.rogue.networking.PopupNotificationMessage;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
@@ -20,7 +21,7 @@ public final class RoguePickupService {
 
         boolean isGun = stack.hasTag() && stack.getTag().contains("GunId");
         boolean isMelee = stack.hasTag() && stack.getTag().contains("MeleeWeaponId");
-        boolean isAmmo = stack.hasTag() && stack.getTag().contains("AmmoId");
+        boolean isAmmo = isAmmo(stack);
 
         if (isGun) {
             if (placeGun(player, stack) || placeInCombatItemSlots(player, stack)) {
@@ -45,7 +46,7 @@ public final class RoguePickupService {
                 event.getItem().discard();
                 return;
             }
-            delayPickup(event);
+            sendToStashOrDrop(player, stack, event);
             return;
         }
 
@@ -54,8 +55,7 @@ public final class RoguePickupService {
             return;
         }
 
-        delayPickup(event);
-        player.displayClientMessage(Component.literal("\u00a7c\u30a4\u30f3\u30d9\u30f3\u30c8\u30ea\u304c\u6e80\u676f\u3067\u3059\uff01"), true);
+        sendToStashOrDrop(player, stack, event);
     }
 
     private static boolean placeGun(ServerPlayer player, ItemStack stack) {
@@ -77,10 +77,11 @@ public final class RoguePickupService {
     }
 
     private static boolean placeAmmo(ServerPlayer player, ItemStack stack) {
+        int reserveLimit = ammoReserveLimit(player, stack);
         for (int slot = GameConstants.SLOT_AMMO_GUN1_START; slot <= GameConstants.SLOT_AMMO_GUN2_END; slot++) {
             ItemStack existing = player.getInventory().getItem(slot);
             if (!existing.isEmpty() && ItemStack.isSameItemSameTags(existing, stack)) {
-                int space = existing.getMaxStackSize() - existing.getCount();
+                int space = reserveLimit - existing.getCount();
                 if (space > 0) {
                     int transfer = Math.min(space, stack.getCount());
                     existing.grow(transfer);
@@ -94,18 +95,26 @@ public final class RoguePickupService {
 
         for (int slot = GameConstants.SLOT_AMMO_GUN1_START; slot <= GameConstants.SLOT_AMMO_GUN2_END; slot++) {
             if (player.getInventory().getItem(slot).isEmpty()) {
-                player.getInventory().setItem(slot, stack.copy());
-                return true;
+                int transfer = Math.min(reserveLimit, stack.getCount());
+                ItemStack placed = stack.copy();
+                placed.setCount(transfer);
+                player.getInventory().setItem(slot, placed);
+                stack.shrink(transfer);
+                if (stack.isEmpty()) {
+                    return true;
+                }
             }
         }
         return false;
     }
 
     private static boolean placeInItemSlots(ServerPlayer player, ItemStack stack) {
+        boolean ammo = isAmmo(stack);
+        int limit = ammo ? ammoGeneralLimit(player, stack) : stack.getMaxStackSize();
         for (int slot = GameConstants.SLOT_ITEM_START; slot <= GameConstants.SLOT_ITEM_END; slot++) {
             ItemStack existing = player.getInventory().getItem(slot);
             if (!existing.isEmpty() && ItemStack.isSameItemSameTags(existing, stack)) {
-                int space = existing.getMaxStackSize() - existing.getCount();
+                int space = limit - existing.getCount();
                 if (space > 0) {
                     int transfer = Math.min(space, stack.getCount());
                     existing.grow(transfer);
@@ -119,8 +128,14 @@ public final class RoguePickupService {
 
         for (int slot = GameConstants.SLOT_ITEM_START; slot <= GameConstants.SLOT_ITEM_END; slot++) {
             if (player.getInventory().getItem(slot).isEmpty()) {
-                player.getInventory().setItem(slot, stack.copy());
-                return true;
+                int transfer = Math.min(limit, stack.getCount());
+                ItemStack placed = stack.copy();
+                placed.setCount(transfer);
+                player.getInventory().setItem(slot, placed);
+                stack.shrink(transfer);
+                if (stack.isEmpty()) {
+                    return true;
+                }
             }
         }
 
@@ -133,9 +148,34 @@ public final class RoguePickupService {
             if (isLocked) {
                 continue;
             }
+            if (!existing.isEmpty() && ItemStack.isSameItemSameTags(existing, stack)) {
+                int space = limit - existing.getCount();
+                if (space > 0) {
+                    int transfer = Math.min(space, stack.getCount());
+                    existing.grow(transfer);
+                    stack.shrink(transfer);
+                    if (stack.isEmpty()) {
+                        return true;
+                    }
+                }
+            }
+        }
+        for (int slot = GameConstants.SLOT_AMMO_GUN2_END + 1; slot <= maxAllowed; slot++) {
+            ItemStack existing = player.getInventory().getItem(slot);
+            boolean isLocked = existing.is(Items.BARRIER) && existing.hasTag()
+                && existing.getOrCreateTag().getBoolean("rogue_item_locked");
+            if (isLocked) {
+                continue;
+            }
             if (existing.isEmpty()) {
-                player.getInventory().setItem(slot, stack.copy());
-                return true;
+                int transfer = Math.min(limit, stack.getCount());
+                ItemStack placed = stack.copy();
+                placed.setCount(transfer);
+                player.getInventory().setItem(slot, placed);
+                stack.shrink(transfer);
+                if (stack.isEmpty()) {
+                    return true;
+                }
             }
         }
         return false;
@@ -152,32 +192,45 @@ public final class RoguePickupService {
     }
 
     private static void sendToStashOrDrop(ServerPlayer player, ItemStack stack, EntityItemPickupEvent event) {
-        StashSavedData data = StashSavedData.get(player.serverLevel());
-        StashSavedData.PlayerStash stash = data.getStash(player.getUUID());
+        if (stack.isEmpty()) {
+            event.getItem().discard();
+            return;
+        }
 
-        int maxSlots = stash.unlockedLines * 9;
-        for (int i = 0; i < maxSlots; i++) {
-            if (stash.getItem(i).isEmpty()) {
-                stash.setItem(i, stack.copy());
-                event.getItem().discard();
-                player.sendSystemMessage(Component.literal(
-                    "\u00a7b[STASH] \u00a7a" + stack.getHoverName().getString() + " \u00a7f\u3092\u30b9\u30bf\u30c3\u30b7\u30e5\u306b\u56de\u53ce\u3057\u307e\u3057\u305f\uff01"));
-                PopupNotificationMessage.send(
-                    player,
-                    PopupNotificationMessage.PopupType.REWARD,
-                    Component.literal("STASH"),
-                    Component.translatable("popup.tac_rogue.reward_stash.body", stack.getHoverName())
-                );
-                data.setDirty();
-                return;
-            }
+        if (ShopPlacementService.sendToStash(player, stack)) {
+            event.getItem().discard();
+            player.sendSystemMessage(Component.literal("[STASH] " + stack.getHoverName().getString() + " recovered."));
+            PopupNotificationMessage.send(
+                player,
+                PopupNotificationMessage.PopupType.REWARD,
+                Component.literal("STASH"),
+                Component.translatable("popup.tac_rogue.reward_stash.body", stack.getHoverName())
+            );
+            return;
         }
 
         delayPickup(event);
-        player.displayClientMessage(Component.literal("\u00a7c\u30b9\u30bf\u30c3\u30b7\u30e5\u304c\u6e80\u676f\u3067\u56de\u53ce\u3067\u304d\u307e\u305b\u3093\uff01"), true);
+        player.displayClientMessage(Component.literal("Stash is full."), true);
+    }
+
+    private static int ammoReserveLimit(ServerPlayer player, ItemStack stack) {
+        return RunManager.getAmmoReserveStackLimit(player, ammoBaseLimit(stack));
+    }
+
+    private static int ammoGeneralLimit(ServerPlayer player, ItemStack stack) {
+        return RunManager.getAmmoStackLimit(player, ammoBaseLimit(stack));
+    }
+
+    private static int ammoBaseLimit(ItemStack stack) {
+        if (!isAmmo(stack)) return Math.max(1, stack.getMaxStackSize());
+        return Math.max(1, TacZRegistryHelper.getAmmoStackSize(stack.getTag().getString("AmmoId")));
     }
 
     private static void delayPickup(EntityItemPickupEvent event) {
         event.getItem().setPickUpDelay(40);
+    }
+
+    private static boolean isAmmo(ItemStack stack) {
+        return !stack.isEmpty() && stack.hasTag() && stack.getTag().contains("AmmoId");
     }
 }

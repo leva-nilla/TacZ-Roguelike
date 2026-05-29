@@ -257,7 +257,7 @@ public class TacRogueNetworking {
     }
 
     public static void openShop(ServerPlayer player) {
-        CHANNEL.sendTo(new OpenShopMessage(), player.connection.connection, NetworkDirection.PLAY_TO_CLIENT);
+        CHANNEL.sendTo(new OpenShopMessage(OpenShopMessage.collectStashEntries(player)), player.connection.connection, NetworkDirection.PLAY_TO_CLIENT);
     }
 
     public static void openDebugMenu(ServerPlayer player) {

@@ -38,6 +38,7 @@ final class ClientInputEventDelegate {
             ensureTacRogueGuiScale(mc);
             if (rogueContext) {
                 TutorialGuideManager.tick(mc);
+                ensureNonEmptySelectedSlot(mc);
             }
             syncAdsInput(mc);
             handleRogueSneakToggle(mc);
@@ -232,13 +233,46 @@ final class ClientInputEventDelegate {
         }
 
         int direction = event.getScrollDelta() > 0 ? -1 : 1;
-        int size = com.levanilla.rogue.core.GameConstants.SLOT_ITEM_END + 1;
-        int next = (current + direction + size) % size;
-        mc.player.getInventory().selected = next;
-        if (mc.getConnection() != null) {
-            mc.getConnection().send(new net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket(next));
-        }
+        int next = findNextSelectableSlot(mc, current, direction);
+        setSelectedSlot(mc, next);
         event.setCanceled(true);
+    }
+
+    private static void ensureNonEmptySelectedSlot(Minecraft mc) {
+        if (mc == null || mc.screen != null || mc.player == null || mc.player.isSpectator()) return;
+        int selected = mc.player.getInventory().selected;
+        if (selected >= com.levanilla.rogue.core.GameConstants.SLOT_ITEM_START
+            && selected <= com.levanilla.rogue.core.GameConstants.SLOT_ITEM_END
+            && !mc.player.getInventory().getItem(selected).isEmpty()) {
+            return;
+        }
+        int next = findNextSelectableSlot(mc, selected, 1);
+        setSelectedSlot(mc, next);
+    }
+
+    private static int findNextSelectableSlot(Minecraft mc, int current, int direction) {
+        int start = com.levanilla.rogue.core.GameConstants.SLOT_ITEM_START;
+        int end = com.levanilla.rogue.core.GameConstants.SLOT_ITEM_END;
+        int size = end - start + 1;
+        int normalized = current < start || current > end ? start : current;
+        for (int offset = 1; offset <= size; offset++) {
+            int candidate = start + Math.floorMod(normalized - start + direction * offset, size);
+            if (!mc.player.getInventory().getItem(candidate).isEmpty()) {
+                return candidate;
+            }
+        }
+        return normalized;
+    }
+
+    private static void setSelectedSlot(Minecraft mc, int slot) {
+        if (mc == null || mc.player == null) return;
+        int start = com.levanilla.rogue.core.GameConstants.SLOT_ITEM_START;
+        int end = com.levanilla.rogue.core.GameConstants.SLOT_ITEM_END;
+        if (slot < start || slot > end || mc.player.getInventory().selected == slot) return;
+        mc.player.getInventory().selected = slot;
+        if (mc.getConnection() != null) {
+            mc.getConnection().send(new net.minecraft.network.protocol.game.ServerboundSetCarriedItemPacket(slot));
+        }
     }
 
     static void onKey(net.minecraftforge.client.event.InputEvent.Key event) {

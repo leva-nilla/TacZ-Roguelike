@@ -155,7 +155,12 @@ public class CombatEventHandler {
     }
 
     public static void markPlayerDamaged(ServerPlayer player) {
-        lastDamageTickMap.put(player.getUUID(), player.level().getGameTime());
+        if (player == null) return;
+        lastDamageTickMap.put(player.getUUID(), currentServerTick(player));
+    }
+
+    private static long currentServerTick(ServerPlayer player) {
+        return player.server != null ? player.server.getTickCount() : player.level().getGameTime();
     }
 
     public static void syncStealthTakedownHint(ServerPlayer player) {
@@ -224,7 +229,7 @@ public class CombatEventHandler {
 
         if (event.getEntity() instanceof ServerPlayer adsFatiguePlayer
                 && StaminaManager.isAdsExhaustDamage(adsFatiguePlayer)) {
-            lastDamageTickMap.put(adsFatiguePlayer.getUUID(), adsFatiguePlayer.level().getGameTime());
+            markPlayerDamaged(adsFatiguePlayer);
             return;
         }
 
@@ -292,7 +297,7 @@ public class CombatEventHandler {
                     event.setAmount(event.getAmount() * resistMult);
                 }
             }
-            lastDamageTickMap.put(damagedPlayer.getUUID(), damagedPlayer.level().getGameTime());
+            markPlayerDamaged(damagedPlayer);
         }
 
         if (!(event.getEntity() instanceof Mob)) return;

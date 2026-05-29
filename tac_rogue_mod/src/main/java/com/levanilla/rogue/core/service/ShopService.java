@@ -17,6 +17,8 @@ import net.minecraftforge.network.PacketDistributor;
  */
 public final class ShopService {
 
+    public static final int STASH_SELL_SLOT_OFFSET = 1000;
+
     private ShopService() {}
 
     // ===== 購入 =====
@@ -118,6 +120,10 @@ public final class ShopService {
     public static void handleSellItem(ServerPlayer player, String slotData) {
         try {
             int slot = Integer.parseInt(slotData);
+            if (slot >= STASH_SELL_SLOT_OFFSET) {
+                handleSellStashItem(player, slot - STASH_SELL_SLOT_OFFSET);
+                return;
+            }
             // 武器スロットや拡張インベントリ等もすべて売却可能にする
             if (slot < 0 || slot >= 36) {
                 notifyShop(player, PopupNotificationMessage.PopupType.WARNING,
@@ -142,7 +148,41 @@ public final class ShopService {
             notifyShop(player, PopupNotificationMessage.PopupType.REWARD,
                 Component.literal("SOLD"),
                 Component.literal("+$" + sellPrice + " " + stack.getHoverName().getString()));
+            syncGold(player);
+            TacRogueNetworking.openShop(player);
         } catch (NumberFormatException ignored) {}
+    }
+
+    private static void handleSellStashItem(ServerPlayer player, int stashSlot) {
+        StashSavedData data = StashSavedData.get(player.serverLevel());
+        StashSavedData.PlayerStash stash = data.getStash(player.getUUID());
+        int maxSlots = Math.min(stash.unlockedLines * 9, stash.getContainerSize());
+        if (stashSlot < 0 || stashSlot >= maxSlots) {
+            notifyShop(player, PopupNotificationMessage.PopupType.WARNING,
+                Component.literal("SHOP"),
+                Component.literal("Invalid stash slot for selling."));
+            return;
+        }
+
+        ItemStack stack = stash.getItem(stashSlot);
+        if (stack.isEmpty()) return;
+
+        int sellPrice = PriceManager.getSellPrice(stack);
+        if (sellPrice <= 0) {
+            notifyShop(player, PopupNotificationMessage.PopupType.WARNING,
+                Component.literal("SHOP"),
+                Component.literal("This stash item cannot be sold."));
+            return;
+        }
+
+        GoldGainService.award(player, sellPrice);
+        stash.setItem(stashSlot, ItemStack.EMPTY);
+        data.setDirty();
+        notifyShop(player, PopupNotificationMessage.PopupType.REWARD,
+            Component.literal("SOLD"),
+            Component.literal("+$" + sellPrice + " " + stack.getHoverName().getString()));
+        syncGold(player);
+        TacRogueNetworking.openShop(player);
     }
 
     // ===== 繧ｹ繧ｿ繝・す繝･ =====

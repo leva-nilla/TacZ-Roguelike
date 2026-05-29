@@ -47,17 +47,18 @@ public abstract class MixinChestMenu {
         int baseMax = TacZRegistryHelper.getAmmoStackSize(moving.getTag().getString("AmmoId"));
         int reserveLimit = player instanceof net.minecraft.server.level.ServerPlayer serverPlayer
             ? RunManager.getAmmoReserveStackLimit(serverPlayer, baseMax)
-            : Math.round(baseMax * 1.5f);
+            : clientReserveLimit(baseMax);
         int generalLimit = player instanceof net.minecraft.server.level.ServerPlayer serverPlayer
             ? RunManager.getAmmoStackLimit(serverPlayer, baseMax)
-            : baseMax;
+            : clientGeneralLimit(baseMax);
+        int backpackEnd = unlockedBackpackEnd(player);
 
         mergeIntoRange(player, moving, GameConstants.SLOT_AMMO_START, GameConstants.SLOT_AMMO_END, reserveLimit);
         placeIntoRange(player, moving, GameConstants.SLOT_AMMO_START, GameConstants.SLOT_AMMO_END, reserveLimit);
         mergeIntoRange(player, moving, GameConstants.SLOT_ITEM_START, GameConstants.SLOT_ITEM_END, generalLimit);
         placeIntoRange(player, moving, GameConstants.SLOT_ITEM_START, GameConstants.SLOT_ITEM_END, generalLimit);
-        mergeIntoRange(player, moving, GameConstants.SLOT_AMMO_END + 1, 35, generalLimit);
-        placeIntoRange(player, moving, GameConstants.SLOT_AMMO_END + 1, 35, generalLimit);
+        mergeIntoRange(player, moving, GameConstants.SLOT_AMMO_END + 1, backpackEnd, generalLimit);
+        placeIntoRange(player, moving, GameConstants.SLOT_AMMO_END + 1, backpackEnd, generalLimit);
     }
 
     private static void mergeIntoRange(Player player, ItemStack moving, int start, int end, int limit) {
@@ -86,5 +87,20 @@ public abstract class MixinChestMenu {
 
     private static boolean isAmmo(ItemStack stack) {
         return !stack.isEmpty() && stack.hasTag() && stack.getTag().contains("AmmoId");
+    }
+
+    private static int clientGeneralLimit(int baseMax) {
+        int capLevel = RunManager.getGlobalAmmoCapacityLevel();
+        return Math.max(1, Math.round(baseMax * (1.0f + capLevel * 0.5f)));
+    }
+
+    private static int clientReserveLimit(int baseMax) {
+        int capLevel = RunManager.getGlobalAmmoCapacityLevel();
+        return Math.max(1, Math.round(baseMax * (1.5f + capLevel * 0.5f)));
+    }
+
+    private static int unlockedBackpackEnd(Player player) {
+        int invLevel = player.getPersistentData().getInt("TacRogue_InvLevel");
+        return Math.min(GameConstants.SLOT_AMMO_END + invLevel * 2, 35);
     }
 }

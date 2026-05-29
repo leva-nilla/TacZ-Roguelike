@@ -272,6 +272,18 @@ public class PerkDefinition {
         return com.levanilla.rogue.core.service.PerkStorageService.sumCategoryEffect(entity, category);
     }
 
+    public static float sumClientCategoryEffect(Category category) {
+        if (category == null) return 0.0f;
+        float total = 0.0f;
+        String prefix = "perk:" + category.name();
+        for (String tag : ClientRunState.getPerkTags()) {
+            if (tag.startsWith(prefix)) {
+                total += fromTag(tag).calculateEffect();
+            }
+        }
+        return softcapTotalEffect(category, total);
+    }
+
     /** シリアライズ用のタグ文字列 (プレイヤーの Tag として保存) */
     public String toTag() {
         return "perk:" + category.name() + ":" + modifier.name() + ":" + level;

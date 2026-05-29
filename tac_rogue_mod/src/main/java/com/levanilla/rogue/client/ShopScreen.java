@@ -9,6 +9,8 @@ import com.levanilla.rogue.core.WeaponRarity;
 import com.levanilla.rogue.core.registry.ShopCatalog;
 import com.levanilla.rogue.core.registry.TacZGunRegistry;
 import com.levanilla.rogue.core.service.RogueItemFactory;
+import com.levanilla.rogue.core.service.ShopService;
+import com.levanilla.rogue.networking.OpenShopMessage;
 import com.levanilla.rogue.networking.RogueActionMessage;
 import com.levanilla.rogue.networking.TacRogueNetworking;
 import com.tacz.guns.api.TimelessAPI;
@@ -51,6 +53,7 @@ public class ShopScreen extends Screen {
     private final Map<String, ItemStack> previewStackCache = new HashMap<>();
     private int previewStackShopFloor = Integer.MIN_VALUE;
     private List<SellEntry> cachedSellEntries = List.of();
+    private List<OpenShopMessage.StashEntry> stashSellEntries = List.of();
     private String cachedSellInventorySignature = "";
     private List<String> cachedHeldGunIds = List.of();
     private String cachedHeldGunSignature = "";
@@ -60,7 +63,18 @@ public class ShopScreen extends Screen {
     private boolean lastGridClickSellMode = false;
 
     public ShopScreen() {
+        this(List.of());
+    }
+
+    public ShopScreen(List<OpenShopMessage.StashEntry> stashEntries) {
         super(Component.translatable("gui.tac_rogue.shop_screen.title"));
+        this.stashSellEntries = List.copyOf(stashEntries);
+    }
+
+    public void updateStashEntries(List<OpenShopMessage.StashEntry> stashEntries) {
+        this.stashSellEntries = List.copyOf(stashEntries);
+        this.cachedSellInventorySignature = "";
+        this.cachedSellEntries = List.of();
     }
 
     @Override
@@ -228,6 +242,9 @@ public class ShopScreen extends Screen {
                 return;
             }
             drawWrapped(graphics, entry.stack.getHoverName().getString(), x + 8, y + 8, w - 16, 0xFFFFFFFF);
+            graphics.drawString(this.font, entry.stash()
+                ? Component.literal("STASH")
+                : Component.literal("INVENTORY"), x + 8, y + 30, entry.stash() ? 0xFF66DDAA : 0xFF99AABB, false);
             graphics.drawString(this.font, Component.translatable("gui.tac_rogue.shop_screen.sell_price", entry.price), x + 8, y + 42, 0xFFFFAA66, false);
             return;
         }
@@ -454,7 +471,15 @@ public class ShopScreen extends Screen {
                 if (stack.isEmpty()) continue;
                 if (stack.is(Items.BARRIER) && stack.hasTag() && stack.getOrCreateTag().getBoolean("rogue_item_locked")) continue;
                 int price = PriceManager.getSellPrice(stack);
-                if (price > 0) entries.add(new SellEntry(i, stack, price));
+                if (price > 0) entries.add(new SellEntry(i, stack, price, false));
+            }
+        }
+        for (OpenShopMessage.StashEntry stashEntry : stashSellEntries) {
+            ItemStack stack = stashEntry.stack();
+            if (stack.isEmpty()) continue;
+            int price = PriceManager.getSellPrice(stack);
+            if (price > 0) {
+                entries.add(new SellEntry(ShopService.STASH_SELL_SLOT_OFFSET + stashEntry.slot(), stack, price, true));
             }
         }
         cachedSellInventorySignature = signature;
@@ -469,6 +494,16 @@ public class ShopScreen extends Screen {
             ItemStack stack = mc.player.getInventory().getItem(i);
             if (stack.isEmpty()) continue;
             signature.append(i).append(':')
+                .append(net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(stack.getItem())).append(':')
+                .append(stack.getCount()).append(':');
+            if (stack.hasTag()) signature.append(stack.getTag().hashCode());
+            signature.append(';');
+        }
+        signature.append("|stash:");
+        for (OpenShopMessage.StashEntry entry : stashSellEntries) {
+            ItemStack stack = entry.stack();
+            if (stack.isEmpty()) continue;
+            signature.append(entry.slot()).append(':')
                 .append(net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(stack.getItem())).append(':')
                 .append(stack.getCount()).append(':');
             if (stack.hasTag()) signature.append(stack.getTag().hashCode());
@@ -746,7 +781,7 @@ public class ShopScreen extends Screen {
         private static final Compatibility NONE = new Compatibility(false, false, "");
     }
 
-    private record SellEntry(int slot, ItemStack stack, int price) {}
+    private record SellEntry(int slot, ItemStack stack, int price, boolean stash) {}
 
     @Override
     public boolean isPauseScreen() {
