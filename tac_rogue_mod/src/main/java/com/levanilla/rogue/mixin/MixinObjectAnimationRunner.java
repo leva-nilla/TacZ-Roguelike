@@ -3,6 +3,7 @@ package com.levanilla.rogue.mixin;
 import com.levanilla.rogue.core.PerkDefinition;
 import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.core.WeaponRarity;
+import com.levanilla.rogue.core.service.RogueUtilityItemService;
 import com.tacz.guns.api.client.animation.ObjectAnimation;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.item.ItemStack;
@@ -36,8 +37,9 @@ public abstract class MixinObjectAnimationRunner {
 
         if (isDrawAnimation(animation.name) && RunManager.isRunActive()) {
             float effect = PerkDefinition.sumClientCategoryEffect(PerkDefinition.Category.HANDLING);
-            if (effect > 0.0f) {
-                double speed = 1.0D + Math.min(0.85D, effect / 100.0D);
+            float utilityEffect = RogueUtilityItemService.getDrawSpeedBonusPercent(mc.player);
+            if (effect > 0.0f || utilityEffect != 0.0f) {
+                double speed = 1.0D + Math.max(-0.35D, Math.min(0.95D, (effect + utilityEffect) / 100.0D));
                 double accelerated = deltaNs * speed;
                 return accelerated >= Long.MAX_VALUE ? Long.MAX_VALUE : Math.max(1L, Math.round(accelerated));
             }

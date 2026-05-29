@@ -48,6 +48,7 @@ public final class ChestLootService {
         }
         rollDefense(loot, rand, safeFloor);
         rollTactical(loot, rand, safeFloor);
+        rollUtility(loot, rand, safeFloor);
         rollMaterial(loot, rand, safeFloor);
         rollAttachment(loot, rand, safeFloor);
         rollWeapon(loot, rand, safeFloor);
@@ -155,6 +156,13 @@ public final class ChestLootService {
             else if (roll < 0.85F) addIfPresent(loot, RogueItemFactory.createRecoveryItem("rogue:adrenaline"));
             else addIfPresent(loot, RogueItemFactory.createRecoveryItem("rogue:emp_device"));
         }
+    }
+
+    private static void rollUtility(List<ItemStack> loot, Random rand, int floor) {
+        float chance = floor <= 4 ? 0.08F : floor <= 14 ? 0.14F : floor <= 34 ? 0.20F : 0.25F;
+        if (rand.nextFloat() >= chance) return;
+        addIfPresent(loot, RogueItemFactory.createRecoveryItem(
+            RogueUtilityItemService.rollChestUtilityId(rand, floor)));
     }
 
     private static void rollMaterial(List<ItemStack> loot, Random rand, int floor) {

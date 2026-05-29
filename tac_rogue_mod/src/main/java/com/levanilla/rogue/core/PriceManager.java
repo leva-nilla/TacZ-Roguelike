@@ -278,6 +278,12 @@ public class PriceManager {
 
         // ローグアイテム（消耗品）
         if (tag.getBoolean("rogue_item")) {
+            String utilityId = tag.getString(com.levanilla.rogue.core.service.RogueUtilityItemService.UTILITY_ID_KEY);
+            if (!utilityId.isEmpty()) {
+                ShopCatalog.ShopItem utilityItem = findCatalogItem(utilityId);
+                int buyPrice = utilityItem != null ? utilityItem.price : 250;
+                return Math.round(buyPrice * GameConstants.GUN_SELL_RATE) * stack.getCount();
+            }
             int unitPrice;
             if (stack.is(net.minecraft.world.item.Items.RAW_IRON)) unitPrice = GameConstants.SCRAP_SELL_VALUE;
             else if (stack.is(net.minecraft.world.item.Items.RAW_GOLD)) unitPrice = GameConstants.GOLD_CACHE_VALUE;

@@ -237,6 +237,24 @@ public final class RogueItemFactory {
                 stack.getOrCreateTag().putInt("CustomModelData", 39013);
                 yield stack;
             }
+            case "rogue:ballistic_charm" -> createUtilityItem(Items.PRISMARINE_SHARD, itemId, 39200, 1);
+            case "rogue:quickdraw_charm" -> createUtilityItem(Items.RABBIT_FOOT, itemId, 39201, 1);
+            case "rogue:ammo_saver_charm" -> createUtilityItem(Items.AMETHYST_SHARD, itemId, 39202, 1);
+            case "rogue:ballistic_insert" -> createUtilityItem(Items.NETHERITE_SCRAP, itemId, 39203, 2);
+            case "rogue:mag_pouch_rig" -> createUtilityItem(Items.LEATHER, itemId, 39204, 2);
+            case "rogue:terminal_decoder" -> createUtilityItem(Items.COMPARATOR, itemId, 39205, 1);
+            case "rogue:recovery_beacon" -> createUtilityItem(Items.EMERALD, itemId, 39206, 1);
+            case "rogue:defense_sensor" -> createUtilityItem(Items.OBSERVER, itemId, 39207, 1);
+            case "rogue:blood_dogtag" -> createUtilityItem(Items.NAME_TAG, itemId, 39208, 2);
+            case "rogue:overheat_core" -> createUtilityItem(Items.BLAZE_POWDER, itemId, 39209, 2);
+            case "rogue:smoke_canister" -> createUtilityItem(Items.GUNPOWDER, itemId, 39210, 1);
+            case "rogue:flash_charge" -> createUtilityItem(Items.GLOWSTONE_DUST, itemId, 39211, 1);
+            case "rogue:noise_maker" -> createUtilityItem(Items.NOTE_BLOCK, itemId, 39212, 1);
+            case "rogue:portable_shield" -> createUtilityItem(Items.SHIELD, itemId, 39213, 1);
+            case "rogue:micro_turret" -> createUtilityItem(Items.DISPENSER, itemId, 39214, 1);
+            case "rogue:maintenance_kit" -> createUtilityItem(Items.IRON_NUGGET, itemId, 39215, 1);
+            case "rogue:ballistic_computer" -> createUtilityItem(Items.CLOCK, itemId, 39216, 1);
+            case "rogue:range_card" -> createUtilityItem(Items.MAP, itemId, 39217, 1);
             case "rogue:inv_upgrade" -> createSpecialPreviewItem(
                 Items.LEATHER, "shop_item.tac_rogue.inv_upgrade", 39100);
             case "rogue:stash_upgrade" -> createSpecialPreviewItem(
@@ -251,6 +269,28 @@ public final class RogueItemFactory {
                 Items.ENCHANTED_BOOK, "shop_item.tac_rogue.random_perk", 39105);
             default -> ItemStack.EMPTY;
         };
+    }
+
+    private static ItemStack createUtilityItem(net.minecraft.world.item.Item item, String itemId, int customModelData, int loreLines) {
+        ItemStack stack = new ItemStack(item);
+        String suffix = RogueUtilityItemService.translationSuffix(itemId);
+        Component[] lore = new Component[Math.max(1, loreLines + 1)];
+        lore[0] = Component.translatable(RogueUtilityItemService.isPassiveUtilityId(itemId)
+            ? "item.tac_rogue.utility.active_limit"
+            : "item.tac_rogue.utility.consumable");
+        for (int i = 0; i < loreLines; i++) {
+            lore[i + 1] = Component.translatable("item.tac_rogue." + suffix + ".lore." + i);
+        }
+        applyRecoveryLore(stack, Component.translatable("item.tac_rogue." + suffix), lore);
+        CompoundTag tag = stack.getOrCreateTag();
+        tag.putString(RogueUtilityItemService.UTILITY_ID_KEY, itemId);
+        tag.putInt("CustomModelData", customModelData);
+        if (RogueUtilityItemService.isConsumableUtilityId(itemId)) {
+            tag.putBoolean("TacRogueConsumableUtility", true);
+        } else {
+            tag.putBoolean("TacRoguePassiveUtility", true);
+        }
+        return stack;
     }
 
     private static ItemStack createSpecialPreviewItem(net.minecraft.world.item.Item item, String nameKey, int customModelData) {

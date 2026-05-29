@@ -207,7 +207,9 @@ public class ItemAndLifecycleHandler {
         if (event.getEntity() instanceof ServerPlayer player) {
             if ((stack.hasTag() && stack.getTag().getBoolean("rogue_item"))
                     || ArmorPlateService.isArmorPlate(stack)) {
-                if (stack.is(Items.HONEY_BOTTLE)) {
+                if (com.levanilla.rogue.core.service.RogueUtilityItemService.useUtilityItem(player, stack)) {
+                    event.setCanceled(true);
+                } else if (stack.is(Items.HONEY_BOTTLE)) {
                     // STAMINA SHOT: restore stamina and grant a short movement burst.
                     StaminaManager.setStamina(player, StaminaManager.getMaxStamina(player));
                     player.addEffect(new net.minecraft.world.effect.MobEffectInstance(

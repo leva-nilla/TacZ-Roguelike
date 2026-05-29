@@ -151,6 +151,7 @@ public final class PlayerPerkTickService {
 
         // PRIMAL: 最大スタミナペナルティ。取得上限はなく、積みすぎた分は対数ソフトキャップで丸める。
         staminaEffect -= softcapPenaltyPercent(primalCount * 30.0f);
+        velocityEffect += RogueUtilityItemService.getMovementSpeedPercent(player);
         // OVERCLOCKED: スタミナ最大値ペナルティは下のSTAMINAセクションで処理
         // VOLATILE: 被ダメ +20% はCombatEventHandlerで処理
 

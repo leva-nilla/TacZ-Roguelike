@@ -143,6 +143,26 @@ public final class ShopCatalog {
         items.add(new ShopItem("rogue:armor_plate", "\u2726 ARMOR PLATE", 520, Category.SPECIAL));
         items.add(new ShopItem("rogue:adrenaline", "\u2726 ADRENALINE SYRINGE", 700, Category.SPECIAL));
         items.add(new ShopItem("rogue:emp_device", "\u2726 EMP DEVICE", 450, Category.SPECIAL));
+        // --- Carry Utilities ---
+        items.add(new ShopItem("rogue:ballistic_charm", "\u25C6 BALLISTIC CHARM", 850, Category.SPECIAL));
+        items.add(new ShopItem("rogue:quickdraw_charm", "\u25C6 QUICKDRAW CHARM", 900, Category.SPECIAL));
+        items.add(new ShopItem("rogue:ammo_saver_charm", "\u25C6 AMMO SAVER CHARM", 950, Category.SPECIAL));
+        items.add(new ShopItem("rogue:ballistic_insert", "\u25C6 BALLISTIC INSERT", 1800, Category.SPECIAL));
+        items.add(new ShopItem("rogue:mag_pouch_rig", "\u25C6 MAG POUCH RIG", 1600, Category.SPECIAL));
+        items.add(new ShopItem("rogue:terminal_decoder", "\u25C6 TERMINAL DECODER", 1100, Category.SPECIAL));
+        items.add(new ShopItem("rogue:recovery_beacon", "\u25C6 RECOVERY BEACON", 1250, Category.SPECIAL));
+        items.add(new ShopItem("rogue:defense_sensor", "\u25C6 DEFENSE SENSOR", 1250, Category.SPECIAL));
+        items.add(new ShopItem("rogue:blood_dogtag", "\u25C6 BLOOD DOGTAG", 1500, Category.SPECIAL));
+        items.add(new ShopItem("rogue:overheat_core", "\u25C6 OVERHEAT CORE", 1700, Category.SPECIAL));
+        items.add(new ShopItem("rogue:maintenance_kit", "\u25C6 MAINTENANCE KIT", 1050, Category.SPECIAL));
+        items.add(new ShopItem("rogue:ballistic_computer", "\u25C6 BALLISTIC COMPUTER", 1350, Category.SPECIAL));
+        items.add(new ShopItem("rogue:range_card", "\u25C6 RANGE CARD", 800, Category.SPECIAL));
+        // --- Tactical Utilities ---
+        items.add(new ShopItem("rogue:smoke_canister", "\u2726 SMOKE CANISTER", 360, Category.SPECIAL));
+        items.add(new ShopItem("rogue:flash_charge", "\u2726 FLASH CHARGE", 420, Category.SPECIAL));
+        items.add(new ShopItem("rogue:noise_maker", "\u2726 NOISE MAKER", 260, Category.SPECIAL));
+        items.add(new ShopItem("rogue:portable_shield", "\u2726 PORTABLE SHIELD", 620, Category.SPECIAL));
+        items.add(new ShopItem("rogue:micro_turret", "\u2726 MICRO TURRET", 1400, Category.SPECIAL));
         // --- Random Perk ---
         items.add(new ShopItem("rogue:random_perk", "\u2605 RANDOM PERK", 1500, Category.SPECIAL));
         return items;

@@ -504,12 +504,14 @@ public final class FloorObjectiveService {
         }
 
         boolean occupied = false;
+        double progressMultiplier = 1.0D;
         for (UUID uuid : List.copyOf(instance.participants)) {
             ServerPlayer player = server.getPlayerList().getPlayer(uuid);
             if (player == null || player.level() != level || !player.isAlive() || player.isSpectator()) continue;
             if (player.distanceToSqr(target.getX() + 0.5D, target.getY() + 0.5D, target.getZ() + 0.5D) <= OBJECTIVE_RADIUS_SQR) {
                 occupied = true;
-                break;
+                progressMultiplier = Math.max(progressMultiplier,
+                    RogueUtilityItemService.getObjectiveProgressMultiplier(player, type));
             }
         }
 
@@ -520,7 +522,8 @@ public final class FloorObjectiveService {
         }
         int step = Math.max(1, com.levanilla.rogue.core.GameConstants.FLOOR_CLEAR_CHECK_INTERVAL);
         if (occupied && !contested) {
-            instance.objectiveHoldTicks = Math.min(instance.objectiveTarget, instance.objectiveHoldTicks + step);
+            int gain = Math.max(1, (int)Math.round(step * progressMultiplier));
+            instance.objectiveHoldTicks = Math.min(instance.objectiveTarget, instance.objectiveHoldTicks + gain);
             instance.objectiveStatusKey = type == ObjectiveType.HOLD_POSITION
                 ? (instance.objectiveLurePulseCount > 0 ? "objective.tac_rogue.status.hold_beacon" : "objective.tac_rogue.status.hold_securing")
                 : (instance.objectiveLurePulseCount > 0 ? "objective.tac_rogue.status.secure_signal" : "objective.tac_rogue.status.secure_uploading");
@@ -638,6 +641,11 @@ public final class FloorObjectiveService {
         if (floor >= 3) addIfPresent(supplies, RogueItemFactory.createRecoveryItem("rogue:armor_plate"));
         if (floor >= 8) addIfPresent(supplies, RogueItemFactory.createRecoveryItem("rogue:stamina_shot"));
         if (floor >= 15) addIfPresent(supplies, RogueItemFactory.createRecoveryItem("rogue:medkit"));
+        if (RogueUtilityItemService.hasRecoveryBeacon(player)) {
+            addIfPresent(supplies, RogueItemFactory.createRecoveryItem("rogue:armor_plate"));
+            addIfPresent(supplies, RogueItemFactory.createRecoveryItem("rogue:maintenance_kit"));
+            if (floor >= 10) addIfPresent(supplies, RogueItemFactory.createRecoveryItem("rogue:portable_shield"));
+        }
 
         int delivered = 0;
         container.clearContent();

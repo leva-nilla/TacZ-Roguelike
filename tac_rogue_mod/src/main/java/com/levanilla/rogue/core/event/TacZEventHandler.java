@@ -4,6 +4,7 @@ import com.levanilla.rogue.core.*;
 import com.levanilla.rogue.core.registry.TacZGunRegistry;
 import com.levanilla.rogue.core.service.PerkStorageService;
 import com.levanilla.rogue.core.service.RogueMobAlertService;
+import com.levanilla.rogue.core.service.RogueUtilityItemService;
 import com.levanilla.rogue.networking.TacRogueNetworking;
 import com.levanilla.rogue.world.TacRogueBossEntity;
 import com.tacz.guns.api.event.common.*;
@@ -104,6 +105,8 @@ public class TacZEventHandler {
         float ammoEfficiency = PerkDefinition.sumCategoryEffect(player, PerkDefinition.Category.AMMO_EFFICIENCY);
         float saveChance = Math.min(GameConstants.AMMO_SAVE_MAX_CHANCE,
             Math.max(0.0f, PerkDefinition.getAmmoSaveChancePercent(ammoEfficiency) / 100.0f));
+        saveChance = Math.min(GameConstants.AMMO_SAVE_MAX_CHANCE,
+            Math.max(0.0f, saveChance + RogueUtilityItemService.getExtraAmmoSaveChance(player)));
         if (saveChance > 0 && player.getRandom().nextFloat() < saveChance) {
             net.minecraft.world.item.ItemStack gun = event.getGunItemStack();
             if (gun.hasTag()) {
@@ -226,6 +229,7 @@ public class TacZEventHandler {
         // === 武器レアリティダメージ倍率 ===
         damage *= WeaponRarity.getDamageMult(heldGun);
         damage = RogueCombatEffects.applyAdrenalineDamage(attacker, damage);
+        damage *= RogueUtilityItemService.getGunDamageMultiplier(attacker, event.getHurtEntity(), event.isHeadShot());
         damage *= com.levanilla.rogue.core.service.DeepProgressService.damageMultiplier(
             attacker,
             event.getHurtEntity() instanceof net.minecraft.world.entity.LivingEntity living ? living : null,
@@ -386,6 +390,7 @@ public class TacZEventHandler {
             killer.heal(bloodlustHeal);
             killer.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.MOVEMENT_SPEED, 60, 0, false, false));
         }
+        RogueUtilityItemService.onPlayerKill(killer);
 
         // ヘッドショットキルのクエスト進行
         if (event.isHeadShot()) {

@@ -71,7 +71,9 @@ public final class ShopService {
         if (itemId.startsWith("rogue:medkit") || itemId.startsWith("rogue:field_ration")
                 || itemId.startsWith("rogue:stamina_shot") || itemId.startsWith("rogue:bandage")
                 || itemId.startsWith("rogue:armor_plate") || itemId.startsWith("rogue:adrenaline")
-                || itemId.startsWith("rogue:emp_device")) {
+                || itemId.startsWith("rogue:emp_device")
+                || RogueUtilityItemService.isPassiveUtilityId(itemId)
+                || RogueUtilityItemService.isConsumableUtilityId(itemId)) {
             if (!CurrencyManager.consumeGold(player, price)) {
                 notifyShop(player, PopupNotificationMessage.PopupType.WARNING,
                     Component.literal("SHOP"),

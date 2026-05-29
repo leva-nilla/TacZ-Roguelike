@@ -3,6 +3,7 @@ package com.levanilla.rogue.mixin;
 import com.levanilla.rogue.core.PerkDefinition;
 import com.levanilla.rogue.core.PlayerRunData;
 import com.levanilla.rogue.core.RunManager;
+import com.levanilla.rogue.core.service.RogueUtilityItemService;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
 import org.spongepowered.asm.mixin.Final;
@@ -24,9 +25,10 @@ public abstract class MixinLivingEntityDrawGun {
         if (data == null || !data.isRunActive()) return;
 
         float effect = PerkDefinition.sumCategoryEffect(player, PerkDefinition.Category.HANDLING);
-        if (effect <= 0.0f) return;
+        float utilityEffect = RogueUtilityItemService.getDrawSpeedBonusPercent(player);
+        if (effect <= 0.0f && utilityEffect == 0.0f) return;
 
-        double speedBonus = Math.min(0.85D, effect / 100.0D);
+        double speedBonus = Math.max(-0.35D, Math.min(0.95D, (effect + utilityEffect) / 100.0D));
         long adjusted = Math.round(cooldown / (1.0D + speedBonus));
         cir.setReturnValue(Math.max(0L, adjusted));
     }

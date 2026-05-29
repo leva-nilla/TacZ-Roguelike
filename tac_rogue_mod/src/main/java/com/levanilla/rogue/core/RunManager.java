@@ -176,12 +176,14 @@ public class RunManager {
 
     public static int getAmmoStackLimit(ServerPlayer player, int baseSize) {
         int capLevel = player == null ? 0 : getData(player).getAmmoCapacityLevel();
-        return Math.max(1, Math.round(baseSize * (1.0f + capLevel * 0.5f)));
+        float utilityMult = com.levanilla.rogue.core.service.RogueUtilityItemService.getAmmoCapacityMultiplier(player);
+        return Math.max(1, Math.round(baseSize * (1.0f + capLevel * 0.5f) * utilityMult));
     }
 
     public static int getAmmoReserveStackLimit(ServerPlayer player, int baseSize) {
         int capLevel = player == null ? 0 : getData(player).getAmmoCapacityLevel();
-        return Math.max(1, Math.round(baseSize * (1.5f + capLevel * 0.5f)));
+        float utilityMult = com.levanilla.rogue.core.service.RogueUtilityItemService.getAmmoCapacityMultiplier(player);
+        return Math.max(1, Math.round(baseSize * (1.5f + capLevel * 0.5f) * utilityMult));
     }
 
     // ===== 共通テレポートロジック =====

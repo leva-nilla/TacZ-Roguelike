@@ -4,6 +4,7 @@ import com.levanilla.rogue.core.*;
 import com.levanilla.rogue.core.service.PerkStorageService;
 import com.levanilla.rogue.core.service.RogueMobAlertService;
 import com.levanilla.rogue.core.service.RoguePickupService;
+import com.levanilla.rogue.core.service.RogueUtilityItemService;
 import com.levanilla.rogue.networking.StealthTakedownHintMessage;
 import com.levanilla.rogue.networking.TacRogueNetworking;
 import com.levanilla.rogue.world.TacRogueBossEntity;
@@ -297,6 +298,10 @@ public class CombatEventHandler {
                     event.setAmount(event.getAmount() * resistMult);
                 }
             }
+            float utilityDamageMult = RogueUtilityItemService.getIncomingDamageMultiplier(damagedPlayer);
+            if (utilityDamageMult != 1.0F) {
+                event.setAmount(event.getAmount() * utilityDamageMult);
+            }
             markPlayerDamaged(damagedPlayer);
         }
 
@@ -323,6 +328,7 @@ public class CombatEventHandler {
                 if (meleeHit) {
                     damage *= WeaponRarity.getMeleeSpeedOverflowDamageMultiplier(attacker);
                 }
+                damage *= RogueUtilityItemService.getMeleeDamageMultiplier(attacker);
 
                 float fortuneEffect = sumPerkEffect(attacker, "perk:FORTUNE");
                 float critChance = PerkDefinition.getCriticalChance(fortuneEffect);
@@ -486,6 +492,7 @@ public class CombatEventHandler {
                         killer.heal(bloodlustHeal);
                         killer.addEffect(new net.minecraft.world.effect.MobEffectInstance(net.minecraft.world.effect.MobEffects.MOVEMENT_SPEED, 60, 0, false, false));
                     }
+                    RogueUtilityItemService.onPlayerKill(killer);
 
                     QuestManager.advanceQuest(killer, QuestManager.QuestType.KILL_COUNT, 1);
                     if (isMarkedStealthKill(event.getEntity(), killer)) {
@@ -801,6 +808,10 @@ public class CombatEventHandler {
     private static net.minecraft.world.item.ItemStack selectUncommonUtilityDrop(net.minecraft.util.RandomSource random, int floor) {
         float armorPlateChance = floor >= 3 ? 0.32F : 0.18F;
         float roll = random.nextFloat();
+        if (floor >= 6 && roll < 0.16F) {
+            return com.levanilla.rogue.core.service.RogueItemFactory.createRecoveryItem(
+                RogueUtilityItemService.rollChestUtilityId(new java.util.Random(random.nextLong()), floor));
+        }
         if (roll < armorPlateChance) {
             return com.levanilla.rogue.core.service.RogueItemFactory.createRecoveryItem("rogue:armor_plate");
         }
@@ -811,6 +822,10 @@ public class CombatEventHandler {
     }
 
     private static net.minecraft.world.item.ItemStack selectRareUtilityDrop(net.minecraft.util.RandomSource random, int floor) {
+        if (floor >= 12 && random.nextFloat() < 0.22F) {
+            return com.levanilla.rogue.core.service.RogueItemFactory.createRecoveryItem(
+                RogueUtilityItemService.rollChestUtilityId(new java.util.Random(random.nextLong()), floor));
+        }
         if (floor >= 7 && random.nextFloat() < 0.28F) {
             return com.levanilla.rogue.core.service.RogueItemFactory.createRecoveryItem("rogue:adrenaline");
         }
