@@ -295,8 +295,8 @@ public final class RogueMobAlertService {
         if (mob == null || pos == null || !mob.isAlive() || !isRogueMob(mob)) return;
         AlertLevel current = getAlertLevel(mob);
         if (current == AlertLevel.ENGAGED) return;
-        long duration = urgent || current == AlertLevel.WARNED ? 120L : 85L;
-        double speed = urgent || current == AlertLevel.WARNED ? 1.05D : 0.94D;
+        long duration = urgent || current == AlertLevel.WARNED ? 260L : 180L;
+        double speed = urgent || current == AlertLevel.WARNED ? 1.12D : 1.02D;
         if (urgent || current.ordinal() >= AlertLevel.INVESTIGATE.ordinal()) {
             warn(mob, pos, duration, speed, reason, null);
         } else {
@@ -458,32 +458,40 @@ public final class RogueMobAlertService {
     private static Vec3 resolveInvestigationPosition(Mob mob, Vec3 pos) {
         if (mob == null || pos == null) return pos == null ? Vec3.ZERO : pos;
         BlockPos center = BlockPos.containing(pos);
-        for (int dy = 1; dy >= -5; dy--) {
-            BlockPos candidate = center.offset(0, dy, 0);
-            if (isStandable(mob, candidate)) {
-                return new Vec3(candidate.getX() + 0.5D, candidate.getY(), candidate.getZ() + 0.5D);
-            }
-        }
-        for (int radius = 1; radius <= 3; radius++) {
-            for (int dy = 1; dy >= -4; dy--) {
+        BlockPos fallback = null;
+        for (int radius = 0; radius <= 8; radius++) {
+            for (int dy = 2; dy >= -6; dy--) {
                 for (int dx = -radius; dx <= radius; dx++) {
                     for (int dz = -radius; dz <= radius; dz++) {
                         if (Math.abs(dx) != radius && Math.abs(dz) != radius) continue;
                         BlockPos candidate = center.offset(dx, dy, dz);
-                        if (isStandable(mob, candidate)) {
-                            return new Vec3(candidate.getX() + 0.5D, candidate.getY(), candidate.getZ() + 0.5D);
-                        }
+                        if (!isStandable(mob, candidate)) continue;
+                        if (fallback == null) fallback = candidate;
+                        if (isReachable(mob, candidate)) return centerOf(candidate);
                     }
                 }
             }
         }
-        return pos;
+        return fallback == null ? pos : centerOf(fallback);
     }
 
     private static boolean isStandable(Mob mob, BlockPos pos) {
         return !mob.level().getBlockState(pos.below()).isAir()
             && mob.level().getBlockState(pos).isAir()
             && mob.level().getBlockState(pos.above()).isAir();
+    }
+
+    private static boolean isReachable(Mob mob, BlockPos pos) {
+        try {
+            net.minecraft.world.level.pathfinder.Path path = mob.getNavigation().createPath(pos, 0);
+            return path != null && path.canReach();
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private static Vec3 centerOf(BlockPos pos) {
+        return new Vec3(pos.getX() + 0.5D, pos.getY(), pos.getZ() + 0.5D);
     }
 
     private static boolean shouldEngageGunshot(

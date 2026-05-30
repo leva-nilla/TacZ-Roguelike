@@ -42,15 +42,12 @@ public final class FloorObjectiveService {
     public static final String OBJECTIVE_TYPE_KEY = "TacRogueObjectiveType";
     private static final String OBJECTIVE_CACHE_FILLED_KEY = "TacRogueObjectiveCacheFilled";
 
-    private static final int SECURE_TERMINAL_TICKS = 18 * 20;
-    private static final int HOLD_POSITION_TICKS = 35 * 20;
+    private static final int SECURE_TERMINAL_TICKS = 25 * 20;
+    private static final int HOLD_POSITION_TICKS = 45 * 20;
     private static final double OBJECTIVE_RADIUS_SQR = 6.5D * 6.5D;
     private static final double HOLD_CONTEST_RADIUS = 7.0D;
-    private static final long OBJECTIVE_LURE_INTERVAL_TICKS = 50L;
-    private static final int OBJECTIVE_LURE_MOBS_PER_PULSE = 8;
-    private static final double OBJECTIVE_LURE_RADIUS_SQR = com.levanilla.rogue.core.GameConstants.FLOOR_CLEAR_RADIUS
-        * com.levanilla.rogue.core.GameConstants.FLOOR_CLEAR_RADIUS
-        * 4.4D;
+    private static final long OBJECTIVE_LURE_INTERVAL_TICKS = 35L;
+    private static final int OBJECTIVE_LURE_MOBS_PER_PULSE = 12;
     private static final java.util.Set<UUID> REWARDED_ELITES = ConcurrentHashMap.newKeySet();
     private static final ConcurrentHashMap<UUID, ObjectiveType> DEBUG_OBJECTIVE_OVERRIDES = new ConcurrentHashMap<>();
 
@@ -569,7 +566,6 @@ public final class FloorObjectiveService {
                 Mob mob = candidates.get((start + inspected) % size);
                 inspected++;
                 if (mob == null || !mob.isAlive() || mob.level() != level) continue;
-                if (mob.distanceToSqr(lurePos) > OBJECTIVE_LURE_RADIUS_SQR) continue;
                 if (mob.distanceToSqr(lurePos) <= HOLD_CONTEST_RADIUS * HOLD_CONTEST_RADIUS) continue;
                 RogueMobAlertService.drawToObjective(
                     mob,
