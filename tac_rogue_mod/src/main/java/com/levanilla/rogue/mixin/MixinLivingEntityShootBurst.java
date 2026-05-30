@@ -1,7 +1,7 @@
 package com.levanilla.rogue.mixin;
 
 import com.levanilla.rogue.core.CommonEventHandler;
-import com.levanilla.rogue.core.WeaponRarity;
+import com.levanilla.rogue.core.service.TacZFireRateService;
 import com.tacz.guns.api.item.IGun;
 import com.tacz.guns.entity.shooter.ShooterDataHolder;
 import com.tacz.guns.resource.pojo.data.gun.BurstData;
@@ -52,7 +52,7 @@ public abstract class MixinLivingEntityShootBurst {
 
         ItemStack stack = data.currentGunItem.get();
         if (stack == null || stack.isEmpty()) return minInterval;
-        return WeaponRarity.getFireRateAdjustedIntervalSeconds(minInterval, stack, shooter);
+        return TacZFireRateService.adjustedShootIntervalSeconds(minInterval, stack, shooter);
     }
 
     private boolean isLobbyShooter() {

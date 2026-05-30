@@ -39,7 +39,7 @@ public final class ShopPlacementService {
 
         for (int i = 0; i < maxSlots; i++) {
             ItemStack existing = stash.getItem(i);
-            if (existing.isEmpty() || !ItemStack.isSameItemSameTags(existing, remaining)) continue;
+            if (existing.isEmpty() || !RogueStackingService.canMerge(existing, remaining)) continue;
             int space = existing.getMaxStackSize() - existing.getCount();
             if (space <= 0) continue;
             int move = Math.min(space, remaining.getCount());
@@ -136,40 +136,53 @@ public final class ShopPlacementService {
     private static void placeAmmo(ServerPlayer player, ItemStack stack, String itemId, int price) {
         String ammoId = stack.getTag().getString("AmmoId");
         int targetSlotStart = findAmmoSlotForAmmo(player, ammoId);
-        boolean placed = false;
+        ItemStack remaining = stack.copy();
 
         if (targetSlotStart >= 0) {
-            for (int slot = targetSlotStart; slot <= targetSlotStart + 1; slot++) {
-                if (player.getInventory().items.get(slot).isEmpty()) {
-                    player.getInventory().setItem(slot, stack);
-                    placed = true;
-                    break;
-                }
-            }
+            mergeAndPlaceAmmoRange(player, remaining, targetSlotStart, targetSlotStart + 1);
         }
 
-        if (!placed) {
-            for (int slot = GameConstants.SLOT_AMMO_GUN1_START; slot <= GameConstants.SLOT_AMMO_GUN2_END; slot++) {
-                if (player.getInventory().items.get(slot).isEmpty()) {
-                    player.getInventory().setItem(slot, stack);
-                    placed = true;
-                    break;
-                }
-            }
+        if (!remaining.isEmpty()) {
+            mergeAndPlaceAmmoRange(player, remaining, GameConstants.SLOT_AMMO_GUN1_START, GameConstants.SLOT_AMMO_GUN2_END);
         }
 
-        if (!placed) {
-            placed = placeInUnlockedItemSlots(player, stack);
+        if (!remaining.isEmpty()) {
+            placeInUnlockedItemSlots(player, remaining);
         }
 
-        if (!placed) {
-            if (sendToStash(player, stack)) {
+        if (!remaining.isEmpty()) {
+            if (sendToStash(player, remaining)) {
                 notify(player, PopupNotificationMessage.PopupType.REWARD, "STASH", "Ammo overflow. Sent to stash.");
             } else {
                 refundPurchase(player, price, itemId);
             }
         } else {
             notifyPurchased(player, itemId);
+        }
+    }
+
+    private static void mergeAndPlaceAmmoRange(ServerPlayer player, ItemStack moving, int startSlot, int endSlot) {
+        if (moving.isEmpty() || !moving.hasTag() || !moving.getTag().contains("AmmoId")) return;
+        int baseMax = TacZRegistryHelper.getAmmoStackSize(moving.getTag().getString("AmmoId"));
+        int limit = com.levanilla.rogue.core.RunManager.getAmmoReserveStackLimit(player, baseMax);
+
+        for (int slot = startSlot; slot <= endSlot && !moving.isEmpty(); slot++) {
+            ItemStack existing = player.getInventory().items.get(slot);
+            if (existing.isEmpty() || !RogueStackingService.canMerge(existing, moving)) continue;
+            int space = limit - existing.getCount();
+            if (space <= 0) continue;
+            int move = Math.min(space, moving.getCount());
+            existing.grow(move);
+            moving.shrink(move);
+        }
+
+        for (int slot = startSlot; slot <= endSlot && !moving.isEmpty(); slot++) {
+            if (!player.getInventory().items.get(slot).isEmpty()) continue;
+            int move = Math.min(limit, moving.getCount());
+            ItemStack placed = moving.copy();
+            placed.setCount(move);
+            player.getInventory().setItem(slot, placed);
+            moving.shrink(move);
         }
     }
 
@@ -197,7 +210,7 @@ public final class ShopPlacementService {
         for (int slot = GameConstants.SLOT_ITEM_START; slot <= maxAllowedIndex; slot++) {
             if (slot >= GameConstants.SLOT_AMMO_GUN1_START && slot <= GameConstants.SLOT_AMMO_GUN2_END) continue;
             ItemStack existing = player.getInventory().items.get(slot);
-            if (existing.isEmpty() || !ItemStack.isSameItemSameTags(existing, remaining)) continue;
+            if (existing.isEmpty() || !RogueStackingService.canMerge(existing, remaining)) continue;
             int space = existing.getMaxStackSize() - existing.getCount();
             if (space <= 0) continue;
             int move = Math.min(space, remaining.getCount());
@@ -230,7 +243,7 @@ public final class ShopPlacementService {
             ItemStack existing = player.getInventory().items.get(slot);
             if (existing.isEmpty()) {
                 remaining -= stack.getMaxStackSize();
-            } else if (ItemStack.isSameItemSameTags(existing, stack)) {
+            } else if (RogueStackingService.canMerge(existing, stack)) {
                 remaining -= Math.max(0, existing.getMaxStackSize() - existing.getCount());
             }
             if (remaining <= 0) return true;

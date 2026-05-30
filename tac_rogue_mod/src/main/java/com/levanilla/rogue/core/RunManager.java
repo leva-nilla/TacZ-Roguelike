@@ -175,9 +175,7 @@ public class RunManager {
     }
 
     public static int getAmmoStackLimit(ServerPlayer player, int baseSize) {
-        int capLevel = player == null ? 0 : getData(player).getAmmoCapacityLevel();
-        float utilityMult = com.levanilla.rogue.core.service.RogueUtilityItemService.getAmmoCapacityMultiplier(player);
-        return Math.max(1, Math.round(baseSize * (1.0f + capLevel * 0.5f) * utilityMult));
+        return getAmmoReserveStackLimit(player, baseSize);
     }
 
     public static int getAmmoReserveStackLimit(ServerPlayer player, int baseSize) {
@@ -456,9 +454,10 @@ public class RunManager {
         for (String tag : effectivePerks) {
             perks.append(tag).append(",");
         }
+        String perkPayload = effectivePerks.isEmpty() ? "clear" : perks.toString();
         com.levanilla.rogue.networking.TacRogueNetworking.CHANNEL.send(
             net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> player),
-            new com.levanilla.rogue.networking.SyncPerksMessage(perks.toString())
+            new com.levanilla.rogue.networking.SyncPerksMessage(perkPayload)
         );
 
         long medicalBuffUntil = player.getPersistentData().getLong("TacRogueMedicalBuffUntil");

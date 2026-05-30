@@ -22,6 +22,7 @@ import com.levanilla.rogue.core.service.RogueItemFactory;
 import com.levanilla.rogue.core.service.ShopPlacementService;
 import com.levanilla.rogue.core.smoke.SmokeGenerationWalkService;
 import com.levanilla.rogue.core.smoke.SmokeTestService;
+import com.levanilla.rogue.core.event.TacZEventHandler;
 import com.levanilla.rogue.networking.TacRogueNetworking;
 import com.levanilla.rogue.world.LobbyGenerator;
 import com.levanilla.rogue.world.MapGenerator;
@@ -81,6 +82,19 @@ public class RogueAdminCommand {
                     )
                     .then(Commands.literal("reloadinfo")
                         .executes(context -> debugReloadInfo(context.getSource()))
+                    )
+                    .then(Commands.literal("fire_rate_probe")
+                        .executes(context -> debugFireRateProbeResult(context.getSource(), false))
+                        .then(Commands.literal("start")
+                            .executes(context -> debugFireRateProbeStart(context.getSource(), 10))
+                            .then(Commands.argument("seconds", IntegerArgumentType.integer(3, 60))
+                                .executes(context -> debugFireRateProbeStart(
+                                    context.getSource(),
+                                    IntegerArgumentType.getInteger(context, "seconds")))))
+                        .then(Commands.literal("result")
+                            .executes(context -> debugFireRateProbeResult(context.getSource(), false)))
+                        .then(Commands.literal("stop")
+                            .executes(context -> debugFireRateProbeResult(context.getSource(), true)))
                     )
                     .then(Commands.literal("clear_instance")
                         .executes(context -> debugClearPlayerInstance(context.getSource()))
@@ -430,6 +444,127 @@ public class RogueAdminCommand {
             send(source, "TacZ reload state unavailable: " + ex.getClass().getSimpleName());
         }
         return 1;
+    }
+
+    private static int debugFireRateProbeStart(CommandSourceStack source, int seconds) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+        if (!isFireRateProbeDimension(player)) {
+            source.sendFailure(Component.literal("[DEBUG] fire_rate_probe must be run in lobby or rogue dimension."));
+            return 0;
+        }
+
+        ItemStack stack = player.getMainHandItem();
+        if (!isTacZGun(stack)) {
+            source.sendFailure(Component.literal("[DEBUG] Hold a TacZ gun in main hand."));
+            return 0;
+        }
+
+        TacZEventHandler.startFireRateProbe(player.getUUID(), seconds);
+        send(source, "Fire rate probe started for " + seconds + "s. Hold fire, then run /rogue_admin debug fire_rate_probe result.");
+        reportFireRateProbeWeapon(source, player, stack);
+        return 1;
+    }
+
+    private static int debugFireRateProbeResult(CommandSourceStack source, boolean stop) {
+        ServerPlayer player = getPlayer(source);
+        if (player == null) return 0;
+
+        TacZEventHandler.FireRateProbeSnapshot snapshot = TacZEventHandler.getFireRateProbe(player.getUUID(), stop);
+        if (snapshot == null) {
+            source.sendFailure(Component.literal("[DEBUG] No fire_rate_probe is running. Use /rogue_admin debug fire_rate_probe start 10."));
+            return 0;
+        }
+
+        long elapsedMs = Math.max(1L, snapshot.elapsedMs());
+        float measuredRpm = snapshot.shots() * 60000.0f / elapsedMs;
+        send(source, "Fire rate probe"
+            + ": shots=" + snapshot.shots()
+            + " elapsed=" + format(elapsedMs / 1000.0f) + "s"
+            + " measured=" + format(measuredRpm) + " RPM"
+            + " remaining=" + format(snapshot.remainingMs() / 1000.0f) + "s"
+            + " complete=" + snapshot.complete()
+            + (stop ? " stopped=true" : ""));
+
+        ItemStack stack = player.getMainHandItem();
+        if (isTacZGun(stack)) {
+            reportFireRateProbeWeapon(source, player, stack);
+            int expectedRpm = estimateEffectiveRpm(player, stack);
+            if (expectedRpm > 0) {
+                float ratio = measuredRpm / expectedRpm;
+                send(source, "Fire rate probe: expected=" + expectedRpm + " RPM measured/expected=" + format(ratio));
+            }
+        }
+        return 1;
+    }
+
+    private static void reportFireRateProbeWeapon(CommandSourceStack source, ServerPlayer player, ItemStack stack) {
+        int baseRpm = estimateBaseRpm(player, stack);
+        int expectedRpm = estimateEffectiveRpm(player, stack);
+        send(source, "Fire rate probe gun"
+            + ": fireRate=" + format(WeaponRarity.getFireRateMult(stack))
+            + " fireRateEffective=" + format(WeaponRarity.getEffectiveFireRateMult(stack, player))
+            + " baseRpm=" + (baseRpm > 0 ? baseRpm : "?")
+            + " expectedRpm=" + (expectedRpm > 0 ? expectedRpm : "?")
+            + " cap=" + GameConstants.MAX_EFFECTIVE_FIRE_RATE_RPM);
+    }
+
+    private static boolean isFireRateProbeDimension(ServerPlayer player) {
+        return player.level().dimension() == CommonEventHandler.LOBBY_DIM
+            || player.level().dimension() == CommonEventHandler.ROGUE_DIM;
+    }
+
+    private static boolean isTacZGun(ItemStack stack) {
+        return stack != null && !stack.isEmpty() && stack.hasTag() && stack.getTag() != null && stack.getTag().contains("GunId");
+    }
+
+    private static int estimateBaseRpm(ServerPlayer player, ItemStack stack) {
+        try {
+            com.tacz.guns.api.item.IGun gun = com.tacz.guns.api.item.IGun.getIGunOrNull(stack);
+            if (gun == null) return -1;
+            var gunIndex = com.tacz.guns.api.TimelessAPI.getCommonGunIndex(gun.getGunId(stack));
+            if (gunIndex.isEmpty() || gunIndex.get().getGunData() == null) return -1;
+
+            com.tacz.guns.resource.pojo.data.gun.GunData gunData = gunIndex.get().getGunData();
+            com.tacz.guns.api.item.gun.FireMode fireMode = gun.getFireMode(stack);
+            if (fireMode == null || fireMode == com.tacz.guns.api.item.gun.FireMode.UNKNOWN) {
+                List<com.tacz.guns.api.item.gun.FireMode> modes = gunData.getFireModeSet();
+                if (modes == null || modes.isEmpty()) return -1;
+                fireMode = modes.get(0);
+            }
+
+            int rpm = gunData.getRoundsPerMinute(fireMode);
+            var cache = com.tacz.guns.api.entity.IGunOperator.fromLivingEntity(player).getCacheProperty();
+            if (cache != null) {
+                rpm = net.minecraft.util.Mth.clamp(
+                    cache.<Integer>getCache(com.tacz.guns.resource.modifier.custom.RpmModifier.ID),
+                    1,
+                    1200);
+            }
+            if (gunData.hasHeatData()) {
+                rpm = Math.max(1, (int) (rpm * gun.lerpRPM(stack)));
+            }
+            return Math.max(1, rpm);
+        } catch (Throwable ignored) {
+            return -1;
+        }
+    }
+
+    private static int estimateEffectiveRpm(ServerPlayer player, ItemStack stack) {
+        int baseRpm = estimateBaseRpm(player, stack);
+        if (baseRpm <= 0) return -1;
+        long baseIntervalMs = Math.max(1L, 60000L / baseRpm);
+        long effectiveIntervalMs = WeaponRarity.getFireRateAdjustedIntervalMs(baseIntervalMs, stack, player);
+        int cooldownRpm = Math.min(GameConstants.MAX_EFFECTIVE_FIRE_RATE_RPM,
+            Math.max(1, Math.round(60000.0f / Math.max(1L, effectiveIntervalMs))));
+        try {
+            com.tacz.guns.api.item.IGun gun = com.tacz.guns.api.item.IGun.getIGunOrNull(stack);
+            if (gun != null && gun.getFireMode(stack) == com.tacz.guns.api.item.gun.FireMode.AUTO) {
+                return Math.min(cooldownRpm, 1200);
+            }
+        } catch (Throwable ignored) {
+        }
+        return cooldownRpm;
     }
 
     private static int debugAlertProbe(CommandSourceStack source, int radius, boolean suppressed) {

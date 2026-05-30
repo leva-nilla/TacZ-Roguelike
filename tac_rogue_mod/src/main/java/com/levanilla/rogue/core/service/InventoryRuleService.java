@@ -270,7 +270,7 @@ public final class InventoryRuleService {
         for (int ammoSlot = GameConstants.SLOT_AMMO_GUN1_START; ammoSlot <= GameConstants.SLOT_AMMO_GUN2_END; ammoSlot++) {
             if (ammoSlot == sourceSlot) continue;
             ItemStack target = player.getInventory().getItem(ammoSlot);
-            if (!target.isEmpty() && ItemStack.isSameItemSameTags(target, overflow)) {
+            if (!target.isEmpty() && RogueStackingService.canMerge(target, overflow)) {
                 int space = RunManager.getAmmoReserveStackLimit(player, baseMax) - target.getCount();
                 if (space > 0) {
                     int move = Math.min(space, overflow.getCount());
@@ -298,7 +298,7 @@ public final class InventoryRuleService {
     private static void placeAmmoOverflow(ServerPlayer player, ItemStack overflow) {
         for (int slot = GameConstants.SLOT_ITEM_START; slot <= GameConstants.SLOT_ITEM_END; slot++) {
             ItemStack existing = player.getInventory().getItem(slot);
-            if (!existing.isEmpty() && ItemStack.isSameItemSameTags(existing, overflow)) {
+            if (!existing.isEmpty() && RogueStackingService.canMerge(existing, overflow)) {
                 int space = getGeneralAmmoLimit(player, existing) - existing.getCount();
                 if (space > 0) {
                     int move = Math.min(space, overflow.getCount());
@@ -363,7 +363,7 @@ public final class InventoryRuleService {
         for (int ammoSlot = GameConstants.SLOT_AMMO_GUN1_START; ammoSlot <= GameConstants.SLOT_AMMO_GUN2_END; ammoSlot++) {
             if (ammoSlot == sourceSlot) continue;
             ItemStack target = player.getInventory().getItem(ammoSlot);
-            if (!target.isEmpty() && ItemStack.isSameItemSameTags(target, moving)) {
+            if (!target.isEmpty() && RogueStackingService.canMerge(target, moving)) {
                 int space = reserveLimit - target.getCount();
                 if (space > 0) {
                     int move = Math.min(space, moving.getCount());

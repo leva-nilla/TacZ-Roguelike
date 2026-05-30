@@ -876,28 +876,19 @@ public class CombatEventHandler {
         }
 
         if (stack.hasTag() && stack.getTag().contains("GunId")) {
-            net.minecraft.nbt.CompoundTag attTag = new net.minecraft.nbt.CompoundTag();
-            
             float attachmentChance = 0.2f + Math.min(0.5f, floor * 0.005f);
             
             if (random.nextFloat() < attachmentChance + 0.1f) {
-                String id = getRandomAttachmentOfType("sight", random);
-                if (id != null) attTag.putString("Sight", id);
+                rollAndInstallAttachment(stack, "sight", random);
             }
             if (random.nextFloat() < attachmentChance) {
-                String id = getRandomAttachmentOfType("muzzle", random);
-                if (id != null) attTag.putString("Muzzle", id);
+                rollAndInstallAttachment(stack, "muzzle", random);
             }
             if (random.nextFloat() < attachmentChance) {
-                String id = getRandomAttachmentOfType("stock", random);
-                if (id != null) attTag.putString("Stock", id);
+                rollAndInstallAttachment(stack, "stock", random);
             }
             if (random.nextFloat() < attachmentChance * 0.6f) {
-                String id = getRandomAttachmentOfType("extended_mag", random);
-                if (id != null) attTag.putString("ExtendedMag", id);
-            }
-            if (!attTag.isEmpty()) {
-                stack.getTag().put("Attachments", attTag);
+                rollAndInstallAttachment(stack, "extended_mag", random);
             }
         }
         return stack;
@@ -947,10 +938,18 @@ public class CombatEventHandler {
         return category.isWeapon();
     }
 
-    private static String getRandomAttachmentOfType(String targetType, net.minecraft.util.RandomSource random) {
+    private static void rollAndInstallAttachment(ItemStack gunStack, String targetType, net.minecraft.util.RandomSource random) {
         java.util.List<String> valid = attachmentIdsBySlot.computeIfAbsent(targetType, CombatEventHandler::buildAttachmentIdsForSlot);
-        if (valid.isEmpty()) return null;
-        return valid.get(random.nextInt(valid.size()));
+        if (valid.isEmpty()) return;
+
+        int start = random.nextInt(valid.size());
+        int attempts = Math.min(valid.size(), 8);
+        for (int i = 0; i < attempts; i++) {
+            String attachmentId = valid.get((start + i) % valid.size());
+            if (TacZAttachmentHelper.installAttachment(gunStack, attachmentId)) {
+                return;
+            }
+        }
     }
 
     private static java.util.List<String> buildAttachmentIdsForSlot(String targetType) {

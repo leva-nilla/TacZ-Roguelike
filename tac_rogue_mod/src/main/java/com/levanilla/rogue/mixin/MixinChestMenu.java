@@ -3,6 +3,7 @@ package com.levanilla.rogue.mixin;
 import com.levanilla.rogue.core.GameConstants;
 import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.core.TacZRegistryHelper;
+import com.levanilla.rogue.core.service.RogueStackingService;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.ChestMenu;
 import net.minecraft.world.inventory.Slot;
@@ -64,7 +65,7 @@ public abstract class MixinChestMenu {
     private static void mergeIntoRange(Player player, ItemStack moving, int start, int end, int limit) {
         for (int slot = start; slot <= end && !moving.isEmpty(); slot++) {
             ItemStack target = player.getInventory().getItem(slot);
-            if (target.isEmpty() || !ItemStack.isSameItemSameTags(target, moving)) continue;
+            if (target.isEmpty() || !RogueStackingService.canMerge(target, moving)) continue;
             int space = limit - target.getCount();
             if (space <= 0) continue;
             int move = Math.min(space, moving.getCount());
@@ -90,8 +91,7 @@ public abstract class MixinChestMenu {
     }
 
     private static int clientGeneralLimit(int baseMax) {
-        int capLevel = RunManager.getGlobalAmmoCapacityLevel();
-        return Math.max(1, Math.round(baseMax * (1.0f + capLevel * 0.5f)));
+        return clientReserveLimit(baseMax);
     }
 
     private static int clientReserveLimit(int baseMax) {

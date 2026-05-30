@@ -126,7 +126,8 @@ public class PerkDefinition {
 
     private static float categoryScale(Category category) {
         return switch (category) {
-            case DAMAGE, FIRE_RATE, MELEE_SPEED, RELOAD_SPEED, MAG_SIZE, GOLD_RUSH, VELOCITY, STAMINA, DODGE ->
+            case FIRE_RATE -> GameConstants.PERK_FIRE_RATE_CATEGORY_SCALE;
+            case DAMAGE, MELEE_SPEED, RELOAD_SPEED, MAG_SIZE, GOLD_RUSH, VELOCITY, STAMINA, DODGE ->
                 GameConstants.PERK_STRONG_CATEGORY_SCALE;
             case AUTOLOADER, REGENERATION, VAMPIRE, BLOODLUST, QUICK_FIX ->
                 GameConstants.PERK_RECOVERY_CATEGORY_SCALE;

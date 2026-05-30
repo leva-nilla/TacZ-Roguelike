@@ -2,7 +2,7 @@ package com.levanilla.rogue.mixin;
 
 import com.levanilla.rogue.client.compat.LeaWindsCompat;
 import com.levanilla.rogue.core.CommonEventHandler;
-import com.levanilla.rogue.core.WeaponRarity;
+import com.levanilla.rogue.core.service.TacZFireRateService;
 import com.tacz.guns.api.item.IGun;
 import com.tacz.guns.client.resource.GunDisplayInstance;
 import com.tacz.guns.resource.pojo.data.gun.BurstData;
@@ -48,12 +48,12 @@ public abstract class MixinLocalPlayerShootBurst {
     private double tacRogue$adjustClientBurstMinInterval(BurstData burstData, IGun iGun, ItemStack mainHandItem, GunData gunData) {
         double minInterval = burstData.getMinInterval();
         if (!canAdjust(mainHandItem)) return minInterval;
-        return WeaponRarity.getFireRateAdjustedIntervalSeconds(minInterval, mainHandItem, player);
+        return TacZFireRateService.adjustedShootIntervalSeconds(minInterval, mainHandItem, player);
     }
 
     private long adjustIntervalMs(long intervalMs, ItemStack stack) {
         if (!canAdjust(stack)) return intervalMs;
-        return WeaponRarity.getFireRateAdjustedIntervalMs(intervalMs, stack, player);
+        return TacZFireRateService.adjustedShootIntervalMs(intervalMs, stack, player);
     }
 
     private boolean canAdjust(ItemStack stack) {

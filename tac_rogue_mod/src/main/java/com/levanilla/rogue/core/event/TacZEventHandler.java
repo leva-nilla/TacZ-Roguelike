@@ -5,6 +5,7 @@ import com.levanilla.rogue.core.registry.TacZGunRegistry;
 import com.levanilla.rogue.core.service.PerkStorageService;
 import com.levanilla.rogue.core.service.RogueMobAlertService;
 import com.levanilla.rogue.core.service.RogueUtilityItemService;
+import com.levanilla.rogue.core.service.TacZFireRateService;
 import com.levanilla.rogue.networking.TacRogueNetworking;
 import com.levanilla.rogue.world.TacRogueBossEntity;
 import com.tacz.guns.api.event.common.*;
@@ -50,6 +51,9 @@ public class TacZEventHandler {
     /** 射撃統計: プレイヤー → 総ヒット数 */
     private static final ConcurrentHashMap<UUID, Integer> shotsHit = new ConcurrentHashMap<>();
 
+    /** Fire Rate 実測用: プレイヤー → 期間中の発射成功数 */
+    private static final ConcurrentHashMap<UUID, FireRateProbe> fireRateProbes = new ConcurrentHashMap<>();
+
     /** 連続キル判定用: プレイヤー → 最終キルtick */
     private static final ConcurrentHashMap<UUID, Long> lastKillTick = new ConcurrentHashMap<>();
 
@@ -65,6 +69,8 @@ public class TacZEventHandler {
     public static void onGunShoot(GunShootEvent event) {
         if (event.getLogicalSide() != LogicalSide.SERVER) return;
         if (!(event.getShooter() instanceof ServerPlayer player)) return;
+
+        recordFireRateProbe(player);
 
         if (player.level().dimension() == LOBBY_DIM) {
             return;
@@ -228,6 +234,7 @@ public class TacZEventHandler {
 
         // === 武器レアリティダメージ倍率 ===
         damage *= WeaponRarity.getDamageMult(heldGun);
+        damage *= TacZFireRateService.overflowDamageMultiplier(heldGun, attacker);
         damage = RogueCombatEffects.applyAdrenalineDamage(attacker, damage);
         damage *= RogueUtilityItemService.getGunDamageMultiplier(attacker, event.getHurtEntity(), event.isHeadShot());
         damage *= com.levanilla.rogue.core.service.DeepProgressService.damageMultiplier(
@@ -474,6 +481,20 @@ public class TacZEventHandler {
         return fired > 0 ? (float) getShotsHit(playerId) / fired * 100.0f : 0.0f;
     }
 
+    public static FireRateProbeSnapshot startFireRateProbe(UUID playerId, int seconds) {
+        if (playerId == null) return null;
+        long now = System.currentTimeMillis();
+        FireRateProbe probe = new FireRateProbe(now, now + Math.max(1, seconds) * 1000L);
+        fireRateProbes.put(playerId, probe);
+        return snapshot(probe, now);
+    }
+
+    public static FireRateProbeSnapshot getFireRateProbe(UUID playerId, boolean stop) {
+        if (playerId == null) return null;
+        FireRateProbe probe = stop ? fireRateProbes.remove(playerId) : fireRateProbes.get(playerId);
+        return probe == null ? null : snapshot(probe, System.currentTimeMillis());
+    }
+
     /**
      * Check if an entity was already killed and rewarded by TacZ gun events.
      * Used by CombatEventHandler to prevent double reward with 100% certainty.
@@ -492,6 +513,8 @@ public class TacZEventHandler {
     public static void resetStats(UUID playerId) {
         shotsFired.remove(playerId);
         shotsHit.remove(playerId);
+        fireRateProbes.remove(playerId);
+        TacZFireRateService.clearOverflowCache(playerId);
     }
 
     // ===== パーク効果合算 =====
@@ -544,6 +567,37 @@ public class TacZEventHandler {
         processedGunKills.clear();
         shotsFired.clear();
         shotsHit.clear();
+        fireRateProbes.clear();
+        TacZFireRateService.clearOverflowCache();
         lastKillTick.clear();
     }
+
+    private static void recordFireRateProbe(ServerPlayer player) {
+        FireRateProbe probe = fireRateProbes.get(player.getUUID());
+        if (probe == null) return;
+
+        long now = System.currentTimeMillis();
+        if (now > probe.endMs) return;
+        if (player.level().dimension() != ROGUE_DIM && player.level().dimension() != LOBBY_DIM) return;
+        probe.shots++;
+    }
+
+    private static FireRateProbeSnapshot snapshot(FireRateProbe probe, long now) {
+        long elapsedMs = Math.max(0L, Math.min(now, probe.endMs) - probe.startMs);
+        long remainingMs = Math.max(0L, probe.endMs - now);
+        return new FireRateProbeSnapshot(probe.startMs, probe.endMs, elapsedMs, remainingMs, probe.shots, now >= probe.endMs);
+    }
+
+    private static final class FireRateProbe {
+        private final long startMs;
+        private final long endMs;
+        private int shots;
+
+        private FireRateProbe(long startMs, long endMs) {
+            this.startMs = startMs;
+            this.endMs = endMs;
+        }
+    }
+
+    public record FireRateProbeSnapshot(long startMs, long endMs, long elapsedMs, long remainingMs, int shots, boolean complete) {}
 }

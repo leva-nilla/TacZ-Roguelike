@@ -191,10 +191,6 @@ public final class ClientSyncHandler {
             }
         }
         DistExecutor.unsafeRunWhenOn(Dist.CLIENT, () -> () -> {
-            boolean hasStoredPerks = !ClientRunState.getPerkTags().isEmpty();
-            if (tags.isEmpty() && !explicitClear && hasStoredPerks) {
-                return;
-            }
             ClientRunState.setPerkTags(tags);
             com.levanilla.rogue.client.TitleRunSummary.recordPerks(tags.toArray(String[]::new));
         });

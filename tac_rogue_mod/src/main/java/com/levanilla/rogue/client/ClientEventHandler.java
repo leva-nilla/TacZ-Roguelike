@@ -12,6 +12,7 @@ import com.levanilla.rogue.client.renderer.TacRogueNpcRenderer;
 import com.levanilla.rogue.core.ModEntities;
 import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.core.WeaponRarity;
+import com.levanilla.rogue.core.service.TacZFireRateService;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -83,6 +84,10 @@ public class ClientEventHandler {
     @SubscribeEvent
     public static void onItemTooltip(net.minecraftforge.event.entity.player.ItemTooltipEvent event) {
         net.minecraft.world.item.ItemStack stack = event.getItemStack();
+        net.minecraft.world.entity.LivingEntity tooltipHolder = event.getEntity();
+        if (tooltipHolder == null) {
+            tooltipHolder = Minecraft.getInstance().player;
+        }
         if (stack.is(net.minecraft.world.item.Items.SNOWBALL)) {
             event.getToolTip().add(Component.translatable("tooltip.tac_rogue.snowball_distract"));
         }
@@ -101,6 +106,17 @@ public class ClientEventHandler {
                 "tooltip.tac_rogue.rarity.reload",
                 String.format(java.util.Locale.ROOT, "%.2f", WeaponRarity.getReloadMult(stack))
             ));
+            float reloadPerkBonus = WeaponRarity.getReloadSpeedPerkBonusPercent(tooltipHolder);
+            if (reloadPerkBonus > 0.005f) {
+                event.getToolTip().add(Component.translatable(
+                    "tooltip.tac_rogue.rarity.reload_perk",
+                    String.format(java.util.Locale.ROOT, "%.0f", reloadPerkBonus)
+                ));
+                event.getToolTip().add(Component.translatable(
+                    "tooltip.tac_rogue.rarity.reload_effective",
+                    String.format(java.util.Locale.ROOT, "%.2f", WeaponRarity.getEffectiveReloadMult(stack, tooltipHolder))
+                ));
+            }
             event.getToolTip().add(Component.translatable(
                 "tooltip.tac_rogue.rarity.magazine",
                 String.format(java.util.Locale.ROOT, "%.2f", WeaponRarity.getMagSizeMult(stack))
@@ -113,13 +129,43 @@ public class ClientEventHandler {
                 String.format(java.util.Locale.ROOT, "%.2f", fireRateMult)
             ));
             float effectiveFireRateMult = meleeStack
-                ? WeaponRarity.getEffectiveMeleeFireRateMult(stack, event.getEntity())
-                : WeaponRarity.getEffectiveFireRateMult(stack, event.getEntity());
-            if (effectiveFireRateMult > fireRateMult + 0.005f) {
+                ? WeaponRarity.getEffectiveMeleeFireRateMult(stack, tooltipHolder)
+                : WeaponRarity.getEffectiveFireRateMult(stack, tooltipHolder);
+            float fireRatePerkBonus = meleeStack
+                ? WeaponRarity.getMeleeSpeedPerkBonusPercent(tooltipHolder)
+                : WeaponRarity.getFireRatePerkBonusPercent(tooltipHolder);
+            if (fireRatePerkBonus > 0.005f) {
+                event.getToolTip().add(Component.translatable(
+                    meleeStack ? "tooltip.tac_rogue.rarity.melee_speed_perk" : "tooltip.tac_rogue.rarity.fire_rate_perk",
+                    String.format(java.util.Locale.ROOT, "%.0f", fireRatePerkBonus)
+                ));
+            }
+            if (effectiveFireRateMult > fireRateMult + 0.005f || (!meleeStack && fireRateMult > 1.005f)) {
                 event.getToolTip().add(Component.translatable(
                     meleeStack ? "tooltip.tac_rogue.rarity.melee_speed_effective" : "tooltip.tac_rogue.rarity.fire_rate_effective",
                     String.format(java.util.Locale.ROOT, "%.2f", effectiveFireRateMult)
                 ));
+            }
+            if (!meleeStack) {
+                TacZFireRateService.DisplayProfile fireRateProfile = TacZFireRateService.displayProfile(stack, tooltipHolder);
+                if (fireRateProfile.valid()) {
+                    event.getToolTip().add(Component.translatable(
+                        "tooltip.tac_rogue.rarity.fire_rate_rpm",
+                        fireRateProfile.effectiveRpm()
+                    ));
+                    if (fireRateProfile.hasAutoPracticalLimit()) {
+                        event.getToolTip().add(Component.translatable(
+                            "tooltip.tac_rogue.rarity.fire_rate_practical_rpm",
+                            fireRateProfile.practicalRpm()
+                        ));
+                    }
+                    if (fireRateProfile.hasOverflowDamageBonus()) {
+                        event.getToolTip().add(Component.translatable(
+                            "tooltip.tac_rogue.rarity.fire_rate_overflow_damage",
+                            String.format(java.util.Locale.ROOT, "%.1f", fireRateProfile.overflowDamageBonusPercent())
+                        ));
+                    }
+                }
             }
         }
     }
@@ -284,4 +330,5 @@ public class ClientEventHandler {
         String path = dimension.getPath();
         return "rogue_dimension".equals(path) || "lobby_dimension".equals(path);
     }
+
 }

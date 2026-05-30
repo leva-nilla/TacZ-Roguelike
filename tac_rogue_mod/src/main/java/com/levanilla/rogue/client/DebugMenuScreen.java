@@ -686,6 +686,24 @@ public class DebugMenuScreen extends Screen {
         graphics.drawCenteredString(this.font, previewPerk.getModifierDescriptionComponent().getString(), x + detailW / 2, y + 68, previewPerk.modifier.color);
         graphics.drawCenteredString(this.font, Component.translatable("gui.tac_rogue.debug.tag", previewPerk.toTag()), x + detailW / 2, y + 90, 0xFF888888);
         graphics.drawCenteredString(this.font, previewPerk.modifier.name() + " / Lv." + perkLevel, x + detailW / 2, y + 50, 0xFFFFFFFF);
+        int selectedCount = countSelectedPerk(previewPerk);
+        int totalCount = ClientRunState.getPerkTags().size();
+        graphics.drawCenteredString(this.font,
+            Component.literal("Owned selected: " + selectedCount + " / total: " + totalCount),
+            x + detailW / 2, y + 104, selectedCount > 0 ? 0xFFAAFFDD : 0xFFFFCC66);
+    }
+
+    private int countSelectedPerk(PerkDefinition target) {
+        if (target == null) return 0;
+        int count = 0;
+        for (String tag : ClientRunState.getPerkTags()) {
+            if (!tag.startsWith("perk:")) continue;
+            PerkDefinition perk = PerkDefinition.fromTag(tag);
+            if (perk.category == target.category && perk.modifier == target.modifier && perk.level == target.level) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private void renderQuests(GuiGraphics graphics, int panelX, int panelY, int panelW, int panelH) {

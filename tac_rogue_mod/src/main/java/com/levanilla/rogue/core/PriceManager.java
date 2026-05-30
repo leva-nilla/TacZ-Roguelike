@@ -241,15 +241,8 @@ public class PriceManager {
             String gunId = tag.getString("GunId");
             int buyPrice = getWeaponStackBuyPrice(gunId, stack);
             int gunSell = Math.round(buyPrice * GameConstants.GUN_SELL_RATE);
-            // アタッチメント価格を加算
-            if (tag.contains("Attachments")) {
-                net.minecraft.nbt.CompoundTag attachments = tag.getCompound("Attachments");
-                for (String key : attachments.getAllKeys()) {
-                    String attId = readAttachmentId(attachments, key);
-                    if (attId != null && !attId.isEmpty()) {
-                        gunSell += Math.round(getAttachmentStackBuyPrice(attId) * GameConstants.GUN_SELL_RATE);
-                    }
-                }
+            for (String attId : TacZAttachmentHelper.getInstalledAttachmentIds(stack)) {
+                gunSell += Math.round(getAttachmentStackBuyPrice(attId) * GameConstants.GUN_SELL_RATE);
             }
             return gunSell;
         }
@@ -329,14 +322,4 @@ public class PriceManager {
         return null;
     }
 
-    private static String readAttachmentId(net.minecraft.nbt.CompoundTag attachments, String key) {
-        net.minecraft.nbt.Tag raw = attachments.get(key);
-        if (raw instanceof net.minecraft.nbt.CompoundTag compound) {
-            return compound.getString("AttachmentId");
-        }
-        if (raw instanceof net.minecraft.nbt.StringTag stringTag) {
-            return stringTag.getAsString();
-        }
-        return "";
-    }
 }

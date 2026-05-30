@@ -1934,7 +1934,7 @@ public class RogueInventoryScreen extends AbstractContainerScreen<AbstractContai
 
     /**
      * アタッチメントIDからTacZのスロット種別キーを解決する。
-     * 銃NBTの Attachments タグのキー（scope, muzzle, grip, stock, laser, extended_mag 等）と照合用。
+     * TacZ 1.1.8 の AttachmentSCOPE / AttachmentMUZZLE 等に対応するスロット名との照合用。
      */
     private static String resolveAttachmentSlotType(String attachId) {
         String lower = attachId.toLowerCase();

@@ -393,11 +393,11 @@ public final class AttachmentDatabase {
                     com.tacz.guns.api.item.attachment.AttachmentType.valueOf(slotTypeStr.toUpperCase());
                 hasNativeSlot = TacZGunRegistry.isAttachmentAllowed(gunId, typeEnv);
             } catch (IllegalArgumentException e) {
-                // EXTEND_MAG (TacZ独自仕様名の可能性) などのフォールバック
+                // TacZ 1.1.8 の拡張マガジンスロット名は EXTENDED_MAG。
                 try {
                     if (slotTypeStr.equalsIgnoreCase("extended_mag")) {
                         com.tacz.guns.api.item.attachment.AttachmentType typeEnv =
-                            com.tacz.guns.api.item.attachment.AttachmentType.valueOf("EXTEND_MAG");
+                            com.tacz.guns.api.item.attachment.AttachmentType.EXTENDED_MAG;
                         hasNativeSlot = TacZGunRegistry.isAttachmentAllowed(gunId, typeEnv);
                     }
                 } catch (Exception ex) {}

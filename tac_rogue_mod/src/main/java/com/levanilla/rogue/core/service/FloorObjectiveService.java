@@ -672,7 +672,7 @@ public final class FloorObjectiveService {
         ItemStack remaining = source.copy();
         for (int i = 0; i < container.getContainerSize(); i++) {
             ItemStack existing = container.getItem(i);
-            if (existing.isEmpty() || !ItemStack.isSameItemSameTags(existing, remaining)) continue;
+            if (existing.isEmpty() || !RogueStackingService.canMerge(existing, remaining)) continue;
             int move = Math.min(remaining.getCount(), Math.max(0, existing.getMaxStackSize() - existing.getCount()));
             if (move <= 0) continue;
             existing.grow(move);

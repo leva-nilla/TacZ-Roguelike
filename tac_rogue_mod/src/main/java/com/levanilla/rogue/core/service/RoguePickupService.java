@@ -80,7 +80,7 @@ public final class RoguePickupService {
         int reserveLimit = ammoReserveLimit(player, stack);
         for (int slot = GameConstants.SLOT_AMMO_GUN1_START; slot <= GameConstants.SLOT_AMMO_GUN2_END; slot++) {
             ItemStack existing = player.getInventory().getItem(slot);
-            if (!existing.isEmpty() && ItemStack.isSameItemSameTags(existing, stack)) {
+            if (!existing.isEmpty() && RogueStackingService.canMerge(existing, stack)) {
                 int space = reserveLimit - existing.getCount();
                 if (space > 0) {
                     int transfer = Math.min(space, stack.getCount());
@@ -113,7 +113,7 @@ public final class RoguePickupService {
         int limit = ammo ? ammoGeneralLimit(player, stack) : stack.getMaxStackSize();
         for (int slot = GameConstants.SLOT_ITEM_START; slot <= GameConstants.SLOT_ITEM_END; slot++) {
             ItemStack existing = player.getInventory().getItem(slot);
-            if (!existing.isEmpty() && ItemStack.isSameItemSameTags(existing, stack)) {
+            if (!existing.isEmpty() && RogueStackingService.canMerge(existing, stack)) {
                 int space = limit - existing.getCount();
                 if (space > 0) {
                     int transfer = Math.min(space, stack.getCount());
@@ -148,7 +148,7 @@ public final class RoguePickupService {
             if (isLocked) {
                 continue;
             }
-            if (!existing.isEmpty() && ItemStack.isSameItemSameTags(existing, stack)) {
+            if (!existing.isEmpty() && RogueStackingService.canMerge(existing, stack)) {
                 int space = limit - existing.getCount();
                 if (space > 0) {
                     int transfer = Math.min(space, stack.getCount());

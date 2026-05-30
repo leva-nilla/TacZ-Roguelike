@@ -16,10 +16,10 @@ public class WeaponRarity {
 
     public enum Rarity {
         COMMON(1, "Common", net.minecraft.ChatFormatting.GRAY, 1.0f, 1.0f, 1.0f, 1.00f, 0xFFAAAAAA),
-        UNCOMMON(2, "Uncommon", net.minecraft.ChatFormatting.GREEN, 1.12f, 0.93f, 1.08f, 1.07f, 0xFF55FF55),
-        RARE(3, "Rare", net.minecraft.ChatFormatting.BLUE, 1.28f, 0.86f, 1.18f, 1.16f, 0xFF5555FF),
-        EPIC(4, "Epic", net.minecraft.ChatFormatting.DARK_PURPLE, 1.48f, 0.78f, 1.32f, 1.26f, 0xFFAA00AA),
-        LEGENDARY(5, "Legendary", net.minecraft.ChatFormatting.GOLD, 1.75f, 0.68f, 1.50f, 1.40f, 0xFFFFAA00);
+        UNCOMMON(2, "Uncommon", net.minecraft.ChatFormatting.GREEN, 1.12f, 0.93f, 1.08f, 1.03f, 0xFF55FF55),
+        RARE(3, "Rare", net.minecraft.ChatFormatting.BLUE, 1.28f, 0.86f, 1.18f, 1.07f, 0xFF5555FF),
+        EPIC(4, "Epic", net.minecraft.ChatFormatting.DARK_PURPLE, 1.48f, 0.78f, 1.32f, 1.11f, 0xFFAA00AA),
+        LEGENDARY(5, "Legendary", net.minecraft.ChatFormatting.GOLD, 1.75f, 0.68f, 1.50f, 1.16f, 0xFFFFAA00);
 
         public final int stars;
         public final String name;
@@ -143,10 +143,15 @@ public class WeaponRarity {
         return mult > 0 ? Math.min(mult, getRarity(gun).reloadMult) : getRarity(gun).reloadMult;
     }
 
+    /** RELOAD_SPEED パークの実効ボーナスを取得 */
+    public static float getReloadSpeedPerkBonusPercent(LivingEntity holder) {
+        return PerkDefinition.sumCategoryEffect(holder, PerkDefinition.Category.RELOAD_SPEED);
+    }
+
     /** レアリティと RELOAD_SPEED パークを合算した実効リロード時間倍率を取得 */
     public static float getEffectiveReloadMult(ItemStack gun, LivingEntity holder) {
         float mult = getReloadMult(gun);
-        float reloadBonus = PerkDefinition.sumCategoryEffect(holder, PerkDefinition.Category.RELOAD_SPEED);
+        float reloadBonus = getReloadSpeedPerkBonusPercent(holder);
         if (reloadBonus > 0.0f) {
             mult /= (1.0f + reloadBonus / 100.0f);
         }
@@ -163,15 +168,16 @@ public class WeaponRarity {
     /** 連射速度倍率を取得 */
     public static float getFireRateMult(ItemStack gun) {
         if (!gun.hasTag()) return 1.0f;
-        CompoundTag tag = gun.getTag();
-        float mult = tag.getFloat("RogueFireRateMult");
-        if (mult > 0) return Math.max(mult, getRarity(gun).fireRateMult);
+        // RogueFireRateMult is derived only from RogueRarity. Ignore stale pre-0.9.6 values
+        // so existing guns pick up the current Fire Rate balance table.
         return getRarity(gun).fireRateMult;
     }
 
     /** FIRE_RATE パークのソフトキャップ後ボーナスを取得 */
     public static float getFireRatePerkBonusPercent(LivingEntity holder) {
-        float fireRateBonus = PerkDefinition.sumCategoryEffect(holder, PerkDefinition.Category.FIRE_RATE);
+        float fireRateBonus = holder != null
+            ? PerkDefinition.sumCategoryEffect(holder, PerkDefinition.Category.FIRE_RATE)
+            : PerkDefinition.sumClientCategoryEffect(PerkDefinition.Category.FIRE_RATE);
         return softcapPercent(
             fireRateBonus,
             GameConstants.FIRE_RATE_SOFTCAP_START,
@@ -190,7 +196,9 @@ public class WeaponRarity {
     }
 
     public static float getRawMeleeSpeedPerkBonusPercent(LivingEntity holder) {
-        return PerkDefinition.sumCategoryEffect(holder, PerkDefinition.Category.MELEE_SPEED);
+        return holder != null
+            ? PerkDefinition.sumCategoryEffect(holder, PerkDefinition.Category.MELEE_SPEED)
+            : PerkDefinition.sumClientCategoryEffect(PerkDefinition.Category.MELEE_SPEED);
     }
 
     public static float getMeleeSpeedOverflowPercent(LivingEntity holder) {
@@ -226,6 +234,7 @@ public class WeaponRarity {
             mult *= 1.0f + perkBonus / 100.0f;
         }
         mult *= com.levanilla.rogue.core.service.DeepProgressService.fireRateMultiplier(gun);
+        // FIRE_RATE is an upgrade path. Deep progression can stop adding speed, but must not slow the weapon below base.
         return Math.max(1.0f, mult);
     }
 
@@ -240,19 +249,11 @@ public class WeaponRarity {
     }
 
     public static long getFireRateAdjustedIntervalMs(long originalIntervalMs, ItemStack gun, LivingEntity holder) {
-        if (originalIntervalMs <= 0L) return originalIntervalMs;
-        float fireRateMult = getEffectiveFireRateMult(gun, holder);
-        if (fireRateMult <= 1.005f) return originalIntervalMs;
-
-        long adjustedIntervalMs = Math.max(1L, Math.round(originalIntervalMs / fireRateMult));
-        long minIntervalMs = Math.max(1L, Math.round(60000.0f / GameConstants.MAX_EFFECTIVE_FIRE_RATE_RPM));
-        return Math.min(originalIntervalMs, Math.max(minIntervalMs, adjustedIntervalMs));
+        return com.levanilla.rogue.core.service.TacZFireRateService.adjustedShootIntervalMs(originalIntervalMs, gun, holder);
     }
 
     public static double getFireRateAdjustedIntervalSeconds(double originalIntervalSeconds, ItemStack gun, LivingEntity holder) {
-        if (originalIntervalSeconds <= 0.0D) return originalIntervalSeconds;
-        long originalMs = Math.max(1L, Math.round(originalIntervalSeconds * 1000.0D));
-        return getFireRateAdjustedIntervalMs(originalMs, gun, holder) / 1000.0D;
+        return com.levanilla.rogue.core.service.TacZFireRateService.adjustedShootIntervalSeconds(originalIntervalSeconds, gun, holder);
     }
 
     public static int getMeleeFireRateAdjustedTicks(int originalTicks, ItemStack melee, LivingEntity holder) {

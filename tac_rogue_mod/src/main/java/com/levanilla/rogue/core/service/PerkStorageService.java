@@ -138,6 +138,9 @@ public final class PerkStorageService {
         if (entity instanceof ServerPlayer player) {
             return sumEffect(player, "perk:" + category.name());
         }
+        if (entity.level().isClientSide) {
+            return PerkDefinition.sumClientCategoryEffect(category);
+        }
         float total = 0.0f;
         String prefix = "perk:" + category.name();
         for (String tag : entity.getTags()) {

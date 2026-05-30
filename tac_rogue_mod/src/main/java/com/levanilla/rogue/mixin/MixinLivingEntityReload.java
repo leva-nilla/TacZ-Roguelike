@@ -1,6 +1,7 @@
 package com.levanilla.rogue.mixin;
 
 import com.levanilla.rogue.core.WeaponRarity;
+import com.levanilla.rogue.core.CommonEventHandler;
 import com.tacz.guns.api.entity.ReloadState;
 import com.tacz.guns.api.item.IGun;
 import com.tacz.guns.entity.shooter.ShooterDataHolder;
@@ -22,7 +23,9 @@ public abstract class MixinLivingEntityReload {
     @Inject(method = "reload", at = @At("TAIL"), remap = false)
     private void tacRogue$accelerateReloadByRarity(CallbackInfo ci) {
         if (data == null || data.reloadTimestamp < 0 || data.currentGunItem == null) return;
-        if (shooter == null || shooter.level().dimension() != com.levanilla.rogue.core.CommonEventHandler.ROGUE_DIM) return;
+        if (shooter == null
+            || (shooter.level().dimension() != CommonEventHandler.ROGUE_DIM
+                && shooter.level().dimension() != CommonEventHandler.LOBBY_DIM)) return;
 
         ItemStack stack = data.currentGunItem.get();
         if (stack == null || stack.isEmpty()) return;

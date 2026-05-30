@@ -1,8 +1,6 @@
 package com.levanilla.rogue.mixin;
 
 import com.levanilla.rogue.core.PerkDefinition;
-import com.levanilla.rogue.core.PlayerRunData;
-import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.core.service.RogueUtilityItemService;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.LivingEntity;
@@ -21,8 +19,6 @@ public abstract class MixinLivingEntityDrawGun {
     private void tacRogue$applyHandlingDrawSpeed(CallbackInfoReturnable<Long> cir) {
         long cooldown = cir.getReturnValue();
         if (cooldown <= 0L || !(shooter instanceof ServerPlayer player)) return;
-        PlayerRunData data = RunManager.getDataOrNull(player.getUUID());
-        if (data == null || !data.isRunActive()) return;
 
         float effect = PerkDefinition.sumCategoryEffect(player, PerkDefinition.Category.HANDLING);
         float utilityEffect = RogueUtilityItemService.getDrawSpeedBonusPercent(player);

@@ -168,6 +168,8 @@ public final class GameConstants {
     public static final float PERK_LEVEL_POST_SOFTCAP_SCALE = 0.65f;
     /** 強カテゴリの追加係数 */
     public static final float PERK_STRONG_CATEGORY_SCALE = 0.85f;
+    /** Fire Rate はTacZの実射撃上限へ早く届きすぎるため専用に抑える */
+    public static final float PERK_FIRE_RATE_CATEGORY_SCALE = 0.30f;
     /** 回復・自動化カテゴリの追加係数 */
     public static final float PERK_RECOVERY_CATEGORY_SCALE = 0.90f;
 
@@ -205,14 +207,20 @@ public final class GameConstants {
     public static final float PERK_RECOVERY_HEAL_DIVISOR = 20.0f;
     /** レアリティ/パーク合算後のリロード時間倍率下限 */
     public static final float MIN_EFFECTIVE_RELOAD_MULT = 0.35f;
-    /** レアリティ/パーク合算後の実効連射速度上限 */
-    public static final int MAX_EFFECTIVE_FIRE_RATE_RPM = 1440;
+    /** レアリティ/パーク合算後の実効連射速度上限。TacZ/MC tick由来のAUTO実用上限に合わせる */
+    public static final int MAX_EFFECTIVE_FIRE_RATE_RPM = 1200;
     /** FIRE_RATE パークのソフトキャップ開始値 */
-    public static final float FIRE_RATE_SOFTCAP_START = 80.0f;
+    public static final float FIRE_RATE_SOFTCAP_START = 35.0f;
     /** FIRE_RATE パークのソフトキャップ後の伸び率 */
-    public static final float FIRE_RATE_POST_SOFTCAP_SCALE = 0.20f;
+    public static final float FIRE_RATE_POST_SOFTCAP_SCALE = 0.18f;
     /** FIRE_RATE パークの最大ボーナス */
-    public static final float FIRE_RATE_HARD_CAP = 125.0f;
+    public static final float FIRE_RATE_HARD_CAP = 60.0f;
+    /** 連射速度が上限に近づくほど実RPM上昇を圧縮する強さ */
+    public static final float FIRE_RATE_RPM_APPROACH_SOFTCAP_CURVE = 1.10f;
+    /** 圧縮された連射RPM100あたりの追加銃ダメージ */
+    public static final float FIRE_RATE_OVERFLOW_DAMAGE_PER_100_RPM = 0.025f;
+    /** 連射上限超過変換による追加銃ダメージ上限 */
+    public static final float FIRE_RATE_OVERFLOW_DAMAGE_MAX = 0.20f;
     /** MELEE_SPEED パークの最大ボーナス */
     public static final float MELEE_SPEED_HARD_CAP = 165.0f;
     /** 近接速度の実効上限を超えた効果値を近接ダメージへ変換する係数 */

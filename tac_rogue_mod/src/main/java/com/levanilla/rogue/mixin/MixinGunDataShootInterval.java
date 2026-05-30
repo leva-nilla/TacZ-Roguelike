@@ -1,7 +1,7 @@
 package com.levanilla.rogue.mixin;
 
 import com.levanilla.rogue.core.CommonEventHandler;
-import com.levanilla.rogue.core.WeaponRarity;
+import com.levanilla.rogue.core.service.TacZFireRateService;
 import com.tacz.guns.api.item.gun.FireMode;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.item.ItemStack;
@@ -12,6 +12,11 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(value = com.tacz.guns.resource.pojo.data.gun.GunData.class, remap = false)
 public abstract class MixinGunDataShootInterval {
+    /*
+     * TacZ 1.1.8 clamps attachment-adjusted RPM inside GunData#getShootInterval to 1200.
+     * This mixin intentionally scales the returned interval after that clamp, so Fire Rate
+     * perks and rarity can extend effective RPM up to GameConstants.MAX_EFFECTIVE_FIRE_RATE_RPM.
+     */
     @Inject(method = "getShootInterval", at = @At("RETURN"), cancellable = true, remap = false)
     private void tacRogue$applyFireRateScaling(LivingEntity shooter, FireMode fireMode, ItemStack gunStack,
                                                CallbackInfoReturnable<Long> cir) {
@@ -21,7 +26,7 @@ public abstract class MixinGunDataShootInterval {
         if (gunStack == null || gunStack.isEmpty()) return;
 
         long originalIntervalMs = cir.getReturnValue();
-        long adjustedIntervalMs = WeaponRarity.getFireRateAdjustedIntervalMs(originalIntervalMs, gunStack, shooter);
+        long adjustedIntervalMs = TacZFireRateService.adjustedShootIntervalMs(originalIntervalMs, gunStack, shooter);
         if (adjustedIntervalMs != originalIntervalMs) {
             cir.setReturnValue(adjustedIntervalMs);
         }

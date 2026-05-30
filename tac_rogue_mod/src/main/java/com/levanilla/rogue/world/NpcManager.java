@@ -8,6 +8,7 @@ import com.levanilla.rogue.core.PriceManager;
 import com.levanilla.rogue.core.QuestManager;
 import com.levanilla.rogue.core.RunManager;
 import com.levanilla.rogue.core.StashSavedData;
+import com.levanilla.rogue.core.TacZAttachmentHelper;
 import com.levanilla.rogue.core.TacZRegistryHelper;
 import com.levanilla.rogue.core.WeaponRarity;
 import com.levanilla.rogue.core.registry.AttachmentDatabase;
@@ -872,18 +873,21 @@ public class NpcManager {
         if (tag == null) return "item:" + base;
         if (tag.contains("AmmoId")) return "ammo:" + tag.getString("AmmoId");
         if (tag.contains("AttachmentId")) return "attachment:" + tag.getString("AttachmentId");
-        if (tag.contains("MeleeWeaponId")) return "melee:" + tag.getString("MeleeWeaponId") + ":" + stableLoadoutTag(tag);
-        if (tag.contains("GunId")) return "gun:" + tag.getString("GunId") + ":" + stableLoadoutTag(tag);
+        if (tag.contains("MeleeWeaponId")) return "melee:" + tag.getString("MeleeWeaponId") + ":" + stableLoadoutTag(stack);
+        if (tag.contains("GunId")) return "gun:" + tag.getString("GunId") + ":" + stableLoadoutTag(stack);
         if (tag.getBoolean("rogue_item")) return "rogue_item:" + base + ":" + tag.getInt("CustomModelData");
         return "item:" + base + ":" + tag;
     }
 
-    private static String stableLoadoutTag(CompoundTag tag) {
+    private static String stableLoadoutTag(ItemStack stack) {
+        CompoundTag tag = stack.getTag();
+        if (tag == null) return "";
         List<String> parts = new ArrayList<>();
         if (tag.contains("RogueRarity")) parts.add("rarity=" + tag.getString("RogueRarity"));
         if (tag.contains("WeaponRarity")) parts.add("rarity2=" + tag.getString("WeaponRarity"));
         if (tag.contains("TacRogueRarity")) parts.add("rarity3=" + tag.getString("TacRogueRarity"));
-        if (tag.contains("Attachments")) parts.add("attachments=" + tag.getCompound("Attachments"));
+        String attachments = TacZAttachmentHelper.installedAttachmentSummary(stack);
+        if (!attachments.isBlank()) parts.add("attachments=" + attachments);
         if (tag.contains("DeepModifier")) parts.add("deep=" + tag.getString("DeepModifier"));
         return String.join("|", parts);
     }

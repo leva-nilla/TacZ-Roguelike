@@ -12,7 +12,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 @Mixin(AmmoItem.class)
 public abstract class MixinAmmoItem {
-    @Inject(method = {"getMaxStackSize(Lnet/minecraft/world/item/ItemStack;)I", "m_5866_(Lnet/minecraft/world/item/ItemStack;)I"}, at = @At("HEAD"), cancellable = true, remap = false)
+    @Inject(method = "getMaxStackSize(Lnet/minecraft/world/item/ItemStack;)I", at = @At("HEAD"), cancellable = true, remap = false)
     private void onGetMaxStackSize(ItemStack stack, CallbackInfoReturnable<Integer> cir) {
         if (stack.getItem() instanceof IAmmo iAmmo) {
             int baseSize = TimelessAPI.getCommonAmmoIndex(iAmmo.getAmmoId(stack))
