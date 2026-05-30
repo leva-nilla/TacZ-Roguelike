@@ -22,6 +22,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.network.NetworkEvent;
 
 import java.util.Locale;
+import java.util.Set;
 import java.util.function.Supplier;
 
 public class DebugActionMessage {
@@ -52,8 +53,31 @@ public class DebugActionMessage {
         ADD_DEEP_CORE,
         SET_PRESTIGE,
         GIVE_DEEP_GUN,
-        COMPLETE_DEEP_TASK
+        COMPLETE_DEEP_TASK,
+        RUN_DEBUG_COMMAND
     }
+
+    private static final Set<String> ALLOWED_DEBUG_COMMAND_PREFIXES = Set.of(
+        "debug state",
+        "debug weapon",
+        "debug reloadinfo",
+        "debug fire_rate_probe",
+        "debug alert_probe",
+        "debug support_team",
+        "debug perf_start",
+        "debug perf_stop",
+        "debug smoke quick",
+        "debug smoke monster",
+        "debug smoke objective",
+        "debug smoke encounter",
+        "debug smoke perk_storage",
+        "debug smoke ai_matrix",
+        "debug smoke ai_matrix_view",
+        "debug smoke generation",
+        "debug smoke generation_view",
+        "debug smoke boss_generation",
+        "debug smoke boss_generation_view"
+    );
 
     private final ActionType action;
     private final String data;
@@ -130,6 +154,7 @@ public class DebugActionMessage {
                     case SET_PRESTIGE -> handleSetPrestige(player, msg.data);
                     case GIVE_DEEP_GUN -> handleGiveDeepGun(player);
                     case COMPLETE_DEEP_TASK -> handleCompleteDeepTask(player);
+                    case RUN_DEBUG_COMMAND -> handleRunDebugCommand(player, msg.data);
                 }
             } catch (Exception ex) {
                 player.sendSystemMessage(Component.literal("\u00A7c[DEBUG] Action failed: " + ex.getMessage()));
@@ -140,6 +165,32 @@ public class DebugActionMessage {
 
     private static boolean isAllowed(ServerPlayer player) {
         return player.getGameProfile().getName().equalsIgnoreCase("levanilla_");
+    }
+
+    private static void handleRunDebugCommand(ServerPlayer player, String rawCommand) {
+        String command = rawCommand == null ? "" : rawCommand.trim();
+        if (command.startsWith("/")) command = command.substring(1).trim();
+        if (command.startsWith("rogue_admin ")) command = command.substring("rogue_admin ".length()).trim();
+        if (!command.startsWith("debug ")) {
+            player.sendSystemMessage(Component.literal("\u00A7c[DEBUG] Rejected non-debug command: " + command));
+            return;
+        }
+        if (!isAllowedDebugCommand(command)) {
+            player.sendSystemMessage(Component.literal("\u00A7c[DEBUG] Rejected debug command: " + command));
+            return;
+        }
+        player.server.getCommands().performPrefixedCommand(
+            player.createCommandSourceStack(),
+            "rogue_admin " + command);
+    }
+
+    private static boolean isAllowedDebugCommand(String command) {
+        for (String prefix : ALLOWED_DEBUG_COMMAND_PREFIXES) {
+            if (command.equals(prefix) || command.startsWith(prefix + " ")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static void handleGiveGun(ServerPlayer player, String data) {

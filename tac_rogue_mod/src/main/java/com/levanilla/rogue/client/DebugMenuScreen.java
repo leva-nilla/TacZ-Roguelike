@@ -77,6 +77,8 @@ public class DebugMenuScreen extends Screen {
     private List<ShopCatalog.ShopItem> cachedWeaponSource = null;
     private ShopCatalog.Category cachedWeaponCategory = null;
     private String cachedWeaponSearch = null;
+    private List<DebugItem> cachedFilteredDebugItems = List.of();
+    private String cachedDebugItemSearch = null;
     private final Map<String, ItemStack> previewWeaponStackCache = new HashMap<>();
     private final Map<String, ItemStack> previewDebugItemStackCache = new HashMap<>();
     private WeaponRarity.Rarity cachedPreviewRarity = null;
@@ -370,7 +372,7 @@ public class DebugMenuScreen extends Screen {
     }
 
     private void initState(int panelX, int panelY, int panelW, int panelH) {
-        int controlsY = Math.min(panelY + panelH - 100, panelY + 166);
+        int controlsY = Math.min(panelY + panelH - 150, panelY + 158);
         int usableW = panelW - 36;
         int cols = panelW >= 650 ? 5 : panelW >= 500 ? 4 : 3;
         addButtonGrid(panelX + 18, controlsY, usableW, cols, List.of(
@@ -413,6 +415,16 @@ public class DebugMenuScreen extends Screen {
                 send(DebugActionMessage.ActionType.COMPLETE_DEEP_TASK, "")),
             new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.prestige_set"), b ->
                 send(DebugActionMessage.ActionType.SET_PRESTIGE, "1")),
+            debugCommandButton("gui.tac_rogue.debug.cmd_smoke_monster", "debug smoke monster"),
+            debugCommandButton("gui.tac_rogue.debug.cmd_smoke_objective", "debug smoke objective"),
+            debugCommandButton("gui.tac_rogue.debug.cmd_smoke_encounter", "debug smoke encounter"),
+            debugCommandButton("gui.tac_rogue.debug.cmd_smoke_perk_storage", "debug smoke perk_storage"),
+            debugCommandButton("gui.tac_rogue.debug.cmd_perf_start", "debug perf_start 30 gui"),
+            debugCommandButton("gui.tac_rogue.debug.cmd_perf_stop", "debug perf_stop"),
+            debugCommandButton("gui.tac_rogue.debug.cmd_fire_probe", "debug fire_rate_probe start 10"),
+            debugCommandButton("gui.tac_rogue.debug.cmd_fire_result", "debug fire_rate_probe result"),
+            debugCommandButton("gui.tac_rogue.debug.cmd_alert_probe", "debug alert_probe 40 false"),
+            debugCommandButton("gui.tac_rogue.debug.cmd_support_team", "debug support_team 4"),
             new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.boss_breach"), b ->
                 send(DebugActionMessage.ActionType.SPAWN_BOSS, "BREACHER")),
             new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.boss_cmd"), b ->
@@ -424,6 +436,11 @@ public class DebugMenuScreen extends Screen {
             new DebugButtonSpec(Component.translatable("gui.tac_rogue.debug.boss_lev"), b ->
                 send(DebugActionMessage.ActionType.SPAWN_BOSS, "LEVIATHAN"))
         ));
+    }
+
+    private DebugButtonSpec debugCommandButton(String langKey, String command) {
+        return new DebugButtonSpec(Component.translatable(langKey), b ->
+            send(DebugActionMessage.ActionType.RUN_DEBUG_COMMAND, command));
     }
 
     private void initMultiplayer(int panelX, int panelY, int panelW, int panelH) {
@@ -496,7 +513,14 @@ public class DebugMenuScreen extends Screen {
 
     private List<DebugItem> getFilteredDebugItems() {
         String query = itemSearch.toLowerCase(Locale.ROOT).trim();
-        if (query.isEmpty()) return DEBUG_ITEMS;
+        if (query.equals(cachedDebugItemSearch)) {
+            return cachedFilteredDebugItems;
+        }
+        if (query.isEmpty()) {
+            cachedDebugItemSearch = query;
+            cachedFilteredDebugItems = DEBUG_ITEMS;
+            return cachedFilteredDebugItems;
+        }
         List<DebugItem> result = new ArrayList<>();
         for (DebugItem item : DEBUG_ITEMS) {
             if (item.id().toLowerCase(Locale.ROOT).contains(query)
@@ -505,7 +529,9 @@ public class DebugMenuScreen extends Screen {
                 result.add(item);
             }
         }
-        return result;
+        cachedDebugItemSearch = query;
+        cachedFilteredDebugItems = result;
+        return cachedFilteredDebugItems;
     }
 
     private void send(DebugActionMessage.ActionType action, String data) {
@@ -731,10 +757,17 @@ public class DebugMenuScreen extends Screen {
             Component.translatable("gui.tac_rogue.debug.state.gold", ClientRunState.getGold()),
             Component.translatable("gui.tac_rogue.debug.state.floor", ClientRunState.getFloor()),
             Component.translatable("gui.tac_rogue.debug.state.max_floor", ClientRunState.getMaxReachedFloor()),
+            Component.translatable("gui.tac_rogue.debug.state.theme", ClientRunState.getThemeName()),
             Component.translatable("gui.tac_rogue.debug.state.run_active", ClientRunState.isRunActive()),
             Component.translatable("gui.tac_rogue.debug.state.floor_cleared", ClientRunState.isFloorCleared()),
             Component.translatable("gui.tac_rogue.debug.state.difficulty", DifficultyManager.getDifficulty().displayName),
-            Component.translatable("gui.tac_rogue.debug.state.flashlight", ClientRunState.getFlashlightLevel())
+            Component.translatable("gui.tac_rogue.debug.state.flashlight", ClientRunState.getFlashlightLevel()),
+            Component.translatable("gui.tac_rogue.debug.state.perks", ClientRunState.getPerkTags().size()),
+            Component.translatable("gui.tac_rogue.debug.state.upgrades",
+                ClientRunState.getAmmoCapacityLevel(), ClientRunState.getInventoryLevel(), ClientRunState.getMeleeLevel()),
+            Component.translatable("gui.tac_rogue.debug.state.deep",
+                ClientRunState.getDeepCore(), ClientRunState.getPrestigeLevel(), ClientRunState.getCurrentDeepBand()),
+            Component.translatable("gui.tac_rogue.debug.state.ai_overlay", DebugAiOverlayManager.isEnabled() ? "ON" : "OFF")
         );
         for (int i = 0; i < rows.size(); i++) {
             int ry = y + i * 16;

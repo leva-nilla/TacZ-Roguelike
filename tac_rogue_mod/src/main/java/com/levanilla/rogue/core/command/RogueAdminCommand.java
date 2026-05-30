@@ -77,6 +77,9 @@ public class RogueAdminCommand {
                     .then(Commands.literal("state")
                         .executes(context -> debugState(context.getSource()))
                     )
+                    .then(Commands.literal("list")
+                        .executes(context -> debugList(context.getSource()))
+                    )
                     .then(Commands.literal("weapon")
                         .executes(context -> debugWeapon(context.getSource()))
                     )
@@ -370,6 +373,14 @@ public class RogueAdminCommand {
 
         TacRogueNetworking.openDebugMenu(player);
         send(source, "Opened debug menu.");
+        return 1;
+    }
+
+    private static int debugList(CommandSourceStack source) {
+        send(source, "Core: /rogue_admin debug state | weapon | reloadinfo | fire_rate_probe start 10");
+        send(source, "AI: /rogue_admin debug alert_probe 40 false | support_team 4 | smoke monster | smoke ai_matrix_view");
+        send(source, "Objective: /rogue_admin debug smoke objective | smoke encounter | smoke generation_view | smoke boss_generation_view");
+        send(source, "Perf: /rogue_admin debug perf_start 30 label | perf_stop | F9 opens GUI, F10 toggles AI HUD");
         return 1;
     }
 
