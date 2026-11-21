@@ -1,5 +1,7 @@
 # Ammo Slots and Dungeon Generation Notes
 
+> Historical planning note. See the [current specification](../current-spec.md) for 0.9.7 behavior.
+
 Date: 2026-05-23
 
 ## E1-E3 Ammo Placement
