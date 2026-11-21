@@ -1,6 +1,6 @@
 # 現行仕様 — 0.9.7
 
-基準: `0.9.7` / `adfeeaf`。以下はコードから確認した仕様で、Modrinth 公開版 0.9.5 の挙動や、すべての実機確認を保証するものではない。[版の一覧](README.md) · [レビュー](reviews/0.9.7.md)
+基準: `0.9.7` / `adfeeaf` と開発再開時の修正。以下はコードから確認した仕様で、Modrinth 公開版 0.9.5 の挙動や、すべての実機確認を保証するものではない。[版の一覧](README.md) · [レビュー](reviews/0.9.7.md)
 
 ## 出撃から帰還まで
 
@@ -24,7 +24,7 @@
 ## 装備・経済
 
 - 敵撃破などでゴールドを得て、武器・弾薬・アタッチメントを売買する。ロビーではスタッシュ、補給、ロードアウトの保存・復元、装備枠などのアップグレードを利用できる。
-- 補給箱は生成された箱ごとのシードを使って戦利品を抽選し、取得回数はプレイヤー・フロア単位で管理する。公開Co-opでの中身の分離は[レビューの確認事項](reviews/0.9.7.md#p2--public-co-op-の補給箱が同じコンテナを使う)を参照。
+- 通常の補給箱はプレイヤー別・取り出し専用。同じ生成中は他の人が箱を開いても自分の残りは変わらず、空の箱を開き直しても再抽選されない。再生成で箱の中身は消えるが、そのランで初めて補給箱のある生成に入ったときのフロア別取得上限と使用済み回数は残る。任務 `RECOVER_CACHE` の回収対象は別扱い。
 - 0.9.7 では携行中に効果を得るパッシブと、右クリックで使う消耗品がある。パッシブはインベントリ順に異なるIDを最大3種適用。0.9.7 の連射速度処理では上限1,200 RPMを使い、超過分の一部をダメージへ変換する。
 
 | 内部スロット | 用途 |
@@ -35,10 +35,10 @@
 | `12–15` | 専用の予備弾薬枠 |
 | `16–35` | アップグレードで解放するバックパック |
 
-実装: [ショップ](../tac_rogue_mod/src/main/java/com/levanilla/rogue/core/service/ShopService.java) · [NPC](../tac_rogue_mod/src/main/java/com/levanilla/rogue/world/NpcManager.java) · [スロット制限](../tac_rogue_mod/src/main/java/com/levanilla/rogue/core/service/InventoryRuleService.java) · [ユーティリティ](../tac_rogue_mod/src/main/java/com/levanilla/rogue/core/service/RogueUtilityItemService.java) · [連射速度](../tac_rogue_mod/src/main/java/com/levanilla/rogue/core/service/TacZFireRateService.java)
+実装: [ショップ](../tac_rogue_mod/src/main/java/com/levanilla/rogue/core/service/ShopService.java) · [NPC](../tac_rogue_mod/src/main/java/com/levanilla/rogue/world/NpcManager.java) · [補給箱](../tac_rogue_mod/src/main/java/com/levanilla/rogue/core/service/SupplyCacheService.java) · [スロット制限](../tac_rogue_mod/src/main/java/com/levanilla/rogue/core/service/InventoryRuleService.java) · [ユーティリティ](../tac_rogue_mod/src/main/java/com/levanilla/rogue/core/service/RogueUtilityItemService.java) · [連射速度](../tac_rogue_mod/src/main/java/com/levanilla/rogue/core/service/TacZFireRateService.java)
 
 ## クライアントとサーバー
 
-クライアントは専用HUD、画面、チュートリアル、カメラや入力を担当する。フロア・報酬・所持金などの状態更新はサーバー側で行う。Co-op の検証では同じビルドを両側に入れる。現行のチャンネル版 `5` は、旧版との互換性を保証しない。
+クライアントは専用HUD、画面、チュートリアル、カメラや入力を担当する。フロア・報酬・所持金などの状態更新はサーバー側で行う。Co-op では同じビルドを両側に入れる。現行のチャンネル版は `6` で、旧チャンネル版 `5` は接続時の互換判定で拒否する。
 
 実装: [クライアント](../tac_rogue_mod/src/main/java/com/levanilla/rogue/client) · [通信登録](../tac_rogue_mod/src/main/java/com/levanilla/rogue/networking/TacRogueNetworking.java)

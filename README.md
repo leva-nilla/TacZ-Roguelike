@@ -8,11 +8,12 @@ The modpack is listed as [TacZ Roguelike on Modrinth](https://modrinth.com/modpa
 
 ## Develop
 
-The development baseline is branch `0.9.7`; the default branch `main` still contains 0.8.0. The 0.9.7 mod source is not the same as the 0.9.6 pack manifest or the published 0.9.5 modpack.
+The development baseline is branch `0.9.7`; the default branch `main` still contains 0.8.0. The 0.9.7 source and client pack manifest are newer than the published 0.9.5 modpack.
 
 - [開発ドキュメント](docs/README.md) — version map and where to start.
 - [現行仕様](docs/current-spec.md) — gameplay and implementation entry points.
 - [開発・検証手順](docs/development.md) — Java/Forge setup, build, and smoke checks.
+- [ゲームデザインの意図](docs/design-intent.md) — agreed decisions and open design questions.
 - [0.9.7 レビュー](docs/reviews/0.9.7.md) — findings and recommended next steps.
 
 ## License & credits
