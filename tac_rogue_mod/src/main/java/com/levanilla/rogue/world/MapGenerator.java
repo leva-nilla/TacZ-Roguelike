@@ -462,7 +462,6 @@ public class MapGenerator {
                 0);
             supplyChests = 1;
         }
-        stampSupplyChestTotals(level, center, floor, instanceId, supplyChests);
         GenerationJob activeJob = ACTIVE_GENERATION_JOB.get();
         if (activeJob != null) activeJob.setSupplyChestTotal(supplyChests);
 
@@ -1459,9 +1458,7 @@ public class MapGenerator {
     private static void markSupplyChestAfterBlocks(ServerLevel level, BlockPos pos, int floor, int chestIndex, String instanceId, String mode) {
         if (!(level.getBlockEntity(pos) instanceof net.minecraft.world.level.block.entity.ChestBlockEntity chest)) return;
         chest.clearContent();
-        chest.getPersistentData().putBoolean("TacRogueLootChest", true);
-        chest.getPersistentData().putBoolean("TacRogueChestClaimed", false);
-        chest.getPersistentData().putInt(com.levanilla.rogue.core.service.ChestLootService.CHEST_INDEX_KEY, Math.max(0, chestIndex));
+        chest.getPersistentData().putBoolean(com.levanilla.rogue.core.service.SupplyCacheService.CACHE_MARKER, true);
         chest.getPersistentData().putLong(com.levanilla.rogue.core.service.ChestLootService.CHEST_LOOT_SEED_KEY,
             level.random.nextLong()
                 ^ ((long) Objects.hashCode(instanceId) * 0x9E37_79B9_7F4A_7C15L)
@@ -1472,32 +1469,8 @@ public class MapGenerator {
             instanceId,
             floor,
             com.levanilla.rogue.core.service.FloorInstanceManager.EntryMode.parse(mode));
-        chest.setCustomName(net.minecraft.network.chat.Component.literal("[ROGUE SUPPLY CACHE]"));
+        chest.setCustomName(net.minecraft.network.chat.Component.literal(com.levanilla.rogue.core.service.SupplyCacheService.CACHE_TITLE));
         chest.setChanged();
-    }
-
-    private static void stampSupplyChestTotals(ServerLevel level, BlockPos center, int floor, String instanceId, int chestTotal) {
-        runAfterGenerationBlocks(() -> stampSupplyChestTotalsAfterBlocks(level, center, floor, instanceId, chestTotal));
-    }
-
-    private static void stampSupplyChestTotalsAfterBlocks(ServerLevel level, BlockPos center, int floor,
-                                                          String instanceId, int chestTotal) {
-        int total = Math.max(1, chestTotal);
-        int minY = center.getY();
-        int maxY = center.getY() + ROOM_HEIGHT + 2;
-        for (int x = center.getX() - CLEAR_RADIUS; x <= center.getX() + CLEAR_RADIUS; x++) {
-            for (int z = center.getZ() - CLEAR_RADIUS; z <= center.getZ() + CLEAR_RADIUS; z++) {
-                for (int y = minY; y <= maxY; y++) {
-                    BlockPos pos = new BlockPos(x, y, z);
-                    if (!(level.getBlockEntity(pos) instanceof net.minecraft.world.level.block.entity.ChestBlockEntity chest)) continue;
-                    if (!chest.getPersistentData().getBoolean("TacRogueLootChest")) continue;
-                    if (floor != chest.getPersistentData().getInt(com.levanilla.rogue.core.service.FloorInstanceManager.FLOOR_KEY)) continue;
-                    if (!Objects.equals(instanceId, chest.getPersistentData().getString(com.levanilla.rogue.core.service.FloorInstanceManager.INSTANCE_ID_KEY))) continue;
-                    chest.getPersistentData().putInt(com.levanilla.rogue.core.service.ChestLootService.CHEST_TOTAL_KEY, total);
-                    chest.setChanged();
-                }
-            }
-        }
     }
 
     private static void spawnBossAfterBlocks(ServerLevel level, BlockPos pos, int floor, int biomeIndex,

@@ -617,6 +617,7 @@ public class SpawnAndWorldHandler {
         // シングルプレイワールド退店時など、別ワールドへのデータ汚染を防ぐためメモリをリセット
         // ※ NBT には保存済みなのでクリアしても問題ない
         com.levanilla.rogue.core.RunManager.clearMemory();
+        com.levanilla.rogue.core.service.FloorInstanceManager.clearMemory();
         CombatEventHandler.clearMemory();
         TacZEventHandler.clearMemory();
         com.levanilla.rogue.core.service.BossRewardService.clearMemory();

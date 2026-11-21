@@ -16,13 +16,13 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.Mob;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.level.block.entity.BlockEntity;
-import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.phys.AABB;
 
 import java.nio.charset.StandardCharsets;
@@ -98,6 +98,7 @@ public final class FloorInstanceManager {
         public volatile long lastObjectiveSyncTick;
         public volatile int initialParticipantCount;
         public volatile int generatedSupplyChestTotal;
+        final SupplyCacheService.Contents<SimpleContainer> supplyCaches = new SupplyCacheService.Contents<>();
         public volatile BlockPos spawnPos;
         public volatile MapGenerator.GenerationJob generationJob;
         public volatile String objectiveType = FloorObjectiveService.ObjectiveType.ELIMINATE.name();
@@ -140,6 +141,12 @@ public final class FloorInstanceManager {
 
     public static Collection<FloorInstance> getInstancesSnapshot() {
         return List.copyOf(INSTANCES.values());
+    }
+
+    public static void clearMemory() {
+        INSTANCES.clear();
+        PLAYER_INSTANCES.clear();
+        PUBLIC_INSTANCES_BY_FLOOR.clear();
     }
 
     public static void enterFloor(ServerPlayer player, int floor, EntryMode mode) {
@@ -310,17 +317,6 @@ public final class FloorInstanceManager {
         blockEntity.setChanged();
     }
 
-    public static boolean hasChestClaimed(ChestBlockEntity chest, UUID playerUuid) {
-        if (chest == null || playerUuid == null) return false;
-        return chest.getPersistentData().getBoolean("TacRogueChestClaimed_" + playerUuid);
-    }
-
-    public static void markChestClaimed(ChestBlockEntity chest, UUID playerUuid) {
-        if (chest == null || playerUuid == null) return;
-        chest.getPersistentData().putBoolean("TacRogueChestClaimed_" + playerUuid, true);
-        chest.setChanged();
-    }
-
     public static void protectDropFor(ItemEntity item, ServerPlayer owner) {
         if (item == null || owner == null) return;
         String instanceId = PLAYER_INSTANCES.get(owner.getUUID());
@@ -394,7 +390,6 @@ public final class FloorInstanceManager {
         }
         instance.spawnPos = job.getSpawnPos();
         instance.generatedSupplyChestTotal = job.supplyChestTotal();
-        applyGeneratedSupplyChestClaims(server, instance, instance.generatedSupplyChestTotal);
         instance.generationJob = null;
         finalizeActivation(server, instance);
     }
@@ -412,16 +407,6 @@ public final class FloorInstanceManager {
             maxAvailable = Math.max(maxAvailable, available);
         }
         return Math.min(2, maxAvailable);
-    }
-
-    private static void applyGeneratedSupplyChestClaims(MinecraftServer server, FloorInstance instance, int generatedTotal) {
-        if (server == null || instance == null || generatedTotal <= 0) return;
-        for (UUID uuid : List.copyOf(instance.participants)) {
-            ServerPlayer participant = server.getPlayerList().getPlayer(uuid);
-            if (participant == null) continue;
-            RunManager.getData(participant).setSupplyChestMaxClaims(instance.floor, generatedTotal);
-            RunManager.syncPlayer(participant);
-        }
     }
 
     private static void finalizeActivation(MinecraftServer server, FloorInstance instance) {
