@@ -11,7 +11,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
  * サーバーとクライアント間のすべてのパケット通信（メッセージング）をここで定義し、登録します
  */
 public class TacRogueNetworking {
-    private static final String PROTOCOL_VERSION = "5"; // 通信プロトコルのバージョン（互換性の確認用）
+    private static final String PROTOCOL_VERSION = "6"; // OpenShopMessage にスタッシュ項目を追加した形式
     
     // チャンネルの定義
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
