@@ -26,25 +26,13 @@ final class SupplyChestTracker {
         if (key != null && !key.isBlank()) claimedSupplyChestKeys.add(key);
     }
 
-    int updateMaxClaims(int floor, int generatedCount) {
-        int safeFloor = Math.max(1, floor);
-        int safeCount = Math.max(1, generatedCount);
-        int merged = Math.max(supplyChestMaxClaimsByFloor.getOrDefault(safeFloor, 0), safeCount);
-        supplyChestMaxClaimsByFloor.put(safeFloor, merged);
-        return merged;
-    }
-
     int getMaxClaims(int floor) {
         return supplyChestMaxClaimsByFloor.getOrDefault(Math.max(1, floor), 0);
     }
 
-    void setMaxClaims(int floor, int generatedCount) {
-        int safeFloor = Math.max(1, floor);
-        int safeCount = Math.max(0, generatedCount);
-        if (safeCount <= 0) {
-            supplyChestMaxClaimsByFloor.remove(safeFloor);
-        } else {
-            supplyChestMaxClaimsByFloor.put(safeFloor, safeCount);
+    void initializeMaxClaims(int floor, int generatedCount) {
+        if (generatedCount > 0) {
+            supplyChestMaxClaimsByFloor.putIfAbsent(Math.max(1, floor), generatedCount);
         }
     }
 

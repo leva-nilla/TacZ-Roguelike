@@ -1,32 +1,21 @@
-# 🔫 TacZ Roguelike (Fully Automated Edition)
+# TacZ: Rogue Protocol
 
-Welcome to the **TacZ Roguelike Modpack**! This modpack completely transforms your Minecraft world into an infinite-scaling, high-octane tactical shooter dungeon, fully integrated with the amazing **Timeless and Classics ZERO (TACZ)** framework.
+TacZ: Rogue Protocol is a tactical roguelike built on **Timeless and Classics Zero (TaCZ)** for Minecraft 1.20.1 Forge. Deploy solo or in public co-op, complete procedural floor objectives, and return to the lobby to manage gear, perks, and supplies.
 
-![TacZ Roguelike Gameplay](https://via.placeholder.com/800x400?text=TacZ+Roguelike+Modpack)
+## Play
 
-## 🎯 Game Features
+The modpack is listed as [TacZ Roguelike on Modrinth](https://modrinth.com/modpack/tacz-roguelike). The latest published beta is [0.9.5](https://modrinth.com/modpack/tacz-roguelike/version/8fD53Tpo). There is an [open installation issue](https://github.com/leva-nilla/TacZ-Roguelike/issues/1) affecting that download.
 
-*   **⚡ 100% Fully Automated Installation**: No more manual downloading! Thanks to Modrinth native integration, simply install this modpack and **OVER 6 EXPANSIVE GUN PACKS** (including Elite X, LR Tactical, Enchanted Arsenal, etc.) will be downloaded and configured totally automatically! Let the launcher do everything.
-*   **🏰 Infinite Procedural Dungeons**: Every time you enter the dungeon, a new interconnected floor map is generated based on an advanced coordinate loop algorithm. Rooms contain different types of challenges, traps, and tactical covers.
-*   **💀 Intense Wave-Based Combat**: Engage varying levels of enemies in each room. The difficulty scales dynamically as you progress to higher floors. How deep can you dive?
-*   **📦 Stash & Extract System**: An advanced mechanic where dropped loot (powerful procedural weapons, ammo, and attachments) can be extracted safely to a unified stash. Die, and you might lose what you carried into the depths!
-*   **💰 Economy & Weapon Shop System**: Earn money by surviving waves and selling duplicate gear. Use your hard-earned cash at Shop NPCs to reroll your tactical loadout, buy emergency ammo, or apply rare powerful attachments.
-*   **🚀 Performance Optimized**: Heavily configured to ensure smooth gameplay. Features instant ghost-mob teleportation fixes and optimized server-side ticking for rapid room generation.
+## Develop
 
-## 📥 Included Gun Pack Dependencies
-When you click install, the following legendary community gun packs are pulled automatically from official Modrinth sources:
-- **Elite X Quality Guns**
-- **LR Tactical** & **Lesraisins Weapon**
-- **Enchanted Arsenal**
-- **TacZ Gucci Vuitton Attachments**
-- **Daffa's Arsenal**
+The development baseline is branch `0.9.7`; the default branch `main` still contains 0.8.0. The 0.9.7 source and client pack manifest are newer than the published 0.9.5 modpack.
 
-*(And yes, they are completely woven into the roguelike randomized drop pool system!)*
+- [開発ドキュメント](docs/README.md) — version map and where to start.
+- [現行仕様](docs/current-spec.md) — gameplay and implementation entry points.
+- [開発・検証手順](docs/development.md) — Java/Forge setup, build, and smoke checks.
+- [ゲームデザインの意図](docs/design-intent.md) — agreed decisions and open design questions.
+- [0.9.7 レビュー](docs/reviews/0.9.7.md) — findings and recommended next steps.
 
-## 📜 License & Credits
+## License & credits
 
-*   **TacZ Roguelike (Main Logic Mod)**: Created by levanilla, Licensed under MIT.
-*   **Timeless and Classics ZERO**: This pack heavily relies on the TACZ mod. All massive credits for the core gun framework go to the brilliant TACZ team.
-*   **Community Gun Packs**: All amazing models and weapons belong to their respective authors listed above. This pack acts as a compliant automated index to fetch their works directly from their official Modrinth pages.
-
-Thank you for playing, and good luck climbing the infinite dungeon! 🎮
+The main mod is by levanilla and declares MIT in its [mod metadata](tac_rogue_mod/src/main/resources/META-INF/mods.toml). TaCZ and third-party mods and gun packs are credited to their respective authors; the pack's download list is in the [Modrinth manifest](tac_rogue_modpack/modrinth.index.json).

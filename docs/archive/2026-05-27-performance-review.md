@@ -1,5 +1,7 @@
 # Current Status - 2026-05-27
 
+> Historical review. See the [0.9.7 review](../reviews/0.9.7.md) for current verification and open questions.
+
 ## Branch
 - Current branch: `codex/perf-review-low-risk`
 - Previous separated commit: `ad7d7c5 Optimize lobby loading warmup`

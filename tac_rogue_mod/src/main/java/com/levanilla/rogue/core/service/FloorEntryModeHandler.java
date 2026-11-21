@@ -131,6 +131,7 @@ final class FloorEntryModeHandler {
         data.setFloorSeedSalt(instance.floorSeedSalt);
         data.setFloorAttemptIndex(instance.floorAttemptIndex);
         if (active && player.server != null) {
+            data.initializeSupplyChestMaxClaims(instance.floor, instance.generatedSupplyChestTotal);
             data.setFloorStartTick(player.server.getTickCount());
             LowHealthChallengeService.activateForFloor(player);
         }

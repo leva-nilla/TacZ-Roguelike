@@ -76,16 +76,12 @@ public class PlayerRunData {
         supplyChestTracker.markClaimed(key);
     }
 
-    public int updateSupplyChestMaxClaims(int floor, int generatedCount) {
-        return supplyChestTracker.updateMaxClaims(floor, generatedCount);
-    }
-
     public int getSupplyChestMaxClaims(int floor) {
         return supplyChestTracker.getMaxClaims(floor);
     }
 
-    public void setSupplyChestMaxClaims(int floor, int generatedCount) {
-        supplyChestTracker.setMaxClaims(floor, generatedCount);
+    public void initializeSupplyChestMaxClaims(int floor, int generatedCount) {
+        supplyChestTracker.initializeMaxClaims(floor, generatedCount);
     }
 
     public int getClaimedSupplyChestCount(int floor) {

@@ -3,6 +3,7 @@ package com.levanilla.rogue.core.event;
 import com.levanilla.rogue.core.*;
 import com.levanilla.rogue.core.RestrictedSlot.SlotType;
 import com.levanilla.rogue.core.service.ArmorPlateService;
+import com.levanilla.rogue.core.service.SupplyCacheService;
 import com.levanilla.rogue.networking.TacRogueNetworking;
 import com.levanilla.rogue.world.LobbyGenerator;
 import com.levanilla.rogue.world.NpcManager;
@@ -14,6 +15,7 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.ClipContext;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
@@ -74,102 +76,11 @@ public class ItemAndLifecycleHandler {
             return;
         }
         if (event.isCanceled()) return;
-        if (!(event.getLevel().getBlockEntity(pos) instanceof net.minecraft.world.level.block.entity.ChestBlockEntity chest)) {
-            return;
-        }
-        if (!chest.getPersistentData().getBoolean("TacRogueLootChest")) return;
-        int floor = chest.getPersistentData().contains("TacRogueFloor")
-            ? chest.getPersistentData().getInt("TacRogueFloor")
-            : RunManager.getData(player).getCurrentFloor();
-        int chestIndex = Math.max(0, chest.getPersistentData().getInt(
-            com.levanilla.rogue.core.service.ChestLootService.CHEST_INDEX_KEY));
-        int generatedChestCount = chest.getPersistentData().contains(
-            com.levanilla.rogue.core.service.ChestLootService.CHEST_TOTAL_KEY)
-            ? chest.getPersistentData().getInt(com.levanilla.rogue.core.service.ChestLootService.CHEST_TOTAL_KEY)
-            : chestIndex + 1;
-        PlayerRunData data = RunManager.getData(player);
-        int maxClaims = data.getSupplyChestMaxClaims(floor);
-        if (maxClaims <= 0) {
-            // Compatibility for already-generated caches from older builds. New floors stamp this at generation time.
-            maxClaims = Math.max(1, generatedChestCount);
-        }
-        if (com.levanilla.rogue.core.service.FloorInstanceManager.hasChestClaimed(chest, player.getUUID())) {
-            // Same generated chest, same floor session: allow reopening while any previously rolled loot remains.
-            if (hasAnyContent(chest)) {
-                return;
-            }
-            // Empty already-opened physical cache may still consume another floor claim
-            // if this run previously generated more caches than the current layout exposes.
-        }
-        if (data.getClaimedSupplyChestCount(floor) >= maxClaims) {
-            player.displayClientMessage(net.minecraft.network.chat.Component.translatable("message.tac_rogue.supply_cache_claimed"), true);
-            event.setCanceled(true);
+        if (event.getLevel().getBlockEntity(pos) instanceof ChestBlockEntity chest
+                && SupplyCacheService.handleOpen(player, chest)) {
             event.setCancellationResult(InteractionResult.SUCCESS);
-            return;
-        }
-
-        int claimIndex = data.claimNextSupplyChest(floor, maxClaims);
-        if (claimIndex < 0) {
-            player.displayClientMessage(net.minecraft.network.chat.Component.translatable("message.tac_rogue.supply_cache_claimed"), true);
             event.setCanceled(true);
-            event.setCancellationResult(InteractionResult.SUCCESS);
-            return;
         }
-
-        refillPersonalSupplyChest(chest, player, Math.max(1, floor), claimIndex);
-        com.levanilla.rogue.core.service.FloorInstanceManager.markChestClaimed(chest, player.getUUID());
-        QuestManager.advanceQuest(player, QuestManager.QuestType.CHEST_RECOVERY, 1);
-    }
-
-    private static boolean hasAnyContent(net.minecraft.world.level.block.entity.ChestBlockEntity chest) {
-        for (int i = 0; i < chest.getContainerSize(); i++) {
-            if (!chest.getItem(i).isEmpty()) return true;
-        }
-        return false;
-    }
-
-    private static void refillPersonalSupplyChest(net.minecraft.world.level.block.entity.ChestBlockEntity chest,
-                                                  ServerPlayer player,
-                                                  int floor,
-                                                  int chestIndex) {
-        long chestLootSeed = ensureChestLootSeed(chest, player, floor, chestIndex);
-        java.util.Random rand = new java.util.Random(player.getUUID().getMostSignificantBits()
-            ^ Long.rotateLeft(player.getUUID().getLeastSignificantBits(), 21)
-            ^ ((long) Math.max(1, floor) * 0x9E3779B97F4A7C15L)
-            ^ ((long) Math.max(0, chestIndex) * 0xD1B54A32D192ED03L)
-            ^ Long.rotateLeft(chestLootSeed, 13));
-        chest.clearContent();
-        java.util.List<ItemStack> loot =
-            com.levanilla.rogue.core.service.ChestLootService.generatePersonalChestLoot(player, floor, chestIndex, chestLootSeed);
-
-        for (ItemStack stack : loot) {
-            if (stack.isEmpty()) continue;
-            int slot = rand.nextInt(chest.getContainerSize());
-            for (int tries = 0; tries < chest.getContainerSize() && !chest.getItem(slot).isEmpty(); tries++) {
-                slot = (slot + 1) % chest.getContainerSize();
-            }
-            chest.setItem(slot, stack);
-        }
-        chest.setChanged();
-    }
-
-    private static long ensureChestLootSeed(net.minecraft.world.level.block.entity.ChestBlockEntity chest,
-                                            ServerPlayer player,
-                                            int floor,
-                                            int chestIndex) {
-        String key = com.levanilla.rogue.core.service.ChestLootService.CHEST_LOOT_SEED_KEY;
-        if (chest.getPersistentData().contains(key)) {
-            return chest.getPersistentData().getLong(key);
-        }
-        long seed = player.getRandom().nextLong()
-            ^ player.serverLevel().getSeed()
-            ^ ((long) Math.max(1, floor) * 0x9E3779B97F4A7C15L)
-            ^ ((long) Math.max(0, chestIndex) * 0xD1B54A32D192ED03L)
-            ^ Long.rotateLeft(player.getUUID().getMostSignificantBits(), 11)
-            ^ Long.rotateLeft(player.getUUID().getLeastSignificantBits(), 37);
-        chest.getPersistentData().putLong(key, seed);
-        chest.setChanged();
-        return seed;
     }
 
     // ===== ステーキ使用完了時の回復 =====

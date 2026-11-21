@@ -20,8 +20,6 @@ import java.util.Random;
 import java.util.UUID;
 
 public final class ChestLootService {
-    public static final String CHEST_INDEX_KEY = "TacRogueChestIndex";
-    public static final String CHEST_TOTAL_KEY = "TacRogueChestTotal";
     public static final String CHEST_LOOT_SEED_KEY = "TacRogueLootSeed";
 
     private ChestLootService() {}

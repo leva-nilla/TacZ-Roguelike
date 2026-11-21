@@ -1,5 +1,6 @@
 package com.levanilla.rogue.client;
 
+import com.levanilla.rogue.core.service.SupplyCacheService;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.network.chat.Component;
@@ -50,7 +51,8 @@ public class RogueSupplyChestScreen extends AbstractContainerScreen<ChestMenu> {
         graphics.fill(x, y, x + 2, y + h, 0xFFE0B04B);
 
         String heading = isSupplyCache() ? "SUPPLY CACHE" : "FIELD CONTAINER";
-        String sub = isSupplyCache() ? "PERSONAL LOOT INSTANCE" : "ROGUE INVENTORY LINK";
+        String sub = SupplyCacheService.CACHE_TITLE.equals(this.title.getString())
+            ? "PERSONAL LOOT / TAKE ONLY" : "ROGUE INVENTORY LINK";
         graphics.drawString(this.font, heading, x + 12, y + 8, 0xFFFFD17A, false);
         graphics.drawString(this.font, sub, x + 12, y + 19, 0xFF7F8A92, false);
 
