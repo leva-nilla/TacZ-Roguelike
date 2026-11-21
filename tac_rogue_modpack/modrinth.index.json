@@ -1,9 +1,9 @@
 {
     "formatVersion": 1,
     "game": "minecraft",
-    "versionId": "0.9.6",
+    "versionId": "0.9.7",
     "name": "TacZ: Rogue Protocol",
-    "summary": "Fast-paced tactical roguelike shooter protocol built on TacZ.",
+    "summary": "Client modpack for the TacZ: Rogue Protocol tactical roguelike.",
     "files": [
         {
             "path": "mods/acceleratedrendering-1.0.8-1.20.1-alpha.jar",
@@ -129,7 +129,7 @@
             "path": "mods/Clumps-forge-1.20.1-12.0.0.4.jar",
             "hashes": {
                 "sha1": "8809c7aa6c71389e9c59abfe5def52c1cb8d4f1c",
-                "sha512": "ffd8ff2438e9f9d260d3926ccdd0cccc4772c6f99f29715690aed4f6e97a76035f3aeaa78168e2a458bc4cccf521e97ebdb6e0b61c819facb04af9ebb36383833"
+                "sha512": "ffd8ff2438e9f9d260d3926ccdd0cccc4772c6f99f29715690aed4f6e97a76035f3aeaa78168e2a458bc4cccf521e97ebdb6e0b61c819facb04af9ebb3638383"
             },
             "env": {
                 "client": "required",
@@ -324,7 +324,7 @@
             "path": "mods/Jade-1.20.1-Forge-11.13.2.jar",
             "hashes": {
                 "sha1": "1997e5fe2db3a0575ca79bfe4720019f01fd2b8c",
-                "sha512": "612c7535d28ae0cb336f31b790770b3dcb5173d496fb74eabcb28d06e3b88e7273312806cefc4ae4147cce528a8e8c09688a36d8f9e11dbf77e93d89b743560"
+                "sha512": "612c7535d28ae0cb336f31b790770b3dcb5173d496fb74eabcb28d06e3b88e72733128060cefc4ae4147cce528a8e8c09688a36d8f9e11dbf77e93d89b743560"
             },
             "env": {
                 "client": "required",
@@ -474,7 +474,7 @@
             "path": "mods/Patchouli-1.20.1-85-FORGE.jar",
             "hashes": {
                 "sha1": "d4614507d6e4c7cb464bba5eca891978272062ef",
-                "sha512": "15aedda4efcc553d5e3c83aa867b62554bc2fab298b43f55ed324e10507a3605f0ec2c59c01476e6d80b2a49275ef080142e43a6e663f9463b62f520960fc2033"
+                "sha512": "15aedda4efcc553d5e3c83aa867b62554bc2fab298b43f55ed324e10507a3605f0ec2c59c01476e6d80b2a49275ef080142e43a6e663f9463b62f520960fc203"
             },
             "env": {
                 "client": "required",
